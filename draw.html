@@ -42,29 +42,34 @@
         #layer-wrapper { width: 1920px; height: 1080px; background: transparent; position: absolute; top: 50px; left: 50px; transform-origin: top left; touch-action: none; box-shadow: 0 0 30px rgba(0,0,0,0.8); }
         .checker-bg { background-color: #ffffff !important; background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0), linear-gradient(45deg, #e0e0e0 25%, transparent 25%, transparent 75%, #e0e0e0 75%, #e0e0e0) !important; background-size: 30px 30px !important; background-position: 0 0, 15px 15px !important; }
         
-        /* ✨ 방송 배경 기본 display: none */
         #broadcast-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0.8; display: none; }
         #offline-text { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 48px; font-weight: bold; z-index: 0; text-shadow: 2px 2px 10px rgba(0,0,0,0.8); }
-        .drawing-layer { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+        .drawing-layer { position: absolute; top: 0; left: 0; pointer-events: none; }
 
         .sidebar-right { width: 240px; background: #252526; border-left: 1px solid #444; display: flex; flex-direction: column; padding: 15px; box-sizing: border-box; flex-shrink: 0; gap: 15px; }
         .panel-section { background: #333; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
         .panel-title { font-size: 12px; color: #aaa; font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid #444; padding-bottom: 5px; }
-        .layer-item { display: flex; justify-content: space-between; align-items: center; background: #444; padding: 8px; border-radius: 4px; border: 1px solid transparent; cursor: pointer; }
+        
+        /* 레이어 아이템 드래그 앤 드롭 스타일 */
+        .layer-item { display: flex; justify-content: space-between; align-items: center; background: #444; padding: 8px; border-radius: 4px; border: 1px solid transparent; cursor: grab; }
+        .layer-item:active { cursor: grabbing; }
         .layer-item.active { background: #094771; border-color: #007acc; }
         .layer-item:hover:not(.active) { background: #555; }
         .layer-name { font-size: 13px; flex-grow: 1; padding-left: 10px; color: white;}
+        
         .sys-btn { background: #444; color: white; padding: 6px; font-size: 12px; width: 100%; border: 1px solid #555; font-weight: bold; cursor: pointer;}
         .sys-btn:hover { background: #555; }
         .toggle-label { font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc; }
         
-        .raster-btn { background: #e65100; color: white; border: none; padding: 4px 8px; font-size: 11px; border-radius: 3px; cursor: pointer; font-weight: bold; margin-left: 5px;}
+        .raster-btn { background: #e65100; color: white; border: none; padding: 4px 6px; font-size: 11px; border-radius: 3px; cursor: pointer; font-weight: bold; margin-left: 2px;}
         .raster-btn:hover { background: #ff9800; }
+        .del-btn { background: #d32f2f; color: white; border: none; padding: 4px 6px; font-size: 11px; border-radius: 3px; cursor: pointer; font-weight: bold; margin-left: 2px;}
+        .del-btn:hover { background: #f44336; }
 
-        /* ✨ 만능 객체 트랜스폼 박스 (텍스트, 래스터이미지, 러프이미지 공용) */
+        /* 만능 객체 트랜스폼 박스 */
         .transform-box { 
             position: absolute; display: flex; flex-direction: column; 
-            padding: 15px; /* 선(여백)을 잡아 이동시킬 수 있도록 패딩 공간 확보 */
+            padding: 15px; 
             border: 2px dashed transparent; 
             transform-origin: center center; user-select: none; box-sizing: border-box;
         }
@@ -76,19 +81,17 @@
         .transform-box.type-text .content:empty:before { content: "텍스트 입력..."; color: #aaa; }
         .transform-box.type-image .content, .transform-box.type-rough .content { width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none; }
 
-        /* 크기 조절 핸들 */
         .handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid #007acc; border-radius: 50%; display: none; z-index: 10; }
         .transform-box.active .handle { display: block; }
         .handle-nw { top: -6px; left: -6px; cursor: nwse-resize; } .handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
         .handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; } .handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 
-        /* 대각선 바깥쪽 회전 핸들 영역 */
         .rotate-area { position: absolute; width: 24px; height: 24px; background: transparent; display: none; z-index: 5; border-radius: 50%; cursor: alias; }
         .transform-box.active .rotate-area { display: block; }
         .rot-nw { top: -20px; left: -20px; } .rot-ne { top: -20px; right: -20px; }
         .rot-sw { bottom: -20px; left: -20px; } .rot-se { bottom: -20px; right: -20px; }
 
-        /* ✨ 리치 텍스트 서식 툴바 */
+        /* 리치 텍스트 서식 툴바 */
         #floating-toolbar { position: fixed; display: none; background: #252526; padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 2000; gap: 8px; align-items: center; border: 1px solid #444; }
         .toolbar-btn { background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
     </style>
@@ -119,14 +122,18 @@
             </div>
         </div>
         <div class="disclaimer">
-            ※ [조작 커서 ↖] 도구로 객체의 점선(테두리 여백)을 잡아 이동하고, 각 모서리에서 크기와 회전을 조작하세요.
+            ※ [조작 커서 ↖] 도구로 객체의 점선(테두리 여백)을 잡아 이동하고 조작하세요. 우측 패널에서 레이어를 드래그하여 순서를 변경할 수 있습니다.
         </div>
     </div>
 
-    <!-- 리치 텍스트 서식 툴바 -->
+    <!-- ✨ 리치 텍스트 서식 툴바 (글씨 크기 입력 추가) -->
     <div id="floating-toolbar">
-        <select id="tb-fontfamily" style="background:#333; color:white; padding:4px;"><option value="'Malgun Gothic', sans-serif">맑은 고딕</option><option value="Arial">Arial</option></select>
-        <input type="color" id="tb-color" style="width:30px; height:30px; padding:0; border:none;">
+        <select id="tb-fontfamily" style="background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;">
+            <option value="'Malgun Gothic', sans-serif">맑은 고딕</option>
+            <option value="Arial">Arial</option>
+        </select>
+        <input type="number" id="tb-fontsize" style="width:50px; text-align:center; background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;" value="40" title="폰트 크기(px)">
+        <input type="color" id="tb-color" style="width:30px; height:30px; padding:0; border:none; cursor:pointer;" title="글자 색상">
         <button class="toolbar-btn" id="tb-bold">B</button>
         <button class="toolbar-btn" id="tb-italic" style="font-style: italic;">I</button>
     </div>
@@ -139,7 +146,6 @@
             <div class="control-group"><label>떨림방지</label><input type="range" id="smoothing-level" min="0" max="20" value="7"></div>
             <div style="width: 80%; height: 1px; background: #444; margin: 5px 0;"></div>
             
-            <!-- ✨ 핵심: 조작 전용 커서 툴 추가 -->
             <button class="tool-btn active-tool" data-tool="cursor" style="font-size: 20px;" title="선택 및 조작">↖</button>
 
             <button class="tool-btn" data-tool="pen">펜</button>
@@ -156,8 +162,8 @@
                 </div>
             </div>
             <div style="width: 80%; height: 1px; background: #444; margin: 5px 0;"></div>
-            <button class="tool-btn" id="btn-undo" style="height:35px;">이전</button>
-            <button class="tool-btn" id="btn-redo" style="height:35px;">다음</button>
+            <button class="tool-btn" id="btn-undo" style="height:35px;" title="단축키: Ctrl+Z">이전</button>
+            <button class="tool-btn" id="btn-redo" style="height:35px;" title="단축키: Ctrl+Y">다음</button>
         </div>
 
         <div class="workspace">
@@ -174,11 +180,9 @@
                 <div class="panel-title">화면 제어</div>
                 <div style="display: flex; gap: 5px; align-items: center; justify-content: space-between;">
                     <button class="sys-btn" id="btn-zoom-out">-</button>
-                    <!-- ✨ 기본 확대율 100% -->
                     <span id="zoom-text" style="font-size: 12px; font-weight: bold; width: 40px; text-align: center;">100%</span>
                     <button class="sys-btn" id="btn-zoom-in">+</button>
                 </div>
-                <!-- ✨ 방송 배경 모드 기본 끄기 -->
                 <label class="toggle-label" style="margin-top: 5px;"><input type="checkbox" id="toggle-bg"> 방송 배경 표시</label>
             </div>
 
@@ -194,7 +198,7 @@
             </div>
 
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
-                <div class="panel-title">레이어 패널</div>
+                <div class="panel-title">레이어 패널 (드래그로 순서 변경)</div>
                 <button id="btn-add-layer" class="sys-btn" style="background: #007acc; border-color: #007acc; margin-bottom: 10px;">새 레이어</button>
                 <div id="layer-list" style="display: flex; flex-direction: column-reverse; gap: 5px; overflow-y: auto; flex: 1;"></div>
             </div>
@@ -211,15 +215,13 @@
         const zoomText = document.getElementById('zoom-text');
         const scrollContainer = document.getElementById('scroll-container');
         
-        // ✨ 기본 화면확대율 1.0(100%) 적용
         let zoomLevel = 1.0; layerWrapper.style.transform = `scale(${zoomLevel})`; 
 
         let layers = []; let layerCounter = 0; let activeLayerId = null;
-        let isDrawing = false; let currentWidth = 5; let currentTool = 'cursor'; // 기본툴: 커서
+        let isDrawing = false; let currentWidth = 5; let currentTool = 'cursor'; 
         let smX = 0, smY = 0, smW = 0; let lastX = 0, lastY = 0;
         let shapeStartX = 0, shapeStartY = 0; let canvasSnapshot = null; 
         
-        // 기존 히스토리 로직 보존
         let history = []; let redoStack = []; let currentPath = []; 
 
         let currentColorHex = '#ffffff';
@@ -258,19 +260,17 @@
                 else { e.currentTarget.classList.add('active-tool'); }
                 currentTool = e.currentTarget.getAttribute('data-tool');
                 
-                // 그리기 도구 선택 시 캔버스 터치 활성화
                 layers.forEach(l => {
                     if (l.type === 'canvas') l.canvas.style.pointerEvents = (currentTool === 'pen' || currentTool === 'eraser' || currentTool === 'line' || currentTool === 'rect' || currentTool === 'circle') ? 'auto' : 'none';
                 });
 
-                // 커서가 아니면 객체 선택 해제
                 if (currentTool !== 'cursor') {
                     document.querySelectorAll('.transform-box').forEach(box => box.classList.remove('active'));
                 }
             });
         });
 
-        // 방송 배경 체크 (초기값 OFF 상태 반영)
+        // 방송 배경 체크
         const toggleBgBtn = document.getElementById('toggle-bg');
         const broadcastBg = document.getElementById('broadcast-bg');
         const offlineText = document.getElementById('offline-text');
@@ -303,26 +303,39 @@
             if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
         }, { passive: false });
 
+        // ✨ 레이어 Z-index 업데이트 함수 (순서 변경 및 생성 시 호출)
+        function updateLayersZIndex() {
+            layers.forEach((l, index) => {
+                const z = index + 1;
+                if (l.type === 'canvas') l.canvas.style.zIndex = z;
+                else if (l.element) l.element.style.zIndex = z;
+            });
+        }
+
         // 캔버스 레이어 생성
         function createLayer() {
             layerCounter++; const lId = `layer_${layerCounter}`;
             const cvs = document.createElement('canvas'); cvs.id = lId; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
-            cvs.style.pointerEvents = 'none'; // 기본 툴이 커서이므로 이벤트 차단
+            cvs.style.pointerEvents = 'none'; 
             layerWrapper.appendChild(cvs);
             const context = cvs.getContext('2d'); context.lineCap = 'round'; context.lineJoin = 'round';
             layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, type: 'canvas' });
+            
+            updateLayersZIndex();
             selectLayer(lId); renderLayerUI();
         }
 
-        // ✨ 핵심: 만능 객체 트랜스폼 박스 생성 (텍스트, 래스터, 러프 공용)
+        // 만능 객체 트랜스폼 박스 생성
         function createTransformObject(type, x, y, width, height, customContent = null) {
             layerCounter++; const lId = `layer_${layerCounter}`;
             
             const wrapper = document.createElement('div');
             wrapper.className = `transform-box type-${type} active`;
-            // 마우스 클릭 위치가 중앙이 되도록 보정
             wrapper.style.left = `${x - width/2}px`; wrapper.style.top = `${y - height/2}px`;
-            wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`; wrapper.style.zIndex = layerCounter;
+            wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`; 
+            
+            // 러프 이미지는 z-index 0으로 배경처럼 배치
+            if (type === 'rough') wrapper.style.zIndex = 0; 
             
             let content;
             if (customContent) {
@@ -334,7 +347,6 @@
                 content.style.fontSize = `${currentWidth * 6}px`; content.style.color = currentColor;
             }
 
-            // 4방향 핸들과 회전 영역 추가
             const handles = ['nw', 'ne', 'sw', 'se'];
             handles.forEach(dir => {
                 const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h);
@@ -343,22 +355,22 @@
             
             wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
             
-            const layerData = { id: lId, name: type === 'rough' ? `참고이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true };
-            if (type !== 'rough') layers.push(layerData); // 러프 이미지는 레이어 리스트에서 제외
-            
-            selectLayer(lId);
+            if (type !== 'rough') {
+                layers.push({ id: lId, name: `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true });
+                updateLayersZIndex();
+                selectLayer(lId);
+            }
             if(type === 'text') content.focus();
             
             return wrapper;
         }
 
-        // 러프 이미지 불러오기 (트랜스폼 박스 적용)
+        // 러프 이미지 불러오기
         document.getElementById('rough-file').addEventListener('change', (e) => {
             const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => { 
                 const img = new Image(); img.src = event.target.result;
                 img.onload = () => {
-                    // 화면 중앙에 적절한 비율로 생성
                     const scale = Math.min(600 / img.width, 600 / img.height, 1);
                     createTransformObject('rough', CANVAS_WIDTH/2, CANVAS_HEIGHT/2, img.width * scale, img.height * scale, img);
                     document.getElementById('rough-controls').style.display = 'flex';
@@ -372,14 +384,14 @@
             document.getElementById('rough-controls').style.display = 'none';
         });
 
-        // ✨ 텍스트 래스터화(그림화) 로직 - 캔버스 형태의 트랜스폼 박스로 변환
+        // 텍스트 래스터화
         function rasterizeText(layerId) {
             const layer = layers.find(l => l.id === layerId);
             if (!layer || layer.type !== 'text') return;
             
             const contentDiv = layer.element.querySelector('.content');
             if (!contentDiv.innerHTML.trim() || contentDiv.innerHTML === '텍스트 입력...') {
-                layer.element.remove(); layers = layers.filter(l => l.id !== layerId); renderLayerUI(); return;
+                layer.element.remove(); layers = layers.filter(l => l.id !== layerId); updateLayersZIndex(); renderLayerUI(); return;
             }
 
             const w = layer.element.offsetWidth; const h = layer.element.offsetHeight;
@@ -412,12 +424,59 @@
             renderLayerUI();
         }
 
+        // ✨ 레이어 삭제 기능 구현
+        function deleteLayer(id) {
+            if(confirm('이 레이어를 삭제하시겠습니까?')) {
+                const l = layers.find(layer => layer.id === id);
+                if(l) {
+                    if (l.type === 'canvas') l.canvas.remove();
+                    else if (l.element) l.element.remove();
+                    layers = layers.filter(layer => layer.id !== id);
+                    if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
+                    updateLayersZIndex();
+                    renderLayerUI();
+                }
+            }
+        }
+
+        // ✨ 레이어 UI 렌더링 (드래그 앤 드롭 정렬 추가)
         function renderLayerUI() {
             layerListDiv.innerHTML = '';
             layers.forEach(l => {
-                const div = document.createElement('div'); div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; div.onclick = () => selectLayer(l.id);
+                const div = document.createElement('div'); 
+                div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; 
+                div.draggable = true; // 드래그 가능 속성 활성화
+                div.onclick = () => selectLayer(l.id);
                 
-                const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '5px';
+                // --- 드래그 앤 드롭 이벤트 ---
+                div.ondragstart = (e) => {
+                    e.dataTransfer.setData('text/plain', l.id);
+                    div.style.opacity = '0.5';
+                };
+                div.ondragend = (e) => { div.style.opacity = '1'; };
+                div.ondragover = (e) => { 
+                    e.preventDefault(); 
+                    div.style.borderTop = '2px solid #007acc'; // 시각적 피드백
+                };
+                div.ondragleave = (e) => { div.style.borderTop = '1px solid transparent'; };
+                div.ondrop = (e) => {
+                    e.preventDefault();
+                    div.style.borderTop = '1px solid transparent';
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    if(draggedId === l.id) return;
+
+                    const draggedIndex = layers.findIndex(layer => layer.id === draggedId);
+                    const targetIndex = layers.findIndex(layer => layer.id === l.id);
+                    
+                    if (draggedIndex > -1 && targetIndex > -1) {
+                        const [draggedLayer] = layers.splice(draggedIndex, 1);
+                        layers.splice(targetIndex, 0, draggedLayer);
+                        updateLayersZIndex();
+                        renderLayerUI();
+                    }
+                };
+                
+                const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '2px';
                 
                 const eyeBtn = document.createElement('span'); eyeBtn.innerText = l.visible ? '표시' : '숨김'; eyeBtn.style.cursor = 'pointer'; eyeBtn.style.fontSize = '11px'; eyeBtn.style.color = l.visible ? '#fff' : '#aaa'; eyeBtn.style.border = '1px solid #555'; eyeBtn.style.padding = '2px 5px'; eyeBtn.style.borderRadius = '3px'; eyeBtn.style.backgroundColor = l.visible ? '#007acc' : '#444';
                 eyeBtn.onclick = (e) => { e.stopPropagation(); toggleLayerVisibility(l.id); };
@@ -425,10 +484,16 @@
 
                 if (l.type === 'text') {
                     const rasterBtn = document.createElement('button');
-                    rasterBtn.innerText = '래스터화'; rasterBtn.className = 'raster-btn';
+                    rasterBtn.innerText = '래스터'; rasterBtn.className = 'raster-btn';
                     rasterBtn.onclick = (e) => { e.stopPropagation(); rasterizeText(l.id); };
                     btnGroup.appendChild(rasterBtn);
                 }
+
+                // 삭제 버튼 추가
+                const delBtn = document.createElement('button');
+                delBtn.innerHTML = '🗑️'; delBtn.className = 'del-btn';
+                delBtn.onclick = (e) => { e.stopPropagation(); deleteLayer(l.id); };
+                btnGroup.appendChild(delBtn);
 
                 const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; 
                 nameSpan.innerText = l.name;
@@ -458,14 +523,12 @@
         layerWrapper.addEventListener('pointerdown', (e) => {
             const pos = getPointerPos(e);
 
-            // ✨ 1. 커서 툴: 객체 이동, 크기조절, 회전
             if (currentTool === 'cursor') {
                 const box = e.target.closest('.transform-box');
                 if (box) {
                     document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
                     box.classList.add('active');
 
-                    // 선(패딩 영역)이나 핸들을 클릭했을 때만 조작 시작 (내부 컨텐츠 입력 방해 안함)
                     if (e.target === box || e.target.classList.contains('handle') || e.target.classList.contains('rotate-area')) {
                         const wrapperCx = parseFloat(box.style.left) + box.offsetWidth/2;
                         const wrapperCy = parseFloat(box.style.top) + box.offsetHeight/2;
@@ -482,19 +545,16 @@
                 } else {
                     document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
                 }
-                return; // 커서 툴이면 이 아래의 그리기 로직은 무시
+                return; 
             }
 
-            // 텍스트 박스 내부 클릭 시 그리기 무시
             if (e.target.closest('.content[contenteditable="true"]')) return;
 
-            // ✨ 2. 텍스트 툴: 새 박스 생성
             if (currentTool === 'text') {
                 document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
                 createTransformObject('text', pos.x, pos.y, 350, 150); return;
             }
 
-            // 3. 일반 그리기 (펜, 도형 등)
             const activeLayer = layers.find(l => l.id === activeLayerId);
             if (!activeLayer || !activeLayer.visible || activeLayer.type !== 'canvas') return; 
 
@@ -509,7 +569,6 @@
         layerWrapper.addEventListener('pointermove', (e) => {
             const pos = getPointerPos(e);
 
-            // ✨ 객체 트랜스폼 수학 공식 처리
             if (transformState && transformState.target) {
                 if (transformState.action === 'move') {
                     transformState.target.style.left = `${transformState.startLeft + (pos.x - transformState.startX)}px`;
@@ -581,7 +640,7 @@
             canvasSnapshot = null;
         });
 
-        // --- 기존 기능: Undo/Redo & 화면 갱신 (단축키 포함) ---
+        // --- 기존 기능: Undo/Redo (단축키 유지) ---
         function redrawCanvas() {
             layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
             for (let item of history) {
@@ -611,7 +670,7 @@
             if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } 
         });
 
-        // --- 기존 기능: 파일 저장 및 불러오기 ---
+        // --- 기존 기능: 세이브/로드 ---
         document.getElementById('btn-save').onclick = () => {
             const saveData = { layerCount: layerCounter, layersInfo: layers.map(l => ({ id: l.id, name: l.name })), drawingHistory: history };
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
@@ -630,16 +689,33 @@
                         cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                         layerWrapper.appendChild(cvs); layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: true, type: 'canvas' });
                     });
-                    history = data.drawingHistory || []; redoStack = []; selectLayer(layers[layers.length - 1].id); redrawCanvas(); e.target.value = ''; 
+                    history = data.drawingHistory || []; redoStack = []; 
+                    updateLayersZIndex();
+                    selectLayer(layers[layers.length - 1].id); redrawCanvas(); e.target.value = ''; 
                 } catch(err) { alert("잘못된 형식의 파일입니다."); }
             }; reader.readAsText(file); 
         });
 
-        // 툴바 액션 설정 (텍스트 드래그 시)
+        // ✨ 툴바 서식 적용 및 글씨 크기(px) 변경 로직
+        let activeTextContent = null;
         document.getElementById('tb-color').addEventListener('input', (e) => document.execCommand('foreColor', false, e.target.value));
         document.getElementById('tb-bold').onclick = () => document.execCommand('bold', false, null);
         document.getElementById('tb-italic').onclick = () => document.execCommand('italic', false, null);
         document.getElementById('tb-fontfamily').addEventListener('change', (e) => document.execCommand('fontName', false, e.target.value));
+        
+        // 글씨 크기 적용 (강제 인라인 스타일 변환 기법)
+        document.getElementById('tb-fontsize').addEventListener('change', (e) => {
+            if(!activeTextContent) return;
+            document.execCommand('styleWithCSS', false, true);
+            document.execCommand('fontSize', false, '7'); 
+            const fonts = activeTextContent.querySelectorAll('font[size="7"], span[style*="font-size"]');
+            fonts.forEach(f => {
+                if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large')) {
+                    f.removeAttribute('size');
+                    f.style.fontSize = `${e.target.value}px`;
+                }
+            });
+        });
 
         const floatingToolbar = document.getElementById('floating-toolbar');
         document.addEventListener('selectionchange', () => {
@@ -648,15 +724,19 @@
                 const range = selection.getRangeAt(0); const container = range.commonAncestorContainer;
                 const textContent = container.nodeType === 3 ? container.parentNode.closest('.content[contenteditable="true"]') : container.closest('.content[contenteditable="true"]');
                 if (textContent) {
+                    activeTextContent = textContent;
                     const rect = range.getBoundingClientRect();
                     floatingToolbar.style.display = 'flex'; floatingToolbar.style.left = `${rect.left}px`; floatingToolbar.style.top = `${rect.top - 50}px`;
-                } else floatingToolbar.style.display = 'none';
+                } else {
+                    activeTextContent = null;
+                    floatingToolbar.style.display = 'none';
+                }
             } else floatingToolbar.style.display = 'none';
         });
 
         createLayer(); 
 
-        // --- 기존 기능: 네이버 로그인 유지 ---
+        // --- 네이버 로그인 및 서버 전송 (유지) ---
         let loggedInUser = null; 
         let isDonationEnabled = true; 
         const btnSend = document.getElementById('btn-send');
@@ -675,27 +755,16 @@
             naverLogin.getLoginStatus(function (status) {
                 if (status) {
                     const uniqueId = naverLogin.user.getId();
-                    if (!uniqueId) {
-                        document.getElementById('login-container').style.display = 'flex';
-                        document.getElementById('donation-container').style.display = 'none';
-                        return;
-                    }
+                    if (!uniqueId) { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; return; }
                     const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자";
                     const profileImage = naverLogin.user.getProfileImage() || "";
                     
                     loggedInUser = { name: name, email: uniqueId, profileImage: profileImage };
                     
-                    document.getElementById('login-container').style.display = 'none';
-                    document.getElementById('donation-container').style.display = 'flex';
+                    document.getElementById('login-container').style.display = 'none'; document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
-
-                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } 
-                    else { profilePreview.style.backgroundImage = 'none'; }
-                } else {
-                    document.getElementById('login-container').style.display = 'flex';
-                    document.getElementById('donation-container').style.display = 'none';
-                    loggedInUser = null;
-                }
+                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } else { profilePreview.style.backgroundImage = 'none'; }
+                } else { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null; }
             });
         });
 
@@ -718,7 +787,7 @@
                 else if (l.element) l.element.remove(); 
             });
             layers = layers.filter(l => l.type === 'canvas'); 
-            redrawCanvas(); renderLayerUI();
+            updateLayersZIndex(); redrawCanvas(); renderLayerUI();
         }
 
         document.getElementById('btn-clear-all').onclick = () => {
@@ -726,7 +795,6 @@
             if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
         };
 
-        // --- 전송 전 데이터 병합 및 서버 전송 로직 ---
         btnSend.onclick = async () => {
             const title = document.getElementById('drawing-title').value || "제목없음";
             const customName = document.getElementById('custom-nickname').value || (loggedInUser ? loggedInUser.name : "익명");
