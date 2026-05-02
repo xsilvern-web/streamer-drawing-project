@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>시청자용 그리기 (전체화면 에디터)</title>
-    <!-- ✨ 네이버 아이디 로그인 라이브러리 -->
     <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js" charset="utf-8"></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #e0e0e0; display: flex; flex-direction: column; overflow: hidden; }
@@ -21,7 +20,6 @@
         #btn-send:hover { background: #fb8c00; }
         .disclaimer { font-size: 11px; color: #888; text-align: right; width: 100%; }
 
-        /* ✨ 내 프로필 미리보기용 동그라미 스타일 */
         #profile-preview { width: 34px; height: 34px; border-radius: 50%; background-color: white; background-size: cover; background-position: center; border: 1px solid #555;}
         
         .app-body { display: flex; flex: 1; overflow: hidden; }
@@ -57,6 +55,10 @@
         .sys-btn { background: #444; color: white; padding: 6px; font-size: 12px; width: 100%; border: 1px solid #555; font-weight: bold; cursor: pointer;}
         .sys-btn:hover { background: #555; }
         .toggle-label { font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc; }
+        
+        /* 래스터화 버튼 스타일 */
+        .raster-btn { background: #e65100; color: white; border: none; padding: 4px 8px; font-size: 11px; border-radius: 3px; cursor: pointer; font-weight: bold; margin-left: 5px;}
+        .raster-btn:hover { background: #ff9800; }
     </style>
 </head>
 <body>
@@ -72,7 +74,6 @@
                 <div id="naverIdLogin"></div>
             </div>
 
-            <!-- ✨ 전송 폼에 프사 미리보기 및 체크박스 추가 -->
             <div class="header-group" id="donation-container" style="display: none;">
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
                     <div id="profile-preview"></div>
@@ -80,25 +81,30 @@
                         <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사 전송
                     </label>
                 </div>
-
                 <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                 <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
                 <button id="btn-send">화면에 띄우기 (전송)</button>
             </div>
         </div>
         <div class="disclaimer">
-            ※ 그림은 서버 저장 정책에 따라 방송용으로 사용되며, 악의적인 도배 및 부적절한 그림은 차단될 수 있습니다.
+            ※ 텍스트 도구는 작성 후 레이어 패널에서 [래스터화]를 눌러야 전송 목록에 포함됩니다.
         </div>
     </div>
 
     <div class="app-body">
         <div class="sidebar-left">
             <input type="color" id="color-picker" value="#ffffff">
+            <!-- ✨ 투명도 제어 추가 -->
+            <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range" id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
             <div class="control-group"><label>굵기 <span id="width-val">5</span></label><input type="range" id="line-width" min="1" max="50" value="5"></div>
             <div class="control-group"><label>떨림방지</label><input type="range" id="smoothing-level" min="0" max="20" value="7"></div>
             <div style="width: 80%; height: 1px; background: #444; margin: 5px 0;"></div>
             <button class="tool-btn active-tool" data-tool="pen">펜</button>
             <button class="tool-btn" data-tool="eraser">지우개</button>
+            
+            <!-- ✨ 텍스트 도구 추가 -->
+            <button class="tool-btn" data-tool="text" style="font-size: 16px; font-weight: bold;">T</button>
+
             <div class="shape-container">
                 <button class="tool-btn" id="btn-shape">도형 ▶</button>
                 <div id="shape-flyout" class="shape-flyout">
@@ -168,12 +174,30 @@
         let zoomLevel = 0.5; layerWrapper.style.transform = `scale(${zoomLevel})`; 
 
         let layers = []; let layerCounter = 0; let activeLayerId = null;
-        let isDrawing = false; let currentColor = '#ffffff'; let currentWidth = 5; let currentTool = 'pen'; 
+        let isDrawing = false; let currentWidth = 5; let currentTool = 'pen'; 
         let smX = 0, smY = 0, smW = 0; let lastX = 0, lastY = 0;
         let shapeStartX = 0, shapeStartY = 0; let canvasSnapshot = null; 
         let history = []; let redoStack = []; let currentPath = []; 
 
-        document.getElementById('color-picker').onchange = (e) => { currentColor = e.target.value; };
+        // ✨ 색상과 투명도 합성 로직
+        let currentColorHex = '#ffffff';
+        let currentOpacity = 1;
+        let currentColor = 'rgba(255, 255, 255, 1)';
+
+        function updateCurrentColor() {
+            const r = parseInt(currentColorHex.slice(1, 3), 16);
+            const g = parseInt(currentColorHex.slice(3, 5), 16);
+            const b = parseInt(currentColorHex.slice(5, 7), 16);
+            currentColor = `rgba(${r}, ${g}, ${b}, ${currentOpacity})`;
+        }
+
+        document.getElementById('color-picker').onchange = (e) => { currentColorHex = e.target.value; updateCurrentColor(); };
+        document.getElementById('brush-opacity').oninput = (e) => { 
+            currentOpacity = parseFloat(e.target.value); 
+            document.getElementById('opacity-val').innerText = `${Math.round(currentOpacity * 100)}%`;
+            updateCurrentColor();
+        };
+
         document.getElementById('line-width').oninput = (e) => { 
             currentWidth = parseInt(e.target.value); document.getElementById('width-val').innerText = currentWidth;
         };
@@ -264,14 +288,49 @@
             const cvs = document.createElement('canvas'); cvs.id = lId; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
             layerWrapper.appendChild(cvs);
             const context = cvs.getContext('2d'); context.lineCap = 'round'; context.lineJoin = 'round';
-            layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true });
+            // ✨ type: 'canvas' 명시
+            layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, type: 'canvas' });
             selectLayer(lId); renderLayerUI();
+        }
+
+        // ✨ 텍스트 래스터화(그림화) 로직
+        function rasterizeText(layerId) {
+            const layer = layers.find(l => l.id === layerId);
+            if (!layer || layer.type !== 'text') return;
+            
+            const text = layer.element.value;
+            if (!text.trim()) {
+                layer.element.remove(); layers = layers.filter(l => l.id !== layerId); renderLayerUI(); return;
+            }
+
+            // 그림용 캔버스 생성 및 교체
+            const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
+            cvs.style.zIndex = layer.element.style.zIndex;
+            const ctx = cvs.getContext('2d');
+            
+            ctx.font = `bold ${layer.size}px 'Malgun Gothic', sans-serif`;
+            ctx.fillStyle = layer.color;
+            ctx.textBaseline = 'top';
+            
+            const lines = text.split('\n');
+            let curY = layer.y;
+            for(let line of lines) { ctx.fillText(line, layer.x, curY); curY += layer.size * 1.2; }
+
+            layer.element.replaceWith(cvs); 
+            layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
+
+            // ✨ history에 저장 (서버가 이해할 수 있게 end 부분에 데이터를 숨겨서 보냅니다)
+            history.push({
+                layerId: layer.id, type: 'text', color: layer.color, width: layer.size, 
+                start: { x: layer.x, y: layer.y }, end: { text: text } 
+            });
+            renderLayerUI();
         }
 
         function selectLayer(id) { activeLayerId = id; renderLayerUI(); }
         function toggleLayerVisibility(id) {
             const l = layers.find(layer => layer.id === id);
-            if(l) { l.visible = !l.visible; l.canvas.style.display = l.visible ? 'block' : 'none'; }
+            if(l) { l.visible = !l.visible; l.type === 'canvas' ? l.canvas.style.display = l.visible ? 'block' : 'none' : l.element.style.display = l.visible ? 'block' : 'none'; }
             renderLayerUI();
         }
 
@@ -279,10 +338,25 @@
             layerListDiv.innerHTML = '';
             layers.forEach(l => {
                 const div = document.createElement('div'); div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; div.onclick = () => selectLayer(l.id);
+                
+                const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '5px';
+                
                 const eyeBtn = document.createElement('span'); eyeBtn.innerText = l.visible ? '표시' : '숨김'; eyeBtn.style.cursor = 'pointer'; eyeBtn.style.fontSize = '11px'; eyeBtn.style.color = l.visible ? '#fff' : '#aaa'; eyeBtn.style.border = '1px solid #555'; eyeBtn.style.padding = '2px 5px'; eyeBtn.style.borderRadius = '3px'; eyeBtn.style.backgroundColor = l.visible ? '#007acc' : '#444';
                 eyeBtn.onclick = (e) => { e.stopPropagation(); toggleLayerVisibility(l.id); };
-                const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
-                div.appendChild(eyeBtn); div.appendChild(nameSpan); layerListDiv.appendChild(div);
+                btnGroup.appendChild(eyeBtn);
+
+                // ✨ 텍스트 레이어일 경우 래스터화 버튼 띄우기
+                if (l.type === 'text') {
+                    const rasterBtn = document.createElement('button');
+                    rasterBtn.innerText = '래스터화'; rasterBtn.className = 'raster-btn';
+                    rasterBtn.onclick = (e) => { e.stopPropagation(); rasterizeText(l.id); };
+                    btnGroup.appendChild(rasterBtn);
+                }
+
+                const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; 
+                nameSpan.innerText = l.type === 'text' ? `[T] ${l.name}` : l.name;
+                
+                div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
             });
         }
         document.getElementById('btn-add-layer').onclick = createLayer;
@@ -302,11 +376,38 @@
         }
 
         layerWrapper.addEventListener('pointerdown', (e) => {
-            if (isMovingRoughMode) { isDraggingRough = true; const pos = getPointerPos(e); roughOffsetX = pos.x - roughX; roughOffsetY = pos.y - roughY; return; }
-            const activeLayer = layers.find(l => l.id === activeLayerId);
-            if (!activeLayer || !activeLayer.visible) return; 
+            // ✨ 텍스트 상자를 클릭했을 때는 방해하지 않음
+            if (e.target.tagName.toLowerCase() === 'textarea') return;
 
-            isDrawing = true; const pos = getPointerPos(e);
+            if (isMovingRoughMode) { isDraggingRough = true; const pos = getPointerPos(e); roughOffsetX = pos.x - roughX; roughOffsetY = pos.y - roughY; return; }
+            const pos = getPointerPos(e);
+
+            // ✨ 텍스트 레이어 생성 로직
+            if (currentTool === 'text') {
+                layerCounter++; const lId = `layer_${layerCounter}`;
+                const textArea = document.createElement('textarea');
+                textArea.style.position = 'absolute'; textArea.style.left = `${pos.x}px`; textArea.style.top = `${pos.y}px`;
+                textArea.style.background = 'transparent'; textArea.style.color = currentColor; 
+                textArea.style.fontSize = `${currentWidth * 3}px`; // 굵기에 비례하여 글씨 크기 설정
+                textArea.style.border = '1px dashed #aaa'; textArea.style.outline = 'none';
+                textArea.style.fontFamily = "'Malgun Gothic', sans-serif"; textArea.style.lineHeight = '1.2';
+                textArea.style.resize = 'none'; textArea.style.overflow = 'hidden'; textArea.style.zIndex = layerCounter;
+                textArea.style.fontWeight = 'bold'; textArea.style.whiteSpace = 'pre'; textArea.placeholder = "내용 입력...";
+                
+                textArea.addEventListener('input', function() {
+                    this.style.width = 'auto'; this.style.width = (this.scrollWidth) + 'px';
+                    this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';
+                });
+
+                layerWrapper.appendChild(textArea); textArea.focus();
+                layers.push({ id: lId, name: `텍스트 ${layerCounter}`, type: 'text', element: textArea, visible: true, x: pos.x, y: pos.y, color: currentColor, size: currentWidth * 3 });
+                selectLayer(lId); renderLayerUI(); return;
+            }
+
+            const activeLayer = layers.find(l => l.id === activeLayerId);
+            if (!activeLayer || !activeLayer.visible || activeLayer.type !== 'canvas') return; 
+
+            isDrawing = true; 
             
             if (currentTool === 'pen' || currentTool === 'eraser') {
                 let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
@@ -356,9 +457,9 @@
         });
 
         function redrawCanvas() {
-            layers.forEach(l => l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height));
+            layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
             for (let item of history) {
-                const targetLayer = layers.find(l => l.id === item.layerId); if(!targetLayer) continue;
+                const targetLayer = layers.find(l => l.id === item.layerId); if(!targetLayer || targetLayer.type !== 'canvas') continue;
                 const ctx = targetLayer.ctx;
                 
                 if (item.type === 'path' || !item.type) {
@@ -367,7 +468,17 @@
                         let p1 = item.points[i - 1]; let p2 = item.points[i]; 
                         renderBrushStroke(ctx, p1.x, p1.y, p1.w, p2.x, p2.y, p2.w, item.color, item.color === 'erase');
                     }
-                } else {
+                } 
+                // ✨ 텍스트 다시 그리기
+                else if (item.type === 'text') {
+                    ctx.font = `bold ${item.width}px 'Malgun Gothic', sans-serif`;
+                    ctx.fillStyle = item.color;
+                    ctx.textBaseline = 'top';
+                    const lines = item.end.text.split('\n');
+                    let curY = item.start.y;
+                    for(let line of lines) { ctx.fillText(line, item.start.x, curY); curY += item.width * 1.2; }
+                }
+                else {
                     ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = item.color;
                     if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); } 
                     else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); } 
@@ -392,11 +503,11 @@
             reader.onload = (event) => {
                 try {
                     const data = JSON.parse(event.target.result);
-                    Array.from(layerWrapper.querySelectorAll('canvas')).forEach(c => c.remove());
+                    Array.from(layerWrapper.querySelectorAll('canvas, textarea')).forEach(c => c.remove());
                     layers = []; layerCounter = data.layerCount || 0;
                     data.layersInfo.forEach(lInfo => {
                         const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
-                        layerWrapper.appendChild(cvs); layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: true });
+                        layerWrapper.appendChild(cvs); layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: true, type: 'canvas' });
                     });
                     history = data.drawingHistory || []; redoStack = []; selectLayer(layers[layers.length - 1].id); redrawCanvas(); e.target.value = ''; 
                 } catch(err) { alert("잘못된 형식의 파일입니다."); }
@@ -405,7 +516,7 @@
 
         createLayer(); 
 
-        // --- ✨ 네이버 로그인 및 프로필 연동 로직 ---
+        // --- 네이버 로그인 로직 ---
         let loggedInUser = null; 
         let isDonationEnabled = true; 
         const btnSend = document.getElementById('btn-send');
@@ -413,45 +524,33 @@
         const useProfileCheckbox = document.getElementById('use-profile');
 
         const naverLogin = new naver.LoginWithNaverId({
-            clientId: "vvc6338uO8TYXNMje6Dj", // ✨ 적용된 Client ID
+            clientId: "vvc6338uO8TYXNMje6Dj",
             callbackUrl: window.location.origin + "/draw", 
             isPopup: false,
             loginButton: {color: "green", type: 3, height: 40}
         });
         naverLogin.init();
 
-// 페이지가 로드될 때 로그인 상태 확인
-       // 페이지가 로드될 때 로그인 상태 확인
         window.addEventListener('load', function () {
             naverLogin.getLoginStatus(function (status) {
                 if (status) {
-                    // ✨ 1. 이메일 대신 '무조건' 제공되는 네이버 고유 ID를 가져옵니다. (검수 전에도 100% 성공)
                     const uniqueId = naverLogin.user.getId();
-
                     if (!uniqueId) {
                         document.getElementById('login-container').style.display = 'flex';
                         document.getElementById('donation-container').style.display = 'none';
                         return;
                     }
-
-                    // ✨ 2. 닉네임이나 프사는 검수 전/동의 안함 상태일 경우 안 올 수 있으므로 예외처리
                     const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자";
                     const profileImage = naverLogin.user.getProfileImage() || "";
                     
-                    // ✨ 3. 백엔드가 수정 없이 그대로 이해할 수 있도록 email 자리에 고유 ID를 몰래 넣어줍니다.
                     loggedInUser = { name: name, email: uniqueId, profileImage: profileImage };
                     
-                    // UI 변경
                     document.getElementById('login-container').style.display = 'none';
                     document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
 
-                    // 프사 적용
-                    if (profileImage) {
-                        profilePreview.style.backgroundImage = `url('${profileImage}')`;
-                    } else {
-                        profilePreview.style.backgroundImage = 'none';
-                    }
+                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } 
+                    else { profilePreview.style.backgroundImage = 'none'; }
                 } else {
                     document.getElementById('login-container').style.display = 'flex';
                     document.getElementById('donation-container').style.display = 'none';
@@ -460,10 +559,7 @@
             });
         });
 
-        // 체크박스 클릭 시 미리보기 흐려지게(투명하게) 처리하여 직관성 제공
-        useProfileCheckbox.addEventListener('change', (e) => {
-            profilePreview.style.opacity = e.target.checked ? "1" : "0.3";
-        });
+        useProfileCheckbox.addEventListener('change', (e) => { profilePreview.style.opacity = e.target.checked ? "1" : "0.3"; });
 
         async function checkDonationStatus() {
             try {
@@ -477,12 +573,13 @@
 
         function clearMyCanvas() {
             history = []; redoStack = [];
-            layers.forEach(layer => layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height));
-            redrawCanvas(); 
+            layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); else l.element.remove(); });
+            layers = layers.filter(l => l.type === 'canvas'); // 텍스트 레이어는 완전 파기
+            redrawCanvas(); renderLayerUI();
         }
 
         document.getElementById('btn-clear-all').onclick = () => {
-            if (history.length === 0) return alert("지울 그림이 없습니다.");
+            if (history.length === 0 && layers.filter(l => l.type === 'text').length === 0) return alert("지울 그림이 없습니다.");
             if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
         };
 
@@ -490,19 +587,18 @@
             const title = document.getElementById('drawing-title').value || "제목없음";
             const customName = document.getElementById('custom-nickname').value || loggedInUser.name;
 
+            // 래스터화 되지 않은 텍스트가 있는지 검사
+            const unrasterized = layers.filter(l => l.type === 'text');
+            if (unrasterized.length > 0) {
+                alert("아직 래스터화(그림화) 되지 않은 텍스트 레이어가 있습니다.\n우측 패널에서 [래스터화] 버튼을 눌러주세요.");
+                return;
+            }
+
             if (history.length === 0) { alert("그림을 그려주세요!"); return; }
             if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
 
-            // ✨ 유저가 '프사 전송' 체크를 해제했거나 프사가 없으면 빈 값으로 전송
             const finalProfileImage = (useProfileCheckbox.checked && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
-
-            const payload = { 
-                name: customName, 
-                email: loggedInUser.email, 
-                profileImage: finalProfileImage, 
-                title: title, 
-                drawingData: history 
-            };
+            const payload = { name: customName, email: loggedInUser.email, profileImage: finalProfileImage, title: title, drawingData: history };
 
             try {
                 const res = await fetch(`${API_BASE}/api/submit-drawing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });

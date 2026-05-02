@@ -97,10 +97,23 @@
                 else if (data.type === 'draw_shape') {
                     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
                     ctx.strokeStyle = data.color; ctx.lineWidth = data.width; ctx.globalCompositeOperation = 'source-over';
-                    if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); } 
-                    else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); } 
-                    else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); }
-                    ctx.stroke();
+                    
+                    if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); ctx.stroke(); } 
+                    else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
+                    else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                    
+                    // ✨ 텍스트 엔진 추가 (파이썬 코드 수정 없이 data.end.text 안에 숨겨진 글씨를 꺼내서 씁니다)
+                    else if (data.shape === 'text') {
+                        ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
+                        ctx.fillStyle = data.color;
+                        ctx.textBaseline = 'top';
+                        const lines = data.end.text.split('\n');
+                        let curY = data.start.y;
+                        for(let line of lines) {
+                            ctx.fillText(line, data.start.x, curY);
+                            curY += data.width * 1.2;
+                        }
+                    }
                 }
                 else if (data.type === 'fade_out') { canvas.style.opacity = '0'; }
             };
