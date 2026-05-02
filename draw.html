@@ -421,34 +421,38 @@
         naverLogin.init();
 
 // 페이지가 로드될 때 로그인 상태 확인
+       // 페이지가 로드될 때 로그인 상태 확인
         window.addEventListener('load', function () {
             naverLogin.getLoginStatus(function (status) {
                 if (status) {
-                    const email = naverLogin.user.getEmail();
+                    // ✨ 1. 이메일 대신 '무조건' 제공되는 네이버 고유 ID를 가져옵니다. (검수 전에도 100% 성공)
+                    const uniqueId = naverLogin.user.getId();
 
-                    // ✨ 핵심 해결책: 로그인 상태지만 이메일을 못 가져온 '좀비 상태'일 경우 강제 재로그인 유도
-                    if (email === undefined || email === null || email === '') {
-                        alert("세션이 만료되었거나 이메일 정보가 누락되었습니다. 정상적인 전송을 위해 다시 로그인해주세요.");
-                        naverLogin.reprompt(); // 네이버 동의창 강제로 다시 띄우기
+                    if (!uniqueId) {
+                        document.getElementById('login-container').style.display = 'flex';
+                        document.getElementById('donation-container').style.display = 'none';
                         return;
                     }
 
-                    const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "시청자";
-                    const profileImage = naverLogin.user.getProfileImage();
+                    // ✨ 2. 닉네임이나 프사는 검수 전/동의 안함 상태일 경우 안 올 수 있으므로 예외처리
+                    const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자";
+                    const profileImage = naverLogin.user.getProfileImage() || "";
                     
-                    loggedInUser = { name: name, email: email, profileImage: profileImage };
+                    // ✨ 3. 백엔드가 수정 없이 그대로 이해할 수 있도록 email 자리에 고유 ID를 몰래 넣어줍니다.
+                    loggedInUser = { name: name, email: uniqueId, profileImage: profileImage };
                     
                     // UI 변경
                     document.getElementById('login-container').style.display = 'none';
                     document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
 
-                    // 프사가 있으면 띄우고, 없으면 기본 하얀 원 유지
+                    // 프사 적용
                     if (profileImage) {
                         profilePreview.style.backgroundImage = `url('${profileImage}')`;
+                    } else {
+                        profilePreview.style.backgroundImage = 'none';
                     }
                 } else {
-                    // 로그인이 아예 풀렸거나 에러가 났을 때의 안전장치
                     document.getElementById('login-container').style.display = 'flex';
                     document.getElementById('donation-container').style.display = 'none';
                     loggedInUser = null;
