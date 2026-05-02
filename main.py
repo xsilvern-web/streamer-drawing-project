@@ -132,10 +132,12 @@ async def submit_drawing(request: Request):
 async def process_drawing_queue():
     while True:
         data = await drawing_queue.get()
+        
+        # 1. 시청자 화면에 그리기 시작
         for connection in active_connections:
             try:
                 await connection.send_json({"type": "alert", "name": data.get("name"), "title": data.get("title", ""), "amount": data.get("amount")})
-                await connection.send_json({"type": "clear"})
+                await connection.send_json({"type": "clear"}) # 프론트에서 화면을 깨끗하게 지우고 투명도 원복
                 for item in data.get("drawingData"):
                     item_type = item.get("type", "path")
                     color = item.get("color")
@@ -151,7 +153,18 @@ async def process_drawing_queue():
                         await asyncio.sleep(0.2)
                 await connection.send_json({"type": "done"})
             except Exception as e: pass
-        await asyncio.sleep(5)
+            
+        # ✨ 2. 그림이 다 그려진 후 8초 동안 감상할 시간을 줍니다.
+        await asyncio.sleep(8)
+        
+        # ✨ 3. 8초 뒤, 화면에서 서서히 사라지라는 명령을 보냅니다.
+        for connection in active_connections:
+            try:
+                await connection.send_json({"type": "fade_out"})
+            except: pass
+            
+        # ✨ 4. 서서히 사라지는 애니메이션이 끝날 때까지 1.5초 대기 후, 다음 후원 그림으로 순서를 넘깁니다.
+        await asyncio.sleep(1.5)
         drawing_queue.task_done()
 
 async def auto_delete_old_data():

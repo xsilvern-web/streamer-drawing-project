@@ -6,8 +6,8 @@
     <style>
         body, html {
             margin: 0; padding: 0;
-            width: 1920px; height: 1080px; /* OBS 권장 해상도 */
-            background-color: transparent; /* 배경 투명 (방송에 합성하기 위해) */
+            width: 1920px; height: 1080px;
+            background-color: transparent;
             overflow: hidden;
         }
         
@@ -16,6 +16,9 @@
             position: absolute; top: 0; left: 0;
             width: 100%; height: 100%;
             z-index: 1;
+            /* ✨ 1.5초 동안 서서히 투명해지는 마법의 CSS 애니메이션 */
+            transition: opacity 1.5s ease-in-out;
+            opacity: 1;
         }
 
         /* 🔔 후원 알림창 UI */
@@ -34,10 +37,8 @@
 </head>
 <body>
 
-    <!-- 그림이 그려질 캔버스 영역 -->
     <canvas id="canvas" width="1920" height="1080"></canvas>
 
-    <!-- 후원 알림창 영역 -->
     <div id="alert-container">
         <div>🎉 <span id="donor-name-display" class="highlight"></span> 님이 후원하셨습니다!</div>
         <div style="font-size: 18px; margin-top: 10px;">제목: <span id="drawing-title-display"></span></div>
@@ -45,16 +46,13 @@
     </div>
 
     <script>
-        // 1. 캔버스와 붓(ctx) 준비 (이게 없어서 ctx 에러가 났습니다!)
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
-        // 2. 알림창 UI 요소 가져오기 (이게 없어서 null 에러가 났습니다!)
         const alertContainer = document.getElementById("alert-container");
 
-        // 3. 웹소켓 및 자동 감지 통신 로직
         const API_BASE = window.location.origin;
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         const wsUrl = `${protocol}${window.location.host}/ws`;
@@ -70,20 +68,19 @@
                 const data = JSON.parse(event.data);
                 
                 if (data.type === 'alert') {
-                    // 알림창 텍스트 변경
                     document.getElementById('donor-name-display').innerText = data.name;
                     document.getElementById('drawing-title-display').innerText = data.title;
                     document.getElementById('donation-amount-display').innerText = data.amount + '원';
                     
-                    // 알림창 띄우기 (5초 뒤 숨김)
                     alertContainer.classList.add('show');
-                    setTimeout(() => { alertContainer.classList.remove('show'); }, 5000);
+                    setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); // 알림창은 5초 뒤 먼저 숨김
                     
-                    // 소리 재생
                     const audio = new Audio(`${API_BASE}/coin.mp3`);
-                    audio.play().catch(e => console.log("오디오 재생 에러:", e));
+                    audio.play().catch(e => console.log("오디오 에러:", e));
                 } 
                 else if (data.type === 'clear') {
+                    // ✨ 다음 그림이 그려지기 전에 도화지 투명도를 다시 100%로 살려냅니다.
+                    canvas.style.opacity = '1';
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                 } 
                 else if (data.type === 'start_path') {
@@ -113,20 +110,16 @@
                     }
                     ctx.stroke();
                 }
+                // ✨ 서버에서 fade_out 명령이 오면 캔버스의 투명도를 0으로 만듭니다.
+                else if (data.type === 'fade_out') {
+                    canvas.style.opacity = '0';
+                }
             };
 
-            ws.onclose = () => {
-                console.log("🔴 웹소켓 끊김. 3초 후 재연결 시도...");
-                setTimeout(connectWebSocket, 3000);
-            };
-
-            ws.onerror = (err) => {
-                console.error("❌ 웹소켓 오류:", err);
-                ws.close(); 
-            };
+            ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
+            ws.onerror = (err) => { ws.close(); };
         }
 
-        // 최초 연결 실행
         connectWebSocket();
     </script>
 </body>
