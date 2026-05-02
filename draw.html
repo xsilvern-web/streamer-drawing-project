@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>시청자용 그리기 (전체화면 에디터)</title>
+    <title>시청자용 그리기 (전체화면 프로페셔널 에디터)</title>
     <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js" charset="utf-8"></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #e0e0e0; display: flex; flex-direction: column; overflow: hidden; }
@@ -65,20 +65,21 @@
         .del-btn { background: #d32f2f; color: white; border: none; padding: 4px 6px; font-size: 11px; border-radius: 3px; cursor: pointer; font-weight: bold; margin-left: 2px;}
         .del-btn:hover { background: #f44336; }
 
-        /* 만능 객체 트랜스폼 박스 */
+        /* ✨ 만능 객체 트랜스폼 박스 */
         .transform-box { 
             position: absolute; display: flex; flex-direction: column; 
-            padding: 15px; 
             border: 2px dashed transparent; 
             transform-origin: center center; user-select: none; box-sizing: border-box;
         }
+        /* 패딩으로 계산 꼬이는것 방지, 가상요소로 여백 15px 드래그 영역 생성 */
+        .transform-box::before { content: ''; position: absolute; top: -15px; left: -15px; right: -15px; bottom: -15px; z-index: -1; cursor: move; }
         .transform-box.active { border-color: #007acc; z-index: 999 !important; }
         .transform-box:hover { border-color: rgba(0, 122, 204, 0.5); }
         
         .transform-box .content { width: 100%; height: 100%; cursor: default; }
-        .transform-box.type-text .content { cursor: text; outline: none; white-space: pre-wrap; word-wrap: break-word; }
+        .transform-box.type-text .content { cursor: text; outline: none; white-space: pre-wrap; word-wrap: break-word; padding: 5px; }
         .transform-box.type-text .content:empty:before { content: "텍스트 입력..."; color: #aaa; }
-        .transform-box.type-image .content, .transform-box.type-rough .content { width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none; }
+        .transform-box.type-transform_box .content, .transform-box.type-rough .content { width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none; }
 
         .handle { position: absolute; width: 12px; height: 12px; background: #fff; border: 2px solid #007acc; border-radius: 50%; display: none; z-index: 10; }
         .transform-box.active .handle { display: block; }
@@ -90,6 +91,7 @@
         .rot-nw { top: -20px; left: -20px; } .rot-ne { top: -20px; right: -20px; }
         .rot-sw { bottom: -20px; left: -20px; } .rot-se { bottom: -20px; right: -20px; }
 
+        /* 리치 텍스트 서식 툴바 */
         #floating-toolbar { position: fixed; display: none; background: #252526; padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 2000; gap: 8px; align-items: center; border: 1px solid #444; }
         .toolbar-btn { background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
     </style>
@@ -120,7 +122,7 @@
             </div>
         </div>
         <div class="disclaimer">
-            ※ [조작 커서 ↖] 도구로 객체를 이동/조작하세요. (Shift+크기조절: 비율 유지) / 우측 패널에서 레이어를 드래그하여 순서를 변경할 수 있습니다.
+            ※ [조작 커서 ↖] 도구로 객체를 선택 및 이동하세요. (Shift 누르고 크기조절 시 비율 유지) / <b>일반 그림 조작 단축키: Ctrl + T</b>
         </div>
     </div>
 
@@ -243,7 +245,6 @@
             currentWidth = parseInt(e.target.value); document.getElementById('width-val').innerText = currentWidth;
         };
         
-        // 도구 선택
         const btnShape = document.getElementById('btn-shape');
         const shapeFlyout = document.getElementById('shape-flyout');
         const allToolBtns = document.querySelectorAll('.tool-btn[data-tool]');
@@ -268,7 +269,6 @@
             });
         });
 
-        // 방송 배경 체크
         const toggleBgBtn = document.getElementById('toggle-bg');
         const broadcastBg = document.getElementById('broadcast-bg');
         const offlineText = document.getElementById('offline-text');
@@ -289,7 +289,6 @@
         toggleBgBtn.addEventListener('change', checkLiveStatus);
         checkLiveStatus();
 
-        // 줌 제어
         function updateZoom(newZoom) {
             zoomLevel = Math.max(0.1, Math.min(newZoom, 5.0)); 
             layerWrapper.style.transform = `scale(${zoomLevel})`; zoomText.innerText = `${Math.round(zoomLevel * 100)}%`;
@@ -349,7 +348,7 @@
             wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
             
             if (type !== 'rough') {
-                layers.push({ id: lId, name: `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true });
+                layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true });
                 updateLayersZIndex();
                 selectLayer(lId);
             }
@@ -358,7 +357,6 @@
             return wrapper;
         }
 
-        // 러프 이미지 불러오기 및 투명도 컨트롤
         document.getElementById('rough-file').addEventListener('change', (e) => {
             const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => { 
@@ -384,70 +382,114 @@
             document.getElementById('rough-controls').style.display = 'none';
         });
 
-        // ✨ 텍스트 완벽 래스터화 (XMLSerializer 활용 고화질 압축)
-        function rasterizeText(layerId) {
+        // ✨ 텍스트 & 변형박스 완벽 래스터화 (확정 시 일반 캔버스로 변환하여 펜/지우개 사용가능)
+        function applyTransform(layerId) {
             const layer = layers.find(l => l.id === layerId);
-            if (!layer || layer.type !== 'text') return;
-            
-            const contentDiv = layer.element.querySelector('.content');
-            if (!contentDiv.innerText.trim() || contentDiv.innerText === '텍스트 입력...') {
-                deleteLayer(layerId); return;
+            if (!layer) return;
+
+            if (layer.type === 'text') {
+                const contentDiv = layer.element.querySelector('.content');
+                if (!contentDiv.innerText.trim() || contentDiv.innerText === '텍스트 입력...') { deleteLayer(layerId); return; }
+
+                const w = contentDiv.offsetWidth; const h = contentDiv.offsetHeight;
+                const style = window.getComputedStyle(contentDiv);
+                const cssText = `font-family: ${style.fontFamily}; font-size: ${style.fontSize}; font-weight: ${style.fontWeight}; color: ${style.color}; line-height: ${style.lineHeight}; text-align: ${style.textAlign}; white-space: pre-wrap; word-wrap: break-word; width: ${w}px; height: ${h}px; box-sizing: border-box; margin: 0; padding: 5px; display: block;`;
+
+                const clone = contentDiv.cloneNode(true);
+                clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml'); clone.removeAttribute('contenteditable'); clone.style.cssText = cssText;
+                
+                const scale = window.devicePixelRatio || 2; clone.style.transform = `scale(${scale})`; clone.style.transformOrigin = 'top left';
+
+                const xmlString = new XMLSerializer().serializeToString(clone);
+                const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}"><foreignObject width="100%" height="100%">${xmlString}</foreignObject></svg>`;
+                
+                const img = new Image(); img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+                
+                img.onload = () => {
+                    const box = layer.element; const boxW = box.offsetWidth; const boxH = box.offsetHeight;
+                    const cx = parseFloat(box.style.left) + boxW/2; const cy = parseFloat(box.style.top) + boxH/2;
+                    let angle = 0; const transform = window.getComputedStyle(box).transform;
+                    if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
+                    
+                    const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; 
+                    cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                    
+                    const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
+                    ctx.drawImage(img, -boxW/2, -boxH/2, boxW, boxH); ctx.restore();
+                    
+                    layer.element.replaceWith(cvs); layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
+                    layer.name = layer.name.replace('텍스트', '래스터');
+                    
+                    history.push({ layerId: layer.id, type: 'raster_image', src: img.src, cx: cx, cy: cy, width: boxW, height: boxH, angle: angle });
+                    redoStack = []; updateLayersZIndex(); renderLayerUI();
+                };
+            } 
+            else if (layer.type === 'transform_box') {
+                const box = layer.element; const contentCvs = box.querySelector('canvas.content');
+                const boxW = box.offsetWidth; const boxH = box.offsetHeight;
+                const cx = parseFloat(box.style.left) + boxW/2; const cy = parseFloat(box.style.top) + boxH/2;
+                let angle = 0; const transform = window.getComputedStyle(box).transform;
+                if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
+
+                const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; 
+                cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                
+                const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
+                ctx.drawImage(contentCvs, -boxW/2, -boxH/2, boxW, boxH); ctx.restore();
+                
+                layer.element.replaceWith(cvs); layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
+                layer.name = layer.name.replace('변형 이미지', '래스터');
+
+                history.push({ layerId: layer.id, type: 'clear' }); // 기존 캔버스 초기화 명령
+                history.push({ layerId: layer.id, type: 'raster_image', src: contentCvs.toDataURL(), cx: cx, cy: cy, width: boxW, height: boxH, angle: angle });
+                redoStack = []; updateLayersZIndex(); renderLayerUI();
             }
+        }
 
-            // 정확한 크기 측정 (패딩 제외)
-            const w = contentDiv.offsetWidth; 
-            const h = contentDiv.offsetHeight;
-            
-            // 현재 적용된 스타일 복제
-            const style = window.getComputedStyle(contentDiv);
-            const cssText = `
-                font-family: ${style.fontFamily}; font-size: ${style.fontSize}; font-weight: ${style.fontWeight};
-                color: ${style.color}; line-height: ${style.lineHeight}; text-align: ${style.textAlign};
-                white-space: pre-wrap; word-wrap: break-word; width: ${w}px; height: ${h}px; box-sizing: border-box;
-                margin: 0; padding: 0; display: block;
-            `;
+        // ✨ 캔버스 전체 범위 변환을 위한 Bounding Box 추출 함수
+        function getBoundingBox(ctx, width, height) {
+            const imgData = ctx.getImageData(0, 0, width, height); const data = imgData.data;
+            let minX = width, minY = height, maxX = 0, maxY = 0; let hasPixel = false;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (data[(y * width + x) * 4 + 3] > 0) {
+                        if (x < minX) minX = x; if (x > maxX) maxX = x;
+                        if (y < minY) minY = y; if (y > maxY) maxY = y;
+                        hasPixel = true;
+                    }
+                }
+            }
+            if (!hasPixel) return null;
+            return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+        }
 
-            // HTML을 완전한 XHTML 규격으로 변환
-            const clone = contentDiv.cloneNode(true);
-            clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-            clone.removeAttribute('contenteditable');
-            clone.style.cssText = cssText;
-            
-            // 고해상도 처리
-            const scale = window.devicePixelRatio || 2;
-            clone.style.transform = `scale(${scale})`; clone.style.transformOrigin = 'top left';
+        // ✨ Ctrl+T 기능
+        function activateTransform(layer) {
+            const bbox = getBoundingBox(layer.ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
+            if (!bbox) return alert('변형할 그림이 없습니다.');
 
-            const xmlString = new XMLSerializer().serializeToString(clone);
-            const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}"><foreignObject width="100%" height="100%">${xmlString}</foreignObject></svg>`;
+            const tempCvs = document.createElement('canvas');
+            tempCvs.width = bbox.w; tempCvs.height = bbox.h;
+            tempCvs.getContext('2d').putImageData(layer.ctx.getImageData(bbox.x, bbox.y, bbox.w, bbox.h), 0, 0);
+
+            layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); layer.canvas.remove();
+            delete layer.canvas; delete layer.ctx;
+
+            const box = createTransformObject('transform_box', bbox.x + bbox.w/2, bbox.y + bbox.h/2, bbox.w, bbox.h, tempCvs);
             
-            const img = new Image();
-            img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+            const l = layers.find(l => l.id === layerCounter); // 새로 생성된 임시레이어와 병합
+            layer.type = 'transform_box'; layer.element = box;
+            layers = layers.filter(ll => ll.id !== l.id); // 임시레이어 삭제하고 기존레이어 유지
+            layer.name = "변형 이미지";
             
-            img.onload = () => {
-                const localCvs = document.createElement('canvas'); 
-                localCvs.width = w * scale; localCvs.height = h * scale;
-                localCvs.style.width = '100%'; localCvs.style.height = '100%';
-                localCvs.className = 'content';
-                
-                const ctx = localCvs.getContext('2d'); 
-                ctx.drawImage(img, 0, 0, w * scale, h * scale);
-                
-                contentDiv.replaceWith(localCvs); 
-                layer.type = 'raster_image'; 
-                layer.element.className = layer.element.className.replace('type-text', 'type-image');
-                layer.name = layer.name.replace('텍스트', '래스터');
-                renderLayerUI();
-            };
+            document.querySelector('.tool-btn[data-tool="cursor"]').click();
+            updateLayersZIndex(); renderLayerUI();
         }
 
         function selectLayer(id) { activeLayerId = id; renderLayerUI(); }
         function toggleLayerVisibility(id) {
             const l = layers.find(layer => layer.id === id);
-            if(l) { 
-                l.visible = !l.visible; 
-                if(l.type === 'canvas') l.canvas.style.display = l.visible ? 'block' : 'none';
-                else l.element.style.display = l.visible ? 'flex' : 'none';
-            }
+            if(l) { l.visible = !l.visible; if(l.type === 'canvas') l.canvas.style.display = l.visible ? 'block' : 'none'; else l.element.style.display = l.visible ? 'flex' : 'none'; }
             renderLayerUI();
         }
 
@@ -455,8 +497,7 @@
             if(confirm('이 레이어를 삭제하시겠습니까?')) {
                 const l = layers.find(layer => layer.id === id);
                 if(l) {
-                    if (l.type === 'canvas') l.canvas.remove();
-                    else if (l.element) l.element.remove();
+                    if (l.type === 'canvas') l.canvas.remove(); else if (l.element) l.element.remove();
                     layers = layers.filter(layer => layer.id !== id);
                     if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
                     updateLayersZIndex(); renderLayerUI();
@@ -467,10 +508,7 @@
         function renderLayerUI() {
             layerListDiv.innerHTML = '';
             layers.forEach(l => {
-                const div = document.createElement('div'); 
-                div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; 
-                div.draggable = true; 
-                div.onclick = () => selectLayer(l.id);
+                const div = document.createElement('div'); div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; div.draggable = true; div.onclick = () => selectLayer(l.id);
                 
                 div.ondragstart = (e) => { e.dataTransfer.setData('text/plain', l.id); div.style.opacity = '0.5'; };
                 div.ondragend = (e) => { div.style.opacity = '1'; };
@@ -478,17 +516,9 @@
                 div.ondragleave = (e) => { div.style.borderTop = '1px solid transparent'; };
                 div.ondrop = (e) => {
                     e.preventDefault(); div.style.borderTop = '1px solid transparent';
-                    const draggedId = e.dataTransfer.getData('text/plain');
-                    if(draggedId === l.id) return;
-
-                    const draggedIndex = layers.findIndex(layer => layer.id === draggedId);
-                    const targetIndex = layers.findIndex(layer => layer.id === l.id);
-                    
-                    if (draggedIndex > -1 && targetIndex > -1) {
-                        const [draggedLayer] = layers.splice(draggedIndex, 1);
-                        layers.splice(targetIndex, 0, draggedLayer);
-                        updateLayersZIndex(); renderLayerUI();
-                    }
+                    const draggedId = e.dataTransfer.getData('text/plain'); if(draggedId === l.id) return;
+                    const draggedIndex = layers.findIndex(layer => layer.id === draggedId); const targetIndex = layers.findIndex(layer => layer.id === l.id);
+                    if (draggedIndex > -1 && targetIndex > -1) { const [draggedLayer] = layers.splice(draggedIndex, 1); layers.splice(targetIndex, 0, draggedLayer); updateLayersZIndex(); renderLayerUI(); }
                 };
                 
                 const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '2px';
@@ -497,21 +527,18 @@
                 eyeBtn.onclick = (e) => { e.stopPropagation(); toggleLayerVisibility(l.id); };
                 btnGroup.appendChild(eyeBtn);
 
-                if (l.type === 'text') {
+                if (l.type === 'text' || l.type === 'transform_box') {
                     const rasterBtn = document.createElement('button');
-                    rasterBtn.innerText = '래스터'; rasterBtn.className = 'raster-btn';
-                    rasterBtn.onclick = (e) => { e.stopPropagation(); rasterizeText(l.id); };
+                    rasterBtn.innerText = '확정'; rasterBtn.className = 'raster-btn';
+                    rasterBtn.onclick = (e) => { e.stopPropagation(); applyTransform(l.id); };
                     btnGroup.appendChild(rasterBtn);
                 }
 
-                const delBtn = document.createElement('button');
-                delBtn.innerHTML = '🗑️'; delBtn.className = 'del-btn';
+                const delBtn = document.createElement('button'); delBtn.innerHTML = '🗑️'; delBtn.className = 'del-btn';
                 delBtn.onclick = (e) => { e.stopPropagation(); deleteLayer(l.id); };
                 btnGroup.appendChild(delBtn);
 
-                const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; 
-                nameSpan.innerText = l.name;
-                
+                const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
                 div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
             });
         }
@@ -528,9 +555,7 @@
         }
 
         // --- 마우스 및 조작 이벤트 ---
-        function getPointerPos(e) {
-            const rect = layerWrapper.getBoundingClientRect(); return { x: (e.clientX - rect.left) / zoomLevel, y: (e.clientY - rect.top) / zoomLevel };
-        }
+        function getPointerPos(e) { return { x: (e.clientX - layerWrapper.getBoundingClientRect().left) / zoomLevel, y: (e.clientY - layerWrapper.getBoundingClientRect().top) / zoomLevel }; }
 
         let transformState = null;
 
@@ -540,25 +565,20 @@
             if (currentTool === 'cursor') {
                 const box = e.target.closest('.transform-box');
                 if (box) {
-                    document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
-                    box.classList.add('active');
+                    document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active')); box.classList.add('active');
 
-                    if (e.target === box || e.target.classList.contains('handle') || e.target.classList.contains('rotate-area')) {
-                        const wrapperCx = parseFloat(box.style.left) + box.offsetWidth/2;
-                        const wrapperCy = parseFloat(box.style.top) + box.offsetHeight/2;
-                        let angle = 0;
-                        const transform = window.getComputedStyle(box).transform;
+                    if (e.target === box || e.target.classList.contains('handle') || e.target.classList.contains('rotate-area') || e.target.tagName==='CANVAS' && box.classList.contains('type-transform_box')) {
+                        const wrapperCx = parseFloat(box.style.left) + box.offsetWidth/2; const wrapperCy = parseFloat(box.style.top) + box.offsetHeight/2;
+                        let angle = 0; const transform = window.getComputedStyle(box).transform;
                         if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]) * (180/Math.PI); }
                         
                         transformState = {
-                            target: box, action: e.target === box ? 'move' : e.target.className, 
+                            target: box, action: (e.target === box || e.target.tagName==='CANVAS') ? 'move' : e.target.className, 
                             startX: pos.x, startY: pos.y, startW: box.offsetWidth, startH: box.offsetHeight,
                             startCx: wrapperCx, startCy: wrapperCy, startLeft: parseFloat(box.style.left), startTop: parseFloat(box.style.top), startAngle: angle
                         };
                     }
-                } else {
-                    document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
-                }
+                } else document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
                 return; 
             }
 
@@ -585,8 +605,7 @@
 
             if (transformState && transformState.target) {
                 if (transformState.action === 'move') {
-                    transformState.target.style.left = `${transformState.startLeft + (pos.x - transformState.startX)}px`;
-                    transformState.target.style.top = `${transformState.startTop + (pos.y - transformState.startY)}px`;
+                    transformState.target.style.left = `${transformState.startLeft + (pos.x - transformState.startX)}px`; transformState.target.style.top = `${transformState.startTop + (pos.y - transformState.startY)}px`;
                 } 
                 else if (transformState.action.includes('rot-')) {
                     const angle = Math.atan2(pos.y - transformState.startCy, pos.x - transformState.startCx) * (180 / Math.PI);
@@ -598,30 +617,20 @@
                     const ldx = dx * Math.cos(rad) - dy * Math.sin(rad); const ldy = dx * Math.sin(rad) + dy * Math.cos(rad);
 
                     let dw = 0; let dh = 0;
-                    if (transformState.action.includes('e')) dw = ldx;
-                    if (transformState.action.includes('w')) dw = -ldx;
-                    if (transformState.action.includes('s')) dh = ldy;
-                    if (transformState.action.includes('n')) dh = -ldy;
+                    if (transformState.action.includes('e')) dw = ldx; if (transformState.action.includes('w')) dw = -ldx;
+                    if (transformState.action.includes('s')) dh = ldy; if (transformState.action.includes('n')) dh = -ldy;
 
-                    // ✨ Shift 키 비율 유지 조작
-                    if (e.shiftKey) {
-                        const aspect = transformState.startW / transformState.startH;
-                        if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } 
-                        else { dw = dh * aspect; }
-                    }
+                    if (e.shiftKey) { const aspect = transformState.startW / transformState.startH; if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } else { dw = dh * aspect; } }
 
-                    let newW = transformState.startW + dw; 
-                    let newH = transformState.startH + dh;
+                    let newW = transformState.startW + dw; let newH = transformState.startH + dh;
 
                     if (newW < 50) { newW = 50; dw = 50 - transformState.startW; if(e.shiftKey) dh = dw / aspect; }
                     if (newH < 30) { newH = 30; dh = 30 - transformState.startH; if(e.shiftKey) dw = dh * aspect; }
                     newW = transformState.startW + dw; newH = transformState.startH + dh;
 
                     let localCxShift = 0; let localCyShift = 0;
-                    if (transformState.action.includes('e')) localCxShift = dw/2;
-                    if (transformState.action.includes('w')) localCxShift = -dw/2;
-                    if (transformState.action.includes('s')) localCyShift = dh/2;
-                    if (transformState.action.includes('n')) localCyShift = -dh/2;
+                    if (transformState.action.includes('e')) localCxShift = dw/2; if (transformState.action.includes('w')) localCxShift = -dw/2;
+                    if (transformState.action.includes('s')) localCyShift = dh/2; if (transformState.action.includes('n')) localCyShift = -dh/2;
 
                     const gRad = transformState.startAngle * Math.PI / 180;
                     const globalCx = transformState.startCx + (localCxShift * Math.cos(gRad) - localCyShift * Math.sin(gRad));
@@ -671,13 +680,23 @@
             canvasSnapshot = null;
         });
 
-        function redrawCanvas() {
+        // ✨ 개선된 비동기 화면 갱신 (Undo/Redo 지원)
+        async function redrawCanvas() {
             layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
             for (let item of history) {
                 const targetLayer = layers.find(l => l.id === item.layerId); if(!targetLayer || targetLayer.type !== 'canvas') continue;
                 const ctx = targetLayer.ctx;
                 
-                if (item.type === 'path' || !item.type) {
+                if (item.type === 'clear') {
+                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                }
+                else if (item.type === 'raster_image') {
+                    const img = new Image(); img.src = item.src;
+                    await new Promise(r => { img.onload = r; img.onerror = r; });
+                    ctx.save(); ctx.translate(item.cx, item.cy); ctx.rotate(item.angle);
+                    ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height); ctx.restore();
+                }
+                else if (item.type === 'path' || !item.type) {
                     if (item.points.length < 2) { renderBrushStroke(ctx, item.points[0].x, item.points[0].y, item.points[0].w, item.points[0].x, item.points[0].y, item.points[0].w, item.color, item.color === 'erase'); continue; }
                     for (let i = 1; i < item.points.length; i++) { 
                         let p1 = item.points[i - 1]; let p2 = item.points[i]; 
@@ -695,16 +714,24 @@
         function undo() { if (history.length > 0) { redoStack.push(history.pop()); redrawCanvas(); } }
         function redo() { if (redoStack.length > 0) { history.push(redoStack.pop()); redrawCanvas(); } }
         document.getElementById('btn-undo').onclick = undo; document.getElementById('btn-redo').onclick = redo;
+        
+        // 단축키 제어 (Ctrl+T 포함)
         window.addEventListener('keydown', (e) => { 
             if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); } 
             if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } 
+            if (e.ctrlKey && e.key.toLowerCase() === 't') {
+                e.preventDefault();
+                if (activeLayerId) {
+                    const layer = layers.find(l => l.id === activeLayerId);
+                    if (layer && layer.type === 'canvas') activateTransform(layer);
+                }
+            }
         });
 
-        // ✨ 개선된 세이브/로드
         document.getElementById('btn-save').onclick = () => {
             const savedTransformObjects = [];
             layers.forEach(l => {
-                if (l.type === 'text' || l.type === 'raster_image') {
+                if (l.type === 'text' || l.type === 'transform_box') {
                     const box = l.element;
                     let angle = 0; const transform = window.getComputedStyle(box).transform;
                     if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
@@ -712,7 +739,7 @@
                     const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth/2, y: parseFloat(box.style.top) + box.offsetHeight/2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible };
                     
                     if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; } 
-                    else if (l.type === 'raster_image') { obj.src = box.querySelector('canvas').toDataURL(); }
+                    else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
                     savedTransformObjects.push(obj);
                 }
             });
@@ -727,8 +754,7 @@
             const saveData = { 
                 layerCount: layerCounter, 
                 layersInfo: layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible })), 
-                drawingHistory: history,
-                transformObjects: savedTransformObjects 
+                drawingHistory: history, transformObjects: savedTransformObjects 
             };
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
             const a = document.createElement('a'); a.href = dataStr; a.download = "drawing_advanced.json"; document.body.appendChild(a); a.click(); a.remove();
@@ -753,7 +779,7 @@
                     if (data.transformObjects) {
                         data.transformObjects.forEach(obj => {
                             let customContent = null;
-                            if (obj.type === 'raster_image') {
+                            if (obj.type === 'transform_box') {
                                 customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
                                 const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
                                 customContent.className = 'content';
@@ -789,14 +815,9 @@
         
         document.getElementById('tb-fontsize').addEventListener('change', (e) => {
             if(!activeTextContent) return;
-            document.execCommand('styleWithCSS', false, true);
-            document.execCommand('fontSize', false, '7'); 
+            document.execCommand('styleWithCSS', false, true); document.execCommand('fontSize', false, '7'); 
             const fonts = activeTextContent.querySelectorAll('font[size="7"], span[style*="font-size"]');
-            fonts.forEach(f => {
-                if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large')) {
-                    f.removeAttribute('size'); f.style.fontSize = `${e.target.value}px`;
-                }
-            });
+            fonts.forEach(f => { if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large')) { f.removeAttribute('size'); f.style.fontSize = `${e.target.value}px`; } });
         });
 
         const floatingToolbar = document.getElementById('floating-toolbar');
@@ -806,26 +827,16 @@
                 const range = selection.getRangeAt(0); const container = range.commonAncestorContainer;
                 const textContent = container.nodeType === 3 ? container.parentNode.closest('.content[contenteditable="true"]') : container.closest('.content[contenteditable="true"]');
                 if (textContent) {
-                    activeTextContent = textContent;
-                    const rect = range.getBoundingClientRect();
+                    activeTextContent = textContent; const rect = range.getBoundingClientRect();
                     floatingToolbar.style.display = 'flex'; floatingToolbar.style.left = `${rect.left}px`; floatingToolbar.style.top = `${rect.top - 50}px`;
                 } else { activeTextContent = null; floatingToolbar.style.display = 'none'; }
             } else floatingToolbar.style.display = 'none';
         });
 
-        // 네이버 로그인 및 서버 전송
-        let loggedInUser = null; 
-        let isDonationEnabled = true; 
-        const btnSend = document.getElementById('btn-send');
-        const profilePreview = document.getElementById('profile-preview');
-        const useProfileCheckbox = document.getElementById('use-profile');
+        let loggedInUser = null; let isDonationEnabled = true; 
+        const btnSend = document.getElementById('btn-send'); const profilePreview = document.getElementById('profile-preview'); const useProfileCheckbox = document.getElementById('use-profile');
 
-        const naverLogin = new naver.LoginWithNaverId({
-            clientId: "vvc6338uO8TYXNMje6Dj",
-            callbackUrl: window.location.origin + "/draw", 
-            isPopup: false,
-            loginButton: {color: "green", type: 3, height: 40}
-        });
+        const naverLogin = new naver.LoginWithNaverId({ clientId: "vvc6338uO8TYXNMje6Dj", callbackUrl: window.location.origin + "/draw", isPopup: false, loginButton: {color: "green", type: 3, height: 40} });
         naverLogin.init();
 
         window.addEventListener('load', function () {
@@ -833,16 +844,11 @@
                 if (status) {
                     const uniqueId = naverLogin.user.getId();
                     if (!uniqueId) { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; return; }
-                    const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자";
-                    const profileImage = naverLogin.user.getProfileImage() || "";
-                    
-                    loggedInUser = { name: name, email: uniqueId, profileImage: profileImage };
+                    loggedInUser = { name: naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자", email: uniqueId, profileImage: naverLogin.user.getProfileImage() || "" };
                     
                     document.getElementById('login-container').style.display = 'none'; document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
-
-                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } 
-                    else { profilePreview.style.backgroundImage = 'none'; }
+                    if (loggedInUser.profileImage) profilePreview.style.backgroundImage = `url('${loggedInUser.profileImage}')`; else profilePreview.style.backgroundImage = 'none';
                 } else { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null; }
             });
         });
@@ -856,15 +862,11 @@
                 else { isDonationEnabled = false; btnSend.style.backgroundColor = '#777'; btnSend.style.cursor = 'not-allowed'; btnSend.innerText = '현재 그림 받기가 닫혀있습니다'; }
             } catch (error) { console.log("서버 상태 확인 불가"); }
         }
-
         checkDonationStatus(); setInterval(checkDonationStatus, 10000); 
 
         function clearMyCanvas() {
             history = []; redoStack = [];
-            layers.forEach(l => { 
-                if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); 
-                else if (l.element) l.element.remove(); 
-            });
+            layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); else if (l.element) l.element.remove(); });
             layers = layers.filter(l => l.type === 'canvas'); 
             updateLayersZIndex(); redrawCanvas(); renderLayerUI();
         }
@@ -874,41 +876,22 @@
             if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
         };
 
+        // ✨ 개선된 전송 로직 (래스터화 검증 간소화, history만 전송)
         btnSend.onclick = async () => {
             const title = document.getElementById('drawing-title').value || "제목없음";
             const customName = document.getElementById('custom-nickname').value || (loggedInUser ? loggedInUser.name : "익명");
 
-            if (layers.some(l => l.type === 'text')) return alert("아직 래스터화(그림화) 되지 않은 텍스트 레이어가 있습니다.\n우측 패널에서 [래스터화] 버튼을 눌러주세요.");
+            if (layers.some(l => l.type === 'text' || l.type === 'transform_box')) return alert("확정되지 않은 텍스트/그림 객체가 있습니다.\n우측 패널에서 레이어 [확정] 버튼을 눌러주세요.");
             if (!loggedInUser) return alert("로그인이 필요합니다.");
-
-            let finalPayload = [...history];
-            layers.forEach(l => {
-                if (l.type === 'raster_image') {
-                    const box = l.element;
-                    const w = box.offsetWidth; const h = box.offsetHeight;
-                    const cx = parseFloat(box.style.left) + w/2; const cy = parseFloat(box.style.top) + h/2;
-                    let angle = 0; 
-                    const transform = window.getComputedStyle(box).transform;
-                    if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                    const dataUrl = box.querySelector('canvas').toDataURL('image/png');
-                    finalPayload.push({ type: 'raster_image', src: dataUrl, cx: cx, cy: cy, width: w, height: h, angle: angle });
-                }
-            });
-
-            if (finalPayload.length === 0) return alert("그림을 그려주세요!");
+            if (history.length === 0) return alert("그림을 그려주세요!");
 
             const finalProfileImage = (useProfileCheckbox.checked && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
-            const payload = { name: customName, email: loggedInUser.email, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
+            const payload = { name: customName, email: loggedInUser.email, profileImage: finalProfileImage, title: title, drawingData: history };
 
             try {
                 const res = await fetch(`${API_BASE}/api/submit-drawing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                if (res.ok) { 
-                    alert("전송 성공!"); 
-                    clearMyCanvas(); document.getElementById('drawing-title').value = ''; 
-                } else { 
-                    const data = await res.json(); 
-                    alert("전송 실패: " + (data.detail || "서버 오류")); 
-                }
+                if (res.ok) { alert("전송 성공!"); clearMyCanvas(); document.getElementById('drawing-title').value = ''; } 
+                else { const data = await res.json(); alert("전송 실패: " + (data.detail || "서버 오류")); }
             } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
         };
     </script>
