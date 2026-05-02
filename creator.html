@@ -16,7 +16,7 @@
         .toggle-btn { background: #ff4757; }
         .toggle-btn.on { background: #2ed573; }
         
-        .ban-list { margin-top: 10px; font-size: 13px; color: #ff6b81; }
+        .ban-list { margin-top: 10px; font-size: 13px; color: #ff6b81; white-space: pre-line; }
     </style>
 </head>
 <body>
@@ -32,15 +32,15 @@
         <div class="setting-group">
             <label>2. 최소 후원 금액 설정 (원)</label>
             <div style="display: flex; gap: 10px;">
-                <input type="number" id="min-amount" value="1000">
+                <input type="number" id="min-amount" value="1000" min="0">
                 <button id="btn-save-amount" style="width: 80px;">저장</button>
             </div>
         </div>
 
-<div class="setting-group">
+        <div class="setting-group">
             <label>3. 악성 유저 이메일 차단</label>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="ban-email" placeholder="차단할 이메일 주소 입력 (예: badguy@gmail.com)">
+                <input type="text" id="ban-email" placeholder="차단할 이메일 입력 (예: bad@gmail.com)">
                 <button id="btn-ban" style="width: 80px; background: #ff4757;">차단</button>
             </div>
             <div class="ban-list" id="ban-list-display">차단된 이메일: 없음</div>
@@ -48,55 +48,93 @@
     </div>
 
     <script>
+        // ✨ 마법의 핵심: 현재 접속한 클라우드타입 웹 주소를 자동으로 감지합니다.
         const API_BASE = window.location.origin;
-        // 서버의 현재 설정 불러오기
-        async function fetchSettings() {
-            const res = await fetch('${API_BASE}/api/settings');
-            const data = await res.json();
-            
-            const btnToggle = document.getElementById('btn-toggle');
-            if(data.is_donation_enabled) {
-                btnToggle.className = 'toggle-btn on';
-                btnToggle.innerText = '🟢 현재 상태: 후원 열림 (클릭하여 닫기)';
-            } else {
-                btnToggle.className = 'toggle-btn';
-                btnToggle.innerText = '🔴 현재 상태: 후원 닫힘 (클릭하여 열기)';
-            }
 
-            document.getElementById('min-amount').value = data.min_amount;
-           document.getElementById('ban-list-display').innerText = data.blocked_emails.length > 0 ? `차단된 이메일: \n${data.blocked_emails.join('\n')}` : '차단된 이메일: 없음';
+        // 1. 서버에서 최신 설정 불러오기
+        async function fetchSettings() {
+            try {
+                const res = await fetch(`${API_BASE}/api/settings`);
+                const data = await res.json();
+                
+                const btnToggle = document.getElementById('btn-toggle');
+                if(data.is_donation_enabled) {
+                    btnToggle.className = 'toggle-btn on';
+                    btnToggle.innerText = '🟢 현재 상태: 후원 열림 (클릭하여 닫기)';
+                } else {
+                    btnToggle.className = 'toggle-btn';
+                    btnToggle.innerText = '🔴 현재 상태: 후원 닫힘 (클릭하여 열기)';
+                }
+
+                // 서버에서 가져온 정상적인 숫자만 입력창에 넣도록 안전장치 추가
+                if(data.min_amount !== null && data.min_amount !== undefined) {
+                    document.getElementById('min-amount').value = data.min_amount;
+                }
+                
+                document.getElementById('ban-list-display').innerText = data.blocked_emails.length > 0 ? `차단된 이메일:\n${data.blocked_emails.join('\n')}` : '차단된 이메일: 없음';
+            } catch (error) {
+                console.error("서버와 통신할 수 없습니다.", error);
+            }
         }
 
-        // 후원 켜기/끄기
+        // 2. 후원 열기/닫기 토글
         document.getElementById('btn-toggle').onclick = async () => {
             const isCurrentlyOn = document.getElementById('btn-toggle').classList.contains('on');
-            await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
-            fetchSettings();
+            try {
+                await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
+                fetchSettings(); // 변경 후 화면 즉시 새로고침
+            } catch (error) {
+                alert("상태 변경에 실패했습니다.");
+            }
         };
 
-        // 최소 금액 및 차단 목록 저장
+        // 3. 최소 금액 저장
         document.getElementById('btn-save-amount').onclick = async () => {
-            const amount = document.getElementById('min-amount').value;
-            await fetch('${API_BASE}/api/update-settings', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ min_amount: parseInt(amount) })
-            });
-            alert('최소 금액이 저장되었습니다.');
+            const amountVal = document.getElementById('min-amount').value;
+            const amount = parseInt(amountVal);
+
+            // 빈칸이거나 숫자가 아닌 값이 들어오는 것을 완벽 차단
+            if (isNaN(amount) || amount < 0) {
+                alert("올바른 금액을 입력해주세요.");
+                return;
+            }
+
+            try {
+                await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ min_amount: amount })
+                });
+                alert(`최소 후원 금액이 ${amount}원으로 저장되었습니다.`);
+                fetchSettings(); // 저장 후 화면 즉시 새로고침
+            } catch (error) {
+                alert("서버 연결 문제로 저장에 실패했습니다.");
+            }
         };
 
+        // 4. 이메일 차단
         document.getElementById('btn-ban').onclick = async () => {
             const banEmail = document.getElementById('ban-email').value.trim();
             if(!banEmail || !banEmail.includes('@')) {
                 alert("유효한 이메일 주소를 입력해주세요.");
                 return;
             }
-            await fetch('http://localhost:8000/api/update-settings', {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ add_blocked_email: banEmail })
-            });
-            document.getElementById('ban-email').value = '';
-            fetchSettings();
+
+            try {
+                await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ add_blocked_email: banEmail })
+                });
+                document.getElementById('ban-email').value = '';
+                alert(`${banEmail} 계정이 차단되었습니다.`);
+                fetchSettings();
+            } catch (error) {
+                alert("차단에 실패했습니다.");
+            }
         };
+
+        // 페이지가 열리면 즉시 서버 설정 불러오기
         fetchSettings();
     </script>
 </body>
