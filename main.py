@@ -123,13 +123,24 @@ async def update_settings(data: SettingsUpdate):
         update_db_settings(blocked_emails=blocked)
     return {"message": "success"}
 
+# --- main.py 내의 해당 API 부분만 교체하거나 전체를 참고하세요 ---
+
 @app.get("/api/recent-donations")
 async def get_recent_donations():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
-    rows = conn.cursor().execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
+    # ✨ donor_email(고유 ID) 컬럼을 추가로 가져옵니다.
+    rows = conn.cursor().execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": r["timestamp"]} for r in rows]
+    return [
+        {
+            "id": r["id"], 
+            "name": r["donor_name"], 
+            "email": r["donor_email"], # ✨ 추가됨
+            "title": r["drawing_title"], 
+            "time": r["timestamp"]
+        } for r in rows
+    ]
 
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):

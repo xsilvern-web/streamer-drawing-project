@@ -6,35 +6,36 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #eee; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         
-        /* ✨ 잠금 화면 스타일 */
         #login-gate { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1e1e1e; display: flex; justify-content: center; align-items: center; z-index: 9999; }
         .login-box { background: #2d2d2d; padding: 40px; border-radius: 10px; width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.8); border: 1px solid #444; }
         .login-box h3 { margin-top: 0; color: #007acc; }
         .login-box input { width: 100%; padding: 10px; margin-bottom: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; text-align: center; font-size: 16px; letter-spacing: 2px;}
         .login-box button { background: #007acc; color: white; border: none; padding: 10px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px;}
-        .login-box button:hover { background: #005f9e; }
 
-        /* 대시보드 본체 */
-        .dashboard { display: none; background: #2d2d2d; padding: 30px; border-radius: 10px; width: 600px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .dashboard { display: none; background: #2d2d2d; padding: 30px; border-radius: 10px; width: 650px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h2 { border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-top: 0; }
         .setting-group { margin-bottom: 20px; background: #333; padding: 15px; border-radius: 6px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
         input[type="text"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
         .btn-general { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
-        .btn-general:hover { background: #005f9e; }
         .toggle-btn { background: #ff4757; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
         .toggle-btn.on { background: #2ed573; }
-        .list-item { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 5px; border-radius: 4px; font-size: 13px; }
-        .action-btn { padding: 5px 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; width: auto; }
+
+        .list-item { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 12px; margin-bottom: 8px; border-radius: 4px; font-size: 13px; border-left: 4px solid #444; }
+        .action-btn { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; width: auto; margin-left: 5px;}
         .unban-btn { background: #555; color: white; }
-        .unban-btn:hover { background: #777; }
         .replay-btn { background: #ff9800; color: white; }
-        .replay-btn:hover { background: #e68a00; }
+        
+        /* ✨ 복사 가능한 ID 텍스트 스타일 */
+        .copyable-id { 
+            font-size: 11px; color: #777; background: #1a1a1a; padding: 2px 6px; 
+            border-radius: 3px; cursor: pointer; transition: 0.2s; border: 1px dashed #444;
+        }
+        .copyable-id:hover { color: #007acc; border-color: #007acc; background: #222; }
     </style>
 </head>
 <body>
 
-    <!-- ✨ 1. 잠금 화면 (Login Gate) -->
     <div id="login-gate">
         <div class="login-box">
             <h3>🔒 크리에이터 인증</h3>
@@ -44,7 +45,6 @@
         </div>
     </div>
 
-    <!-- ✨ 2. 실제 대시보드 (비밀번호 맞추기 전까지 숨김 처리) -->
     <div class="dashboard" id="main-dashboard">
         <h2>⚙️ 그림 받기 제어판</h2>
 
@@ -54,97 +54,71 @@
         </div>
 
         <div class="setting-group">
-            <label>2. 악성 유저 이메일 차단</label>
+            <label>2. 악성 유저 이메일/고유ID 차단</label>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="ban-email" placeholder="차단할 이메일 입력">
+                <input type="text" id="ban-email" placeholder="차단할 이메일 또는 고유ID 입력">
                 <button id="btn-ban" class="btn-general" style="width: 80px; background: #ff4757;">차단</button>
             </div>
             <div id="ban-list-container" style="margin-top: 10px;"></div>
         </div>
 
         <div class="setting-group">
-            <label>3. 📺 최근 받은 그림 다시보기 (최대 10개)</label>
+            <label>3. 📺 최근 받은 그림 (클릭 시 ID 복사)</label>
             <div id="recent-donations-container">내역을 불러오는 중...</div>
         </div>
     </div>
 
     <script>
-        // --- ✨ 기본적인 후킹(단축키/우클릭) 방지 로직 ---
-        document.addEventListener('contextmenu', event => event.preventDefault()); // 우클릭 방지
+        document.addEventListener('contextmenu', event => event.preventDefault());
         document.addEventListener('keydown', (e) => {
-            // F12, Ctrl+Shift+I, Ctrl+U 막기
-            if (e.key === 'F12' || 
-               (e.ctrlKey && e.shiftKey && e.key === 'I') || 
-               (e.ctrlKey && e.key === 'u')) {
-                e.preventDefault();
-            }
+            if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I') || (e.ctrlKey && e.key === 'u')) e.preventDefault();
         });
 
         const API_BASE = window.location.origin;
         const loginGate = document.getElementById('login-gate');
         const mainDashboard = document.getElementById('main-dashboard');
 
-        // ✨ 3. 비밀번호 확인 로직
-        // 새로고침해도 다시 입력하지 않도록 세션(브라우저 켤 때까지만 유지)에 저장해둡니다.
-        if (sessionStorage.getItem('creator_auth') === 'true') {
-            openDashboard();
-        }
+        if (sessionStorage.getItem('creator_auth') === 'true') openDashboard();
 
         document.getElementById('btn-login').onclick = async () => {
             const pw = document.getElementById('creator-pw').value;
-            if (!pw) return alert("비밀번호를 입력해주세요.");
-
             try {
                 const res = await fetch(`${API_BASE}/api/verify-password`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ password: pw })
                 });
-
-                if (res.ok) {
-                    sessionStorage.setItem('creator_auth', 'true');
-                    openDashboard();
-                } else {
-                    alert("비밀번호가 틀렸습니다.");
-                }
-            } catch (error) {
-                alert("서버와 통신할 수 없습니다.");
-            }
+                if (res.ok) { sessionStorage.setItem('creator_auth', 'true'); openDashboard(); } 
+                else { alert("비밀번호가 틀렸습니다."); }
+            } catch (error) { alert("서버와 통신할 수 없습니다."); }
         };
 
-        // 엔터키로도 로그인 가능하게 추가
-        document.getElementById('creator-pw').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') {
-                document.getElementById('btn-login').click();
-            }
-        });
-
-        // ✨ 4. 대시보드 열기 및 데이터 로드
         function openDashboard() {
             loginGate.style.display = 'none';
             mainDashboard.style.display = 'block';
             fetchSettings();
             fetchRecentDonations();
-            setInterval(fetchRecentDonations, 10000); // 로그인 이후에만 자동 갱신 시작
+            setInterval(fetchRecentDonations, 10000);
+        }
+
+        // ✨ 텍스트 복사 함수
+        function copyId(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert("ID가 복사되었습니다: " + text + "\n위의 차단 칸에 붙여넣기 하세요.");
+            });
         }
 
         async function fetchSettings() {
             try {
                 const res = await fetch(`${API_BASE}/api/settings`);
                 const data = await res.json();
-                
                 const btnToggle = document.getElementById('btn-toggle');
-                if(data.is_donation_enabled) {
-                    btnToggle.className = 'toggle-btn on'; btnToggle.innerText = '🟢 현재 상태: 열림 (클릭하여 닫기)';
-                } else {
-                    btnToggle.className = 'toggle-btn'; btnToggle.innerText = '🔴 현재 상태: 닫힘 (클릭하여 열기)';
-                }
+                if(data.is_donation_enabled) { btnToggle.className = 'toggle-btn on'; btnToggle.innerText = '🟢 현재 상태: 열림 (클릭하여 닫기)'; } 
+                else { btnToggle.className = 'toggle-btn'; btnToggle.innerText = '🔴 현재 상태: 닫힘 (클릭하여 열기)'; }
                 
                 const banContainer = document.getElementById('ban-list-container');
                 banContainer.innerHTML = '';
-                if(data.blocked_emails.length === 0) {
-                    banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 이메일이 없습니다.</div>';
-                } else {
+                if(data.blocked_emails.length === 0) { banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 리스트가 없습니다.</div>'; } 
+                else {
                     data.blocked_emails.forEach(email => {
                         const item = document.createElement('div');
                         item.className = 'list-item';
@@ -152,14 +126,13 @@
                         banContainer.appendChild(item);
                     });
                 }
-            } catch (error) { console.error("설정 불러오기 실패", error); }
+            } catch (error) { console.error("설정 실패", error); }
         }
 
         async function fetchRecentDonations() {
             try {
                 const res = await fetch(`${API_BASE}/api/recent-donations`);
                 const donations = await res.json();
-                
                 const container = document.getElementById('recent-donations-container');
                 container.innerHTML = '';
                 
@@ -171,17 +144,27 @@
                 donations.forEach(d => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
+                    
+                    // ✨ ID가 있는 경우에만 복사 가능한 버튼 형태로 렌더링 (억지로 추가하지 않음)
+                    const idHtml = d.email ? `<span class="copyable-id" onclick="copyId('${d.email}')" title="클릭하여 ID 복사">ID: ${d.email}</span>` : '';
+
                     item.innerHTML = `
-                        <div><strong>${d.name}</strong> - ${d.title}</div>
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <strong style="font-size: 14px;">${d.name}</strong>
+                                ${idHtml}
+                            </div>
+                            <div style="color: #aaa; font-size: 12px;">제목: ${d.title}</div>
+                        </div>
                         <button class="action-btn replay-btn" onclick="replayDonation(${d.id})">다시보기</button>
                     `;
                     container.appendChild(item);
                 });
-            } catch (error) { console.error("내역 불러오기 실패", error); }
+            } catch (error) { console.error("내역 실패", error); }
         }
 
         async function unbanEmail(email) {
-            if(!confirm(`${email} 계정의 차단을 해제하시겠습니까?`)) return;
+            if(!confirm(`차단을 해제하시겠습니까?`)) return;
             await fetch(`${API_BASE}/api/update-settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ remove_blocked_email: email }) });
             fetchSettings();
         }
@@ -189,8 +172,8 @@
         async function replayDonation(id) {
             try {
                 await fetch(`${API_BASE}/api/replay-donation/${id}`, { method: 'POST' });
-                alert("해당 그림을 방송 화면에 다시 전송했습니다!");
-            } catch (error) { alert("다시보기 재생에 실패했습니다."); }
+                alert("그림을 방송 화면에 다시 전송했습니다!");
+            } catch (error) { alert("다시보기 실패"); }
         }
 
         document.getElementById('btn-toggle').onclick = async () => {
@@ -201,7 +184,7 @@
 
         document.getElementById('btn-ban').onclick = async () => {
             const banEmail = document.getElementById('ban-email').value.trim();
-            if(!banEmail || !banEmail.includes('@')) return alert("유효한 이메일을 입력하세요.");
+            if(!banEmail) return alert("값을 입력하세요.");
             await fetch(`${API_BASE}/api/update-settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ add_blocked_email: banEmail }) });
             document.getElementById('ban-email').value = '';
             fetchSettings();
