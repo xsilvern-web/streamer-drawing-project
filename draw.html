@@ -578,13 +578,12 @@ function handleCredentialResponse(response) {
     btnSend.onclick = async () => {
         const title = document.getElementById('drawing-title').value || "제목없음";
         const amount = document.getElementById('donation-amount').value;
-        const customName = document.getElementById('custom-nickname').value || loggedInUser.name; // ✨ 커스텀 닉네임 읽기
+        const customName = document.getElementById('custom-nickname').value || loggedInUser.name;
 
         if (history.length === 0) { alert("그림을 그려주세요!"); return; }
         if (!amount || parseInt(amount) <= 0) { alert("금액을 입력해주세요!"); return; }
         if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
 
-        // payload에 수정된 닉네임을 전송합니다. (이메일은 계정 식별을 위해 그대로 보냅니다)
         const payload = { 
             name: customName, 
             email: loggedInUser.email, 
@@ -600,10 +599,27 @@ function handleCredentialResponse(response) {
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
+            
             if (res.ok) {
                 alert("전송 성공!");
-                history = [];
-                redraw();
+                
+                // ✨ 1. 그림 데이터(배열) 초기화
+                history = []; 
+                
+                // ✨ 2. 실제 눈에 보이는 캔버스(도화지) 지우기
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // (만약 배경이 흰색이어야 한다면 아래 두 줄의 주석(//)을 지워주세요)
+                // ctx.fillStyle = "white"; 
+                // ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // ✨ 3. 다음 후원을 위해 입력칸도 깔끔하게 비워주기
+                document.getElementById('drawing-title').value = '';
+                document.getElementById('donation-amount').value = '';
+
+                // (기존에 redraw() 함수가 있었다면 호출, 없으면 생략 가능)
+                if (typeof redraw === 'function') redraw(); 
+
             } else {
                 alert("전송 실패: " + data.detail);
             }
@@ -611,7 +627,7 @@ function handleCredentialResponse(response) {
             console.error("Error:", error);
             alert("서버 연결에 실패했습니다.");
         }
-        };
+    };
     </script>
 </body>
 </html>
