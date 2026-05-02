@@ -578,74 +578,72 @@ function handleCredentialResponse(response) {
     }
 
     // 전송 버튼 클릭 로직
-function clearMyCanvas() {
-        history = []; // 그림 기록 배열 완벽 삭제 (만약 코드상 배열 이름이 paths 라면 paths = [] 로 바꿔주세요!)
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height); // 눈에 보이는 물감 물리적으로 제거
-        
-        // 배경색 칠하기 (만약 스케치북 배경이 흰색이어야 한다면 아래 두 줄의 주석 // 을 지워주세요)
-        // ctx.fillStyle = "#ffffff";
-        // ctx.fillRect(0, 0, canvas.width, canvas.height);
+// ✨ [수정됨] 도화지와 데이터를 완벽하게 리셋하는 전용 함수 (레이어 시스템 호환)
+        function clearMyCanvas() {
+            history = []; // 그림 기록 배열 완벽 삭제
+            redoStack = []; // 앞으로 돌리기 기록도 삭제
+            
+            // 모든 레이어를 하나씩 꺼내서 싹 지웁니다. (ctx 오류 해결!)
+            layers.forEach(layer => {
+                layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
+            });
 
-        if (typeof redraw === 'function') {
-            redraw(); // 빈 배열(history)을 강제로 다시 그리게 하여 잔상 완벽 제거
+            redrawCanvas(); // 빈 화면으로 확실하게 다시 그리기 갱신
         }
-    }
 
-    // ✨ 2. 휴지통(전체 삭제) 버튼 클릭 시 작동할 로직 (확인창 포함)
-    document.getElementById('btn-clear-all').onclick = () => {
-        if (history.length === 0) {
-            alert("지울 그림이 없습니다.");
-            return;
-        }
-        // 사용자의 실수를 방지하기 위해 한 번 더 물어봅니다.
-        if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) {
-            clearMyCanvas();
-        }
-    };
-
-    // ✨ 3. 수정된 전송 버튼 클릭 로직
-    btnSend.onclick = async () => {
-        const title = document.getElementById('drawing-title').value || "제목없음";
-        const amount = document.getElementById('donation-amount').value;
-        const customName = document.getElementById('custom-nickname').value || loggedInUser.name;
-
-        if (history.length === 0) { alert("그림을 그려주세요!"); return; }
-        if (!amount || parseInt(amount) <= 0) { alert("금액을 입력해주세요!"); return; }
-        if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
-
-        const payload = { 
-            name: customName, 
-            email: loggedInUser.email, 
-            title: title, 
-            amount: parseInt(amount), 
-            drawingData: history 
+        // ✨ 휴지통(전체 삭제) 버튼 클릭 시 작동할 로직
+        document.getElementById('btn-clear-all').onclick = () => {
+            if (history.length === 0) {
+                alert("지울 그림이 없습니다.");
+                return;
+            }
+            if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) {
+                clearMyCanvas();
+            }
         };
 
-        try {
-            const res = await fetch(`${API_BASE}/api/submit-drawing`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            
-            if (res.ok) {
-                alert("전송 성공!");
+        // ✨ 수정된 전송 버튼 클릭 로직
+        btnSend.onclick = async () => {
+            const title = document.getElementById('drawing-title').value || "제목없음";
+            const amount = document.getElementById('donation-amount').value;
+            const customName = document.getElementById('custom-nickname').value || loggedInUser.name;
+
+            if (history.length === 0) { alert("그림을 그려주세요!"); return; }
+            if (!amount || parseInt(amount) <= 0) { alert("금액을 입력해주세요!"); return; }
+            if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
+
+            const payload = { 
+                name: customName, 
+                email: loggedInUser.email, 
+                title: title, 
+                amount: parseInt(amount), 
+                drawingData: history 
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}/api/submit-drawing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
                 
-                // 전송 성공 시 마법의 리셋 함수 호출! (잔상 완벽 해결)
-                clearMyCanvas(); 
-                
-                // 후원 입력칸 깔끔하게 비우기
-                document.getElementById('drawing-title').value = '';
-                document.getElementById('donation-amount').value = '';
-            } else {
-                alert("전송 실패: " + data.detail);
+                if (res.ok) {
+                    alert("전송 성공!");
+                    
+                    // 전송 성공 시 마법의 리셋 함수 호출! (잔상 완벽 해결)
+                    clearMyCanvas(); 
+                    
+                    // 후원 입력칸 깔끔하게 비우기
+                    document.getElementById('drawing-title').value = '';
+                    document.getElementById('donation-amount').value = '';
+                } else {
+                    alert("전송 실패: " + data.detail);
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("서버 연결에 실패했습니다.");
             }
-        } catch (error) {
-            console.error("Error:", error);
-            alert("서버 연결에 실패했습니다.");
-        }
     };
     </script>
 </body>
