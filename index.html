@@ -19,7 +19,7 @@
         /* ✨ 프로필 사진 스타일 (배경 이미지 활용으로 찌그러짐 방지) */
         #alert-profile-img {
             width: 45px; height: 45px; border-radius: 50%; 
-            background-color: white; /* 기본값: 하얀 원 */
+            background-color: white; 
             background-size: cover; background-position: center;
             border: 2px solid #ff9800;
         }
@@ -28,7 +28,6 @@
 <body>
     <canvas id="canvas" width="1920" height="1080"></canvas>
     
-    <!-- ✨ 알림창 구조 업데이트 -->
     <div id="alert-container">
         <div style="display: flex; align-items: center; gap: 15px;">
             <div id="alert-profile-img"></div>
@@ -69,11 +68,11 @@
             ws.onopen = () => { console.log("🟢 웹소켓 연결 성공!"); };
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                
                 if (data.type === 'alert') {
                     document.getElementById('donor-name-display').innerText = data.name;
                     document.getElementById('drawing-title-display').innerText = data.title;
                     
-                    // ✨ 프로필 사진 유무에 따른 처리 (없으면 하얀 원 유지)
                     if (data.profileImage) {
                         profileImgDiv.style.backgroundImage = `url('${data.profileImage}')`;
                     } else {
@@ -102,17 +101,27 @@
                     else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
                     else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
                     
-                    // ✨ 텍스트 엔진 추가 (파이썬 코드 수정 없이 data.end.text 안에 숨겨진 글씨를 꺼내서 씁니다)
+                    // (하위호환 유지용) 구버전 텍스트 처리
                     else if (data.shape === 'text') {
                         ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
-                        ctx.fillStyle = data.color;
-                        ctx.textBaseline = 'top';
+                        ctx.fillStyle = data.color; ctx.textBaseline = 'top';
                         const lines = data.end.text.split('\n');
                         let curY = data.start.y;
-                        for(let line of lines) {
-                            ctx.fillText(line, data.start.x, curY);
-                            curY += data.width * 1.2;
-                        }
+                        for(let line of lines) { ctx.fillText(line, data.start.x, curY); curY += data.width * 1.2; }
+                    }
+                    
+                    // ✨ 신규 추가: 고급 리치 텍스트 및 회전된 이미지를 화면에 그리는 로직
+                    else if (data.shape === 'raster_image') {
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.save();
+                            ctx.translate(data.cx, data.cy); // 중심점으로 이동
+                            ctx.rotate(data.angle);          // 회전값 적용
+                            // 중심을 기준으로 이미지 렌더링
+                            ctx.drawImage(img, -data.width/2, -data.height/2, data.width, data.height);
+                            ctx.restore();
+                        };
+                        img.src = data.src;
                     }
                 }
                 else if (data.type === 'fade_out') { canvas.style.opacity = '0'; }

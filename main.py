@@ -215,7 +215,11 @@ async def process_drawing_queue():
                             await connection.send_json({"type": "draw_line", "point": point, "color": color})
                             if i % 5 == 0: await asyncio.sleep(0.01)
                     else:
-                        await connection.send_json({"type": "draw_shape", "shape": item_type, "color": color, "width": item.get("width"), "start": item.get("start"), "end": item.get("end")})
+                        # ✨ 고급 텍스트 데이터(이미지, 좌표, 각도 등) 유실 방지를 위해 원본 데이터를 포함하여 전송
+                        payload = item.copy()
+                        payload["type"] = "draw_shape"
+                        payload["shape"] = item_type
+                        await connection.send_json(payload)
                         await asyncio.sleep(0.2)
                 await connection.send_json({"type": "done"})
             except Exception as e: pass
