@@ -130,9 +130,12 @@
     <!-- ✨ 개편된 상단 바 -->
     <div class="app-header">
         <div class="header-top">
-            <div class="header-group">
+                <div class="header-group">
                 <button id="btn-save" class="btn-header">파일 저장</button>
                 <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
+                
+                <!-- ✨ 새로 추가된 휴지통(전체 삭제) 버튼 -->
+                <button id="btn-clear-all" class="btn-header" style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️ 전체 삭제</button>
             </div>
             
             <div class="header-group" id="login-container">
@@ -575,6 +578,33 @@ function handleCredentialResponse(response) {
     }
 
     // 전송 버튼 클릭 로직
+function clearMyCanvas() {
+        history = []; // 그림 기록 배열 완벽 삭제 (만약 코드상 배열 이름이 paths 라면 paths = [] 로 바꿔주세요!)
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height); // 눈에 보이는 물감 물리적으로 제거
+        
+        // 배경색 칠하기 (만약 스케치북 배경이 흰색이어야 한다면 아래 두 줄의 주석 // 을 지워주세요)
+        // ctx.fillStyle = "#ffffff";
+        // ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (typeof redraw === 'function') {
+            redraw(); // 빈 배열(history)을 강제로 다시 그리게 하여 잔상 완벽 제거
+        }
+    }
+
+    // ✨ 2. 휴지통(전체 삭제) 버튼 클릭 시 작동할 로직 (확인창 포함)
+    document.getElementById('btn-clear-all').onclick = () => {
+        if (history.length === 0) {
+            alert("지울 그림이 없습니다.");
+            return;
+        }
+        // 사용자의 실수를 방지하기 위해 한 번 더 물어봅니다.
+        if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) {
+            clearMyCanvas();
+        }
+    };
+
+    // ✨ 3. 수정된 전송 버튼 클릭 로직
     btnSend.onclick = async () => {
         const title = document.getElementById('drawing-title').value || "제목없음";
         const amount = document.getElementById('donation-amount').value;
@@ -603,23 +633,12 @@ function handleCredentialResponse(response) {
             if (res.ok) {
                 alert("전송 성공!");
                 
-                // ✨ 1. 그림 데이터(배열) 초기화
-                history = []; 
+                // 전송 성공 시 마법의 리셋 함수 호출! (잔상 완벽 해결)
+                clearMyCanvas(); 
                 
-                // ✨ 2. 실제 눈에 보이는 캔버스(도화지) 지우기
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                
-                // (만약 배경이 흰색이어야 한다면 아래 두 줄의 주석(//)을 지워주세요)
-                // ctx.fillStyle = "white"; 
-                // ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-                // ✨ 3. 다음 후원을 위해 입력칸도 깔끔하게 비워주기
+                // 후원 입력칸 깔끔하게 비우기
                 document.getElementById('drawing-title').value = '';
                 document.getElementById('donation-amount').value = '';
-
-                // (기존에 redraw() 함수가 있었다면 호출, 없으면 생략 가능)
-                if (typeof redraw === 'function') redraw(); 
-
             } else {
                 alert("전송 실패: " + data.detail);
             }
