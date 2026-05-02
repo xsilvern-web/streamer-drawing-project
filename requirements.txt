@@ -1,5 +1,6 @@
 fastapi
-uvicorn
+uvicorn[standard]
 httpx
 pydantic
 python-dotenv
+websockets

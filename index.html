@@ -61,87 +61,81 @@
     </div>
 
     <script>
-        const API_BASE = window.location.origin
-        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-        const ws = new WebSocket(`${protocol}${window.location.host}/ws`);  
-        const alertContainer = document.getElementById("alert-container");
-        const messageText = document.getElementById("message-text");
+        // --- 기존 코드 삭제 ---
+// const API_BASE = window.location.origin
+// const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+// const ws = new WebSocket(`${protocol}${window.location.host}/ws`);  
+
+// ✨ 새로 교체할 코드 (자동 재연결 기능 탑재)
+const API_BASE = window.location.origin;
+const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const wsUrl = `${protocol}${window.location.host}/ws`;
+
+let ws;
+
+function connectWebSocket() {
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+        console.log("🟢 웹소켓 연결 성공!");
+    };
+
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        // ... (이 아래에 있던 data.type === 'alert' 등의 기존 로직은 그대로 두시면 됩니다!) ...
         
-        const canvas = document.getElementById("drawing-canvas");
-        const ctx = canvas.getContext("2d");
-        
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-
-        let hideTimeout;
-
-        // ✨ 사운드 객체 생성 (같은 폴더에 coin.mp3 파일을 꼭 넣어주세요!)
-        const coinSound = new Audio("coin.mp3");
-        coinSound.volume = 0.5; // 소리 크기 (0.0 ~ 1.0 사이 조절)
-
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+        if (data.type === 'alert') {
+            document.getElementById('donor-name-display').innerText = data.name;
+            document.getElementById('drawing-title-display').innerText = data.title;
+            document.getElementById('donation-amount-display').innerText = data.amount + '원';
             
-            if (data.type === "alert") {
-                // ✨ 알림이 올 때 사운드 재생
-                coinSound.currentTime = 0; // 연속으로 올 때를 대비해 재생 위치 초기화
-                coinSound.play().catch(e => console.log("사운드 재생 에러:", e));
+            alertContainer.classList.add('show');
+            setTimeout(() => { alertContainer.classList.remove('show'); }, 5000);
+            
+            const audio = new Audio(`${API_BASE}/coin.mp3`);
+            audio.play().catch(e => console.log("오디오 재생 에러:", e));
+        } else if (data.type === 'clear') {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        } else if (data.type === 'start_path') {
+            ctx.beginPath();
+            ctx.moveTo(data.point.x, data.point.y);
+            ctx.strokeStyle = data.color === 'erase' ? 'rgba(0,0,0,1)' : data.color;
+            ctx.globalCompositeOperation = data.color === 'erase' ? 'destination-out' : 'source-over';
+        } else if (data.type === 'draw_line') {
+            ctx.lineTo(data.point.x, data.point.y);
+            ctx.lineWidth = data.point.w;
+            ctx.stroke();
+        } else if (data.type === 'draw_shape') {
+            ctx.beginPath();
+            ctx.strokeStyle = data.color;
+            ctx.lineWidth = data.width;
+            ctx.globalCompositeOperation = 'source-over';
+            if (data.shape === 'line') {
+                ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y);
+            } else if (data.shape === 'rect') {
+                ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y);
+            } else if (data.shape === 'circle') {
+                let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y);
+                ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2);
+            }
+            ctx.stroke();
+        }
+    };
 
-                const titleText = data.title ? `[${data.title}] ` : '';
-                messageText.innerText = `🎉 ${data.name}님께서 ${titleText}${data.amount}원을 후원하셨습니다!`;
-                
-                alertContainer.style.display = "block";
-                clearTimeout(hideTimeout);
-            } 
-            else if (data.type === "clear") {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-            }
-            else if (data.type === "start_path") {
-                ctx.beginPath();
-                if (data.color === 'erase') {
-                    ctx.globalCompositeOperation = 'destination-out';
-                    ctx.strokeStyle = 'rgba(0,0,0,1)';
-                } else {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = data.color;
-                }
-                ctx.moveTo(data.point.x, data.point.y);
-            } 
-            else if (data.type === "draw_line") {
-                ctx.lineTo(data.point.x, data.point.y);
-                ctx.lineWidth = data.point.w; 
-                ctx.stroke();
-            }
-            else if (data.type === "draw_shape") {
-                ctx.beginPath();
-                if (data.color === 'erase') {
-                    ctx.globalCompositeOperation = 'destination-out';
-                    ctx.strokeStyle = 'rgba(0,0,0,1)';
-                } else {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = data.color;
-                }
-                ctx.lineWidth = data.width;
+    // ✨ 서버가 끊으면 알아서 다시 연결합니다
+    ws.onclose = () => {
+        console.log("🔴 웹소켓 연결 끊김. 3초 후 재연결 시도...");
+        setTimeout(connectWebSocket, 3000);
+    };
 
-                if (data.shape === 'line') {
-                    ctx.moveTo(data.start.x, data.start.y);
-                    ctx.lineTo(data.end.x, data.end.y);
-                    ctx.stroke();
-                } else if (data.shape === 'rect') {
-                    ctx.strokeRect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y);
-                } else if (data.shape === 'circle') {
-                    let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y);
-                    ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
-            }
-            else if (data.type === "done") {
-                hideTimeout = setTimeout(() => {
-                    alertContainer.style.display = "none";
-                    ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                }, 5000); 
-            }
-        };
+    ws.onerror = (err) => {
+        console.error("❌ 웹소켓 오류:", err);
+        ws.close(); // 에러가 나면 닫아버리고 위의 onclose가 다시 살려내도록 유도
+    };
+}
+
+// 최초 연결 실행
+connectWebSocket();
     </script>
 
 </body>
