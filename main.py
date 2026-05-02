@@ -13,6 +13,8 @@ import uvicorn
 load_dotenv()
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+# ✨ 제가 설정한 기본 비밀번호입니다. (환경변수에서 바꿀 수 있습니다)
+CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD")
 
 app = FastAPI()
 
@@ -23,13 +25,11 @@ app.add_middleware(
 active_connections = []
 drawing_queue = asyncio.Queue()
 
-# ✨ 결제 기능이 빠진 새로운 장부(v3)
 DB_FILE = "donation_ledger_v3.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # 1. 그림 장부 테이블 (amount 삭제)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ledger (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +41,6 @@ def init_db():
             is_played BOOLEAN DEFAULT FALSE
         )
     ''')
-    # 2. 크리에이터 설정 테이블 (min_amount 삭제)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY DEFAULT 1,
@@ -87,6 +86,16 @@ async def serve_creator_page(): return FileResponse("creator.html")
 
 @app.get("/coin.mp3")
 async def serve_coin_sound(): return FileResponse("coin.mp3")
+
+# ✨ 비밀번호 검사 API
+class PasswordCheck(BaseModel):
+    password: str
+
+@app.post("/api/verify-password")
+async def verify_password(data: PasswordCheck):
+    if data.password == CREATOR_PASSWORD:
+        return {"valid": True}
+    raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
 
 @app.get("/api/settings")
 async def get_settings(): 

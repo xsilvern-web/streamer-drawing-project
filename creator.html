@@ -4,15 +4,25 @@
     <meta charset="UTF-8">
     <title>크리에이터 제어판</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #eee; padding: 40px; display: flex; justify-content: center; }
-        .dashboard { background: #2d2d2d; padding: 30px; border-radius: 10px; width: 600px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #eee; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        
+        /* ✨ 잠금 화면 스타일 */
+        #login-gate { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1e1e1e; display: flex; justify-content: center; align-items: center; z-index: 9999; }
+        .login-box { background: #2d2d2d; padding: 40px; border-radius: 10px; width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.8); border: 1px solid #444; }
+        .login-box h3 { margin-top: 0; color: #007acc; }
+        .login-box input { width: 100%; padding: 10px; margin-bottom: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; text-align: center; font-size: 16px; letter-spacing: 2px;}
+        .login-box button { background: #007acc; color: white; border: none; padding: 10px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px;}
+        .login-box button:hover { background: #005f9e; }
+
+        /* 대시보드 본체 */
+        .dashboard { display: none; background: #2d2d2d; padding: 30px; border-radius: 10px; width: 600px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h2 { border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-top: 0; }
         .setting-group { margin-bottom: 20px; background: #333; padding: 15px; border-radius: 6px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
         input[type="text"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
-        button { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
-        button:hover { background: #005f9e; }
-        .toggle-btn { background: #ff4757; }
+        .btn-general { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        .btn-general:hover { background: #005f9e; }
+        .toggle-btn { background: #ff4757; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
         .toggle-btn.on { background: #2ed573; }
         .list-item { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 5px; border-radius: 4px; font-size: 13px; }
         .action-btn { padding: 5px 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; width: auto; }
@@ -24,7 +34,18 @@
 </head>
 <body>
 
-    <div class="dashboard">
+    <!-- ✨ 1. 잠금 화면 (Login Gate) -->
+    <div id="login-gate">
+        <div class="login-box">
+            <h3>🔒 크리에이터 인증</h3>
+            <p style="font-size: 12px; color: #aaa; margin-bottom: 20px;">권한이 있는 크리에이터만<br>접근할 수 있습니다.</p>
+            <input type="password" id="creator-pw" placeholder="비밀번호 입력">
+            <button id="btn-login">제어판 열기</button>
+        </div>
+    </div>
+
+    <!-- ✨ 2. 실제 대시보드 (비밀번호 맞추기 전까지 숨김 처리) -->
+    <div class="dashboard" id="main-dashboard">
         <h2>⚙️ 그림 받기 제어판</h2>
 
         <div class="setting-group">
@@ -36,7 +57,7 @@
             <label>2. 악성 유저 이메일 차단</label>
             <div style="display: flex; gap: 10px;">
                 <input type="text" id="ban-email" placeholder="차단할 이메일 입력">
-                <button id="btn-ban" style="width: 80px; background: #ff4757;">차단</button>
+                <button id="btn-ban" class="btn-general" style="width: 80px; background: #ff4757;">차단</button>
             </div>
             <div id="ban-list-container" style="margin-top: 10px;"></div>
         </div>
@@ -48,7 +69,64 @@
     </div>
 
     <script>
+        // --- ✨ 기본적인 후킹(단축키/우클릭) 방지 로직 ---
+        document.addEventListener('contextmenu', event => event.preventDefault()); // 우클릭 방지
+        document.addEventListener('keydown', (e) => {
+            // F12, Ctrl+Shift+I, Ctrl+U 막기
+            if (e.key === 'F12' || 
+               (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+               (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+            }
+        });
+
         const API_BASE = window.location.origin;
+        const loginGate = document.getElementById('login-gate');
+        const mainDashboard = document.getElementById('main-dashboard');
+
+        // ✨ 3. 비밀번호 확인 로직
+        // 새로고침해도 다시 입력하지 않도록 세션(브라우저 켤 때까지만 유지)에 저장해둡니다.
+        if (sessionStorage.getItem('creator_auth') === 'true') {
+            openDashboard();
+        }
+
+        document.getElementById('btn-login').onclick = async () => {
+            const pw = document.getElementById('creator-pw').value;
+            if (!pw) return alert("비밀번호를 입력해주세요.");
+
+            try {
+                const res = await fetch(`${API_BASE}/api/verify-password`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ password: pw })
+                });
+
+                if (res.ok) {
+                    sessionStorage.setItem('creator_auth', 'true');
+                    openDashboard();
+                } else {
+                    alert("비밀번호가 틀렸습니다.");
+                }
+            } catch (error) {
+                alert("서버와 통신할 수 없습니다.");
+            }
+        };
+
+        // 엔터키로도 로그인 가능하게 추가
+        document.getElementById('creator-pw').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-login').click();
+            }
+        });
+
+        // ✨ 4. 대시보드 열기 및 데이터 로드
+        function openDashboard() {
+            loginGate.style.display = 'none';
+            mainDashboard.style.display = 'block';
+            fetchSettings();
+            fetchRecentDonations();
+            setInterval(fetchRecentDonations, 10000); // 로그인 이후에만 자동 갱신 시작
+        }
 
         async function fetchSettings() {
             try {
@@ -128,8 +206,6 @@
             document.getElementById('ban-email').value = '';
             fetchSettings();
         };
-
-        fetchSettings(); fetchRecentDonations(); setInterval(fetchRecentDonations, 10000);
     </script>
 </body>
 </html>
