@@ -50,7 +50,6 @@
         .panel-section { background: #333; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
         .panel-title { font-size: 12px; color: #aaa; font-weight: bold; margin-bottom: 5px; border-bottom: 1px solid #444; padding-bottom: 5px; }
         
-        /* 레이어 아이템 드래그 앤 드롭 스타일 */
         .layer-item { display: flex; justify-content: space-between; align-items: center; background: #444; padding: 8px; border-radius: 4px; border: 1px solid transparent; cursor: grab; }
         .layer-item:active { cursor: grabbing; }
         .layer-item.active { background: #094771; border-color: #007acc; }
@@ -91,7 +90,6 @@
         .rot-nw { top: -20px; left: -20px; } .rot-ne { top: -20px; right: -20px; }
         .rot-sw { bottom: -20px; left: -20px; } .rot-se { bottom: -20px; right: -20px; }
 
-        /* 리치 텍스트 서식 툴바 */
         #floating-toolbar { position: fixed; display: none; background: #252526; padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 2000; gap: 8px; align-items: center; border: 1px solid #444; }
         .toolbar-btn { background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
     </style>
@@ -122,11 +120,10 @@
             </div>
         </div>
         <div class="disclaimer">
-            ※ [조작 커서 ↖] 도구로 객체의 점선(테두리 여백)을 잡아 이동하고 조작하세요. 우측 패널에서 레이어를 드래그하여 순서를 변경할 수 있습니다.
+            ※ [조작 커서 ↖] 도구로 객체를 이동/조작하세요. (Shift+크기조절: 비율 유지) / 우측 패널에서 레이어를 드래그하여 순서를 변경할 수 있습니다.
         </div>
     </div>
 
-    <!-- ✨ 리치 텍스트 서식 툴바 (글씨 크기 입력 추가) -->
     <div id="floating-toolbar">
         <select id="tb-fontfamily" style="background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;">
             <option value="'Malgun Gothic', sans-serif">맑은 고딕</option>
@@ -150,7 +147,6 @@
 
             <button class="tool-btn" data-tool="pen">펜</button>
             <button class="tool-btn" data-tool="eraser">지우개</button>
-            
             <button class="tool-btn" data-tool="text" style="font-size: 16px; font-weight: bold;">T</button>
 
             <div class="shape-container">
@@ -192,7 +188,10 @@
                     📁 이미지 불러오기
                     <input type="file" id="rough-file" accept="image/*" style="display: none;">
                 </label>
+                <!-- ✨ 러프 이미지 투명도 컨트롤 복원 -->
                 <div id="rough-controls" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <label style="font-size: 11px; color: #aaa; display: flex; justify-content: space-between;">투명도 <span id="rough-opacity-val">50%</span></label>
+                    <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5" style="width: 100%;">
                     <button id="btn-delete-rough" class="sys-btn" style="background: #ff4757; border-color: #c0392b;">🗑️ 모든 러프 삭제</button>
                 </div>
             </div>
@@ -288,7 +287,6 @@
                 layerWrapper.classList.remove('checker-bg');
             } catch (error) { broadcastBg.style.display = 'block'; offlineText.style.display = 'none'; layerWrapper.classList.remove('checker-bg'); }
         }
-
         toggleBgBtn.addEventListener('change', checkLiveStatus);
         checkLiveStatus();
 
@@ -303,7 +301,6 @@
             if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
         }, { passive: false });
 
-        // ✨ 레이어 Z-index 업데이트 함수 (순서 변경 및 생성 시 호출)
         function updateLayersZIndex() {
             layers.forEach((l, index) => {
                 const z = index + 1;
@@ -312,7 +309,6 @@
             });
         }
 
-        // 캔버스 레이어 생성
         function createLayer() {
             layerCounter++; const lId = `layer_${layerCounter}`;
             const cvs = document.createElement('canvas'); cvs.id = lId; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
@@ -325,7 +321,6 @@
             selectLayer(lId); renderLayerUI();
         }
 
-        // 만능 객체 트랜스폼 박스 생성
         function createTransformObject(type, x, y, width, height, customContent = null) {
             layerCounter++; const lId = `layer_${layerCounter}`;
             
@@ -334,7 +329,6 @@
             wrapper.style.left = `${x - width/2}px`; wrapper.style.top = `${y - height/2}px`;
             wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`; 
             
-            // 러프 이미지는 z-index 0으로 배경처럼 배치
             if (type === 'rough') wrapper.style.zIndex = 0; 
             
             let content;
@@ -365,18 +359,25 @@
             return wrapper;
         }
 
-        // 러프 이미지 불러오기
+        // 러프 이미지 불러오기 및 투명도 컨트롤
         document.getElementById('rough-file').addEventListener('change', (e) => {
             const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => { 
                 const img = new Image(); img.src = event.target.result;
                 img.onload = () => {
                     const scale = Math.min(600 / img.width, 600 / img.height, 1);
-                    createTransformObject('rough', CANVAS_WIDTH/2, CANVAS_HEIGHT/2, img.width * scale, img.height * scale, img);
+                    const wrapper = createTransformObject('rough', CANVAS_WIDTH/2, CANVAS_HEIGHT/2, img.width * scale, img.height * scale, img);
+                    wrapper.querySelector('.content').style.opacity = document.getElementById('rough-opacity').value;
                     document.getElementById('rough-controls').style.display = 'flex';
                 }
             };
             reader.readAsDataURL(file); e.target.value = ''; 
+        });
+
+        document.getElementById('rough-opacity').addEventListener('input', (e) => {
+            const val = e.target.value;
+            document.getElementById('rough-opacity-val').innerText = `${Math.round(val * 100)}%`;
+            document.querySelectorAll('.transform-box.type-rough .content').forEach(img => { img.style.opacity = val; });
         });
 
         document.getElementById('btn-delete-rough').addEventListener('click', () => {
@@ -424,7 +425,6 @@
             renderLayerUI();
         }
 
-        // ✨ 레이어 삭제 기능 구현
         function deleteLayer(id) {
             if(confirm('이 레이어를 삭제하시겠습니까?')) {
                 const l = layers.find(layer => layer.id === id);
@@ -439,25 +439,17 @@
             }
         }
 
-        // ✨ 레이어 UI 렌더링 (드래그 앤 드롭 정렬 추가)
         function renderLayerUI() {
             layerListDiv.innerHTML = '';
             layers.forEach(l => {
                 const div = document.createElement('div'); 
                 div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; 
-                div.draggable = true; // 드래그 가능 속성 활성화
+                div.draggable = true; 
                 div.onclick = () => selectLayer(l.id);
                 
-                // --- 드래그 앤 드롭 이벤트 ---
-                div.ondragstart = (e) => {
-                    e.dataTransfer.setData('text/plain', l.id);
-                    div.style.opacity = '0.5';
-                };
+                div.ondragstart = (e) => { e.dataTransfer.setData('text/plain', l.id); div.style.opacity = '0.5'; };
                 div.ondragend = (e) => { div.style.opacity = '1'; };
-                div.ondragover = (e) => { 
-                    e.preventDefault(); 
-                    div.style.borderTop = '2px solid #007acc'; // 시각적 피드백
-                };
+                div.ondragover = (e) => { e.preventDefault(); div.style.borderTop = '2px solid #007acc'; };
                 div.ondragleave = (e) => { div.style.borderTop = '1px solid transparent'; };
                 div.ondrop = (e) => {
                     e.preventDefault();
@@ -489,7 +481,6 @@
                     btnGroup.appendChild(rasterBtn);
                 }
 
-                // 삭제 버튼 추가
                 const delBtn = document.createElement('button');
                 delBtn.innerHTML = '🗑️'; delBtn.className = 'del-btn';
                 delBtn.onclick = (e) => { e.stopPropagation(); deleteLayer(l.id); };
@@ -583,21 +574,39 @@
                     const dx = pos.x - transformState.startX; const dy = pos.y - transformState.startY;
                     const ldx = dx * Math.cos(rad) - dy * Math.sin(rad); const ldy = dx * Math.sin(rad) + dy * Math.cos(rad);
 
-                    let newW = transformState.startW; let newH = transformState.startH;
-                    let localCxShift = 0; let localCyShift = 0;
+                    let dw = 0; let dh = 0;
+                    if (transformState.action.includes('e')) dw = ldx;
+                    if (transformState.action.includes('w')) dw = -ldx;
+                    if (transformState.action.includes('s')) dh = ldy;
+                    if (transformState.action.includes('n')) dh = -ldy;
 
-                    if (transformState.action.includes('e')) { newW += ldx; localCxShift += ldx/2; }
-                    if (transformState.action.includes('w')) { newW -= ldx; localCxShift += ldx/2; }
-                    if (transformState.action.includes('s')) { newH += ldy; localCyShift += ldy/2; }
-                    if (transformState.action.includes('n')) { newH -= ldy; localCyShift += ldy/2; }
+                    // ✨ Shift 키를 눌렀을 때 비율 유지 크기 조절
+                    if (e.shiftKey) {
+                        const aspect = transformState.startW / transformState.startH;
+                        if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } 
+                        else { dw = dh * aspect; }
+                    }
+
+                    let newW = transformState.startW + dw; 
+                    let newH = transformState.startH + dh;
+
+                    // 최소 크기 제한 밑 뒤집힘 방지
+                    if (newW < 50) { newW = 50; dw = 50 - transformState.startW; if(e.shiftKey) dh = dw / aspect; }
+                    if (newH < 30) { newH = 30; dh = 30 - transformState.startH; if(e.shiftKey) dw = dh * aspect; }
+                    newW = transformState.startW + dw; newH = transformState.startH + dh;
+
+                    let localCxShift = 0; let localCyShift = 0;
+                    if (transformState.action.includes('e')) localCxShift = dw/2;
+                    if (transformState.action.includes('w')) localCxShift = -dw/2;
+                    if (transformState.action.includes('s')) localCyShift = dh/2;
+                    if (transformState.action.includes('n')) localCyShift = -dh/2;
 
                     const gRad = transformState.startAngle * Math.PI / 180;
                     const globalCx = transformState.startCx + (localCxShift * Math.cos(gRad) - localCyShift * Math.sin(gRad));
                     const globalCy = transformState.startCy + (localCxShift * Math.sin(gRad) + localCyShift * Math.cos(gRad));
 
-                    const finalW = Math.max(50, newW); const finalH = Math.max(30, newH);
-                    transformState.target.style.width = `${finalW}px`; transformState.target.style.height = `${finalH}px`;
-                    transformState.target.style.left = `${globalCx - finalW/2}px`; transformState.target.style.top = `${globalCy - finalH/2}px`;
+                    transformState.target.style.width = `${newW}px`; transformState.target.style.height = `${newH}px`;
+                    transformState.target.style.left = `${globalCx - newW/2}px`; transformState.target.style.top = `${globalCy - newH/2}px`;
                 }
                 return;
             }
@@ -640,7 +649,6 @@
             canvasSnapshot = null;
         });
 
-        // --- 기존 기능: Undo/Redo (단축키 유지) ---
         function redrawCanvas() {
             layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
             for (let item of history) {
@@ -670,13 +678,42 @@
             if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } 
         });
 
-        // --- 기존 기능: 세이브/로드 ---
+        // ✨ 개선된 파일 저장 (텍스트와 이미지 데이터 전부 완벽하게 저장)
         document.getElementById('btn-save').onclick = () => {
-            const saveData = { layerCount: layerCounter, layersInfo: layers.map(l => ({ id: l.id, name: l.name })), drawingHistory: history };
+            const savedTransformObjects = [];
+            layers.forEach(l => {
+                if (l.type === 'text' || l.type === 'raster_image') {
+                    const box = l.element;
+                    let angle = 0; const transform = window.getComputedStyle(box).transform;
+                    if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
+                    
+                    const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth/2, y: parseFloat(box.style.top) + box.offsetHeight/2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible };
+                    
+                    if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; } 
+                    else if (l.type === 'raster_image') { obj.src = box.querySelector('canvas').toDataURL(); }
+                    savedTransformObjects.push(obj);
+                }
+            });
+            
+            // 참고용 러프 이미지도 저장
+            document.querySelectorAll('.transform-box.type-rough').forEach((box, i) => {
+                let angle = 0; const transform = window.getComputedStyle(box).transform;
+                if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
+                const img = box.querySelector('img');
+                savedTransformObjects.push({ id: 'rough_' + i, name: '참고이미지', type: 'rough', x: parseFloat(box.style.left) + box.offsetWidth/2, y: parseFloat(box.style.top) + box.offsetHeight/2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, src: img.src });
+            });
+
+            const saveData = { 
+                layerCount: layerCounter, 
+                layersInfo: layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible })), 
+                drawingHistory: history,
+                transformObjects: savedTransformObjects 
+            };
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
             const a = document.createElement('a'); a.href = dataStr; a.download = "drawing_advanced.json"; document.body.appendChild(a); a.click(); a.remove();
         };
 
+        // ✨ 개선된 파일 불러오기 (텍스트, 러프, 래스터 모두 복구)
         document.getElementById('file-input').addEventListener('change', (e) => {
             const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => {
@@ -684,26 +721,52 @@
                     const data = JSON.parse(event.target.result);
                     Array.from(layerWrapper.querySelectorAll('canvas, .transform-box')).forEach(c => c.remove());
                     layers = []; layerCounter = data.layerCount || 0;
+                    
                     data.layersInfo.forEach(lInfo => {
                         const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
                         cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
-                        layerWrapper.appendChild(cvs); layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: true, type: 'canvas' });
+                        cvs.style.display = lInfo.visible === false ? 'none' : 'block';
+                        layerWrapper.appendChild(cvs); 
+                        layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, type: 'canvas' });
                     });
+                    
+                    if (data.transformObjects) {
+                        data.transformObjects.forEach(obj => {
+                            let customContent = null;
+                            if (obj.type === 'raster_image') {
+                                customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
+                                const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                                customContent.className = 'content';
+                            } else if (obj.type === 'rough') {
+                                customContent = new Image(); customContent.src = obj.src; customContent.className = 'content';
+                                customContent.style.opacity = document.getElementById('rough-opacity').value;
+                                document.getElementById('rough-controls').style.display = 'flex';
+                            }
+                            
+                            const box = createTransformObject(obj.type, obj.x, obj.y, obj.width, obj.height, customContent);
+                            box.style.transform = `rotate(${obj.angle}rad)`; box.style.zIndex = obj.zIndex;
+                            
+                            if (obj.type === 'text') { box.querySelector('.content').innerHTML = obj.html || "텍스트 입력..."; }
+                            if (obj.type !== 'rough') {
+                                const l = layers.find(l => l.element === box);
+                                if (l) { l.id = obj.id; l.name = obj.name; l.visible = obj.visible !== false; box.style.display = l.visible ? 'flex' : 'none'; }
+                            }
+                        });
+                    }
+
                     history = data.drawingHistory || []; redoStack = []; 
-                    updateLayersZIndex();
-                    selectLayer(layers[layers.length - 1].id); redrawCanvas(); e.target.value = ''; 
+                    updateLayersZIndex(); if(layers.length > 0) selectLayer(layers[layers.length - 1].id); redrawCanvas(); renderLayerUI(); e.target.value = ''; 
                 } catch(err) { alert("잘못된 형식의 파일입니다."); }
             }; reader.readAsText(file); 
         });
 
-        // ✨ 툴바 서식 적용 및 글씨 크기(px) 변경 로직
+        // 리치 텍스트 서식 툴바 로직
         let activeTextContent = null;
         document.getElementById('tb-color').addEventListener('input', (e) => document.execCommand('foreColor', false, e.target.value));
         document.getElementById('tb-bold').onclick = () => document.execCommand('bold', false, null);
         document.getElementById('tb-italic').onclick = () => document.execCommand('italic', false, null);
         document.getElementById('tb-fontfamily').addEventListener('change', (e) => document.execCommand('fontName', false, e.target.value));
         
-        // 글씨 크기 적용 (강제 인라인 스타일 변환 기법)
         document.getElementById('tb-fontsize').addEventListener('change', (e) => {
             if(!activeTextContent) return;
             document.execCommand('styleWithCSS', false, true);
@@ -711,8 +774,7 @@
             const fonts = activeTextContent.querySelectorAll('font[size="7"], span[style*="font-size"]');
             fonts.forEach(f => {
                 if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large')) {
-                    f.removeAttribute('size');
-                    f.style.fontSize = `${e.target.value}px`;
+                    f.removeAttribute('size'); f.style.fontSize = `${e.target.value}px`;
                 }
             });
         });
@@ -727,16 +789,13 @@
                     activeTextContent = textContent;
                     const rect = range.getBoundingClientRect();
                     floatingToolbar.style.display = 'flex'; floatingToolbar.style.left = `${rect.left}px`; floatingToolbar.style.top = `${rect.top - 50}px`;
-                } else {
-                    activeTextContent = null;
-                    floatingToolbar.style.display = 'none';
-                }
+                } else { activeTextContent = null; floatingToolbar.style.display = 'none'; }
             } else floatingToolbar.style.display = 'none';
         });
 
         createLayer(); 
 
-        // --- 네이버 로그인 및 서버 전송 (유지) ---
+        // --- 네이버 로그인 및 서버 전송 로직 유지 ---
         let loggedInUser = null; 
         let isDonationEnabled = true; 
         const btnSend = document.getElementById('btn-send');
@@ -763,8 +822,12 @@
                     
                     document.getElementById('login-container').style.display = 'none'; document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
-                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } else { profilePreview.style.backgroundImage = 'none'; }
-                } else { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null; }
+
+                    if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } 
+                    else { profilePreview.style.backgroundImage = 'none'; }
+                } else {
+                    document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null;
+                }
             });
         });
 
@@ -810,10 +873,7 @@
                     const cx = parseFloat(box.style.left) + w/2; const cy = parseFloat(box.style.top) + h/2;
                     let angle = 0; 
                     const transform = window.getComputedStyle(box).transform;
-                    if(transform !== 'none') { 
-                        const vals = transform.split('(')[1].split(')')[0].split(','); 
-                        angle = Math.atan2(vals[1], vals[0]); 
-                    }
+                    if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
                     const dataUrl = box.querySelector('canvas').toDataURL('image/png');
                     finalPayload.push({ type: 'raster_image', src: dataUrl, cx: cx, cy: cy, width: w, height: h, angle: angle });
                 }
