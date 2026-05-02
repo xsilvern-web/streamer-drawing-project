@@ -537,7 +537,7 @@
 
         async function checkDonationStatus() {
             try {
-                const response = await fetch('${API_BASE}/api/settings');
+                const response = await fetch(`${API_BASE}/api/settings`);
                 const data = await response.json();
                 
                 if (data.is_donation_enabled) {
@@ -579,7 +579,7 @@
             };
 
             try {
-                const response = await fetch('${API_BASE}/api/submit-drawing', {
+                const response = await fetch(`${API_BASE}/api/submit-drawing`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
                 });
                 
