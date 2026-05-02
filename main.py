@@ -2,7 +2,7 @@ import os
 import asyncio
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -42,10 +42,20 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY DEFAULT 1,
             is_donation_enabled BOOLEAN DEFAULT 1,
-            blocked_emails TEXT DEFAULT '[]'
+            blocked_emails TEXT DEFAULT '[]',
+            display_duration INTEGER DEFAULT 8,
+            daily_limit INTEGER DEFAULT 0
         )
     ''')
     cursor.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
+    
+    # ✨ 기존 DB를 사용하는 경우를 위해 안전하게 새 컬럼 추가
+    try:
+        cursor.execute("ALTER TABLE settings ADD COLUMN display_duration INTEGER DEFAULT 8")
+        cursor.execute("ALTER TABLE settings ADD COLUMN daily_limit INTEGER DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass  # 이미 컬럼이 존재하면 무시합니다.
+
     conn.commit()
     conn.close()
 
@@ -56,18 +66,27 @@ def get_db_settings():
     conn.row_factory = sqlite3.Row
     row = conn.cursor().execute("SELECT * FROM settings WHERE id = 1").fetchone()
     conn.close()
+    
+    # row 객체를 딕셔너리로 안전하게 변환
+    row_dict = dict(row)
     return {
-        "is_donation_enabled": bool(row["is_donation_enabled"]),
-        "blocked_emails": json.loads(row["blocked_emails"])
+        "is_donation_enabled": bool(row_dict.get("is_donation_enabled", 1)),
+        "blocked_emails": json.loads(row_dict.get("blocked_emails", '[]')),
+        "display_duration": row_dict.get("display_duration", 8),
+        "daily_limit": row_dict.get("daily_limit", 0)
     }
 
-def update_db_settings(is_enabled=None, blocked_emails=None):
+def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     if is_enabled is not None:
         cursor.execute("UPDATE settings SET is_donation_enabled = ? WHERE id = 1", (int(is_enabled),))
     if blocked_emails is not None:
         cursor.execute("UPDATE settings SET blocked_emails = ? WHERE id = 1", (json.dumps(blocked_emails),))
+    if display_duration is not None:
+        cursor.execute("UPDATE settings SET display_duration = ? WHERE id = 1", (display_duration,))
+    if daily_limit is not None:
+        cursor.execute("UPDATE settings SET daily_limit = ? WHERE id = 1", (daily_limit,))
     conn.commit()
     conn.close()
 
@@ -102,9 +121,12 @@ async def toggle_donation(enable: bool):
     update_db_settings(is_enabled=enable)
     return {"message": "success"}
 
+# ✨ 설정 업데이트 모델에 노출 시간과 일일 제한 변수 추가
 class SettingsUpdate(BaseModel):
     add_blocked_email: str = None
     remove_blocked_email: str = None
+    display_duration: int = None
+    daily_limit: int = None
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
@@ -119,24 +141,24 @@ async def update_settings(data: SettingsUpdate):
         blocked.remove(data.remove_blocked_email)
         changed = True
         
-    if changed:
-        update_db_settings(blocked_emails=blocked)
+    update_db_settings(
+        blocked_emails=blocked if changed else None,
+        display_duration=data.display_duration,
+        daily_limit=data.daily_limit
+    )
     return {"message": "success"}
-
-# --- main.py 내의 해당 API 부분만 교체하거나 전체를 참고하세요 ---
 
 @app.get("/api/recent-donations")
 async def get_recent_donations():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
-    # ✨ donor_email(고유 ID) 컬럼을 추가로 가져옵니다.
     rows = conn.cursor().execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     conn.close()
     return [
         {
             "id": r["id"], 
             "name": r["donor_name"], 
-            "email": r["donor_email"], # ✨ 추가됨
+            "email": r["donor_email"],
             "title": r["drawing_title"], 
             "time": r["timestamp"]
         } for r in rows
@@ -163,11 +185,25 @@ async def submit_drawing(request: Request):
     if not settings["is_donation_enabled"]:
         raise HTTPException(status_code=403, detail="현재 그림 받기가 닫혀있습니다.")
 
+    # ✨ 새벽 6시 기점 일일 한도 체크 로직
+    if settings.get("daily_limit", 0) > 0:
+        now = datetime.now()
+        # 현재 시간이 새벽 6시 이전이면, 초기화 기준일은 "어제 오전 6시"
+        target_date = now - timedelta(days=1) if now.hour < 6 else now
+        target_str = target_date.strftime('%Y-%m-%d 06:00:00')
+        
+        conn = sqlite3.connect(DB_FILE)
+        count = conn.cursor().execute("SELECT COUNT(*) FROM ledger WHERE timestamp >= ?", (target_str,)).fetchone()[0]
+        conn.close()
+        
+        if count >= settings["daily_limit"]:
+            raise HTTPException(status_code=403, detail=f"오늘의 그림 받기 한도({settings['daily_limit']}개)가 초과되었습니다.")
+
     try:
         data = await request.json()
         email = data.get("email") 
         name = data.get("name")
-        profile_image = data.get("profileImage", "") # ✨ 프사 데이터 추출
+        profile_image = data.get("profileImage", "")
         title = data.get("title", "제목없음")
         drawing_history = data.get("drawingData")
 
@@ -194,9 +230,11 @@ async def submit_drawing(request: Request):
 async def process_drawing_queue():
     while True:
         data = await drawing_queue.get()
+        settings = get_db_settings()
+        display_duration = settings.get("display_duration", 8)  # ✨ 설정된 노출 시간 적용 (기본값 8)
+        
         for connection in active_connections:
             try:
-                # ✨ 방송 화면에 프사 URL도 함께 전송
                 await connection.send_json({
                     "type": "alert", 
                     "name": data.get("name"), 
@@ -215,7 +253,6 @@ async def process_drawing_queue():
                             await connection.send_json({"type": "draw_line", "point": point, "color": color})
                             if i % 5 == 0: await asyncio.sleep(0.01)
                     else:
-                        # ✨ 고급 텍스트 데이터(이미지, 좌표, 각도 등) 유실 방지를 위해 원본 데이터를 포함하여 전송
                         payload = item.copy()
                         payload["type"] = "draw_shape"
                         payload["shape"] = item_type
@@ -224,7 +261,9 @@ async def process_drawing_queue():
                 await connection.send_json({"type": "done"})
             except Exception as e: pass
             
-        await asyncio.sleep(8)
+        # ✨ 제어판에서 입력한 노출 시간만큼 대기
+        await asyncio.sleep(display_duration)
+        
         for connection in active_connections:
             try: await connection.send_json({"type": "fade_out"})
             except: pass

@@ -16,8 +16,9 @@
         h2 { border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-top: 0; }
         .setting-group { margin-bottom: 20px; background: #333; padding: 15px; border-radius: 6px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
-        input[type="text"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
         .btn-general { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
+        .btn-general:hover { background: #005f9e; }
         .toggle-btn { background: #ff4757; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
         .toggle-btn.on { background: #2ed573; }
 
@@ -26,7 +27,6 @@
         .unban-btn { background: #555; color: white; }
         .replay-btn { background: #ff9800; color: white; }
         
-        /* ✨ 복사 가능한 ID 텍스트 스타일 */
         .copyable-id { 
             font-size: 11px; color: #777; background: #1a1a1a; padding: 2px 6px; 
             border-radius: 3px; cursor: pointer; transition: 0.2s; border: 1px dashed #444;
@@ -53,8 +53,23 @@
             <button id="btn-toggle" class="toggle-btn on">🟢 현재 상태: 열림 (클릭하여 닫기)</button>
         </div>
 
+        <!-- ✨ 2. 방송 화면 표시 설정 추가 -->
         <div class="setting-group">
-            <label>2. 악성 유저 이메일/고유ID 차단</label>
+            <label>2. 방송 화면 표시 설정</label>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <span style="font-size: 13px; width: 140px;">그림 노출 시간 (초):</span>
+                <input type="number" id="display-duration" value="8" min="1" style="width: 100px; margin-bottom: 0;">
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                <span style="font-size: 13px; width: 140px;">일일 최대 표시 개수:</span>
+                <input type="number" id="daily-limit" placeholder="0" min="0" style="width: 100px; margin-bottom: 0;">
+                <span style="font-size: 11px; color: #888;">(매일 새벽 6시 초기화, 0 입력 시 무제한)</span>
+            </div>
+            <button id="btn-save-display" class="btn-general">표시 설정 저장</button>
+        </div>
+
+        <div class="setting-group">
+            <label>3. 악성 유저 이메일/고유ID 차단</label>
             <div style="display: flex; gap: 10px;">
                 <input type="text" id="ban-email" placeholder="차단할 이메일 또는 고유ID 입력">
                 <button id="btn-ban" class="btn-general" style="width: 80px; background: #ff4757;">차단</button>
@@ -63,7 +78,7 @@
         </div>
 
         <div class="setting-group">
-            <label>3. 📺 최근 받은 그림 (클릭 시 ID 복사)</label>
+            <label>4. 📺 최근 받은 그림 (클릭 시 ID 복사)</label>
             <div id="recent-donations-container">내역을 불러오는 중...</div>
         </div>
     </div>
@@ -100,7 +115,6 @@
             setInterval(fetchRecentDonations, 10000);
         }
 
-        // ✨ 텍스트 복사 함수
         function copyId(text) {
             navigator.clipboard.writeText(text).then(() => {
                 alert("ID가 복사되었습니다: " + text + "\n위의 차단 칸에 붙여넣기 하세요.");
@@ -111,10 +125,17 @@
             try {
                 const res = await fetch(`${API_BASE}/api/settings`);
                 const data = await res.json();
+                
+                // On/Off 토글
                 const btnToggle = document.getElementById('btn-toggle');
                 if(data.is_donation_enabled) { btnToggle.className = 'toggle-btn on'; btnToggle.innerText = '🟢 현재 상태: 열림 (클릭하여 닫기)'; } 
                 else { btnToggle.className = 'toggle-btn'; btnToggle.innerText = '🔴 현재 상태: 닫힘 (클릭하여 열기)'; }
                 
+                // ✨ 방송 화면 표시 설정 반영
+                document.getElementById('display-duration').value = data.display_duration || 8;
+                document.getElementById('daily-limit').value = data.daily_limit !== undefined ? data.daily_limit : 0;
+
+                // 차단 리스트
                 const banContainer = document.getElementById('ban-list-container');
                 banContainer.innerHTML = '';
                 if(data.blocked_emails.length === 0) { banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 리스트가 없습니다.</div>'; } 
@@ -144,8 +165,6 @@
                 donations.forEach(d => {
                     const item = document.createElement('div');
                     item.className = 'list-item';
-                    
-                    // ✨ ID가 있는 경우에만 복사 가능한 버튼 형태로 렌더링 (억지로 추가하지 않음)
                     const idHtml = d.email ? `<span class="copyable-id" onclick="copyId('${d.email}')" title="클릭하여 ID 복사">ID: ${d.email}</span>` : '';
 
                     item.innerHTML = `
@@ -180,6 +199,24 @@
             const isCurrentlyOn = document.getElementById('btn-toggle').classList.contains('on');
             await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
             fetchSettings();
+        };
+
+        // ✨ 노출 시간 및 개수 설정 저장 로직
+        document.getElementById('btn-save-display').onclick = async () => {
+            const duration = parseInt(document.getElementById('display-duration').value) || 8;
+            const limit = parseInt(document.getElementById('daily-limit').value) || 0;
+            
+            try {
+                await fetch(`${API_BASE}/api/update-settings`, { 
+                    method: 'POST', 
+                    headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({ display_duration: duration, daily_limit: limit }) 
+                });
+                alert("방송 화면 표시 설정이 성공적으로 저장되었습니다.");
+                fetchSettings();
+            } catch (e) {
+                alert("설정 저장에 실패했습니다.");
+            }
         };
 
         document.getElementById('btn-ban').onclick = async () => {

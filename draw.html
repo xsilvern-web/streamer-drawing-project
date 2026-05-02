@@ -714,12 +714,12 @@
         function undo() { if (history.length > 0) { redoStack.push(history.pop()); redrawCanvas(); } }
         function redo() { if (redoStack.length > 0) { history.push(redoStack.pop()); redrawCanvas(); } }
         document.getElementById('btn-undo').onclick = undo; document.getElementById('btn-redo').onclick = redo;
-        
-        // 단축키 제어 (Ctrl+T 포함)
+
+        // 단축키 제어 (Alt+T 로 변경)
         window.addEventListener('keydown', (e) => { 
             if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); } 
             if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } 
-            if (e.ctrlKey && e.key.toLowerCase() === 't') {
+            if (e.altKey && e.key.toLowerCase() === 't') {    // <--- e.altKey 로 변경
                 e.preventDefault();
                 if (activeLayerId) {
                     const layer = layers.find(l => l.id === activeLayerId);
