@@ -7,14 +7,11 @@ from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from dotenv import load_dotenv
 import uvicorn
 
-load_dotenv()
+# (구글 관련 dotenv 로드 부분 삭제됨)
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-# ✨ 제가 설정한 기본 비밀번호입니다. (환경변수에서 바꿀 수 있습니다)
-CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD")
+CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD", "streamer777!")
 
 app = FastAPI()
 
@@ -87,7 +84,6 @@ async def serve_creator_page(): return FileResponse("creator.html")
 @app.get("/coin.mp3")
 async def serve_coin_sound(): return FileResponse("coin.mp3")
 
-# ✨ 비밀번호 검사 API
 class PasswordCheck(BaseModel):
     password: str
 
@@ -125,7 +121,6 @@ async def update_settings(data: SettingsUpdate):
         
     if changed:
         update_db_settings(blocked_emails=blocked)
-        
     return {"message": "success"}
 
 @app.get("/api/recent-donations")

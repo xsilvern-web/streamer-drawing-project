@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>시청자용 그리기 (전체화면 에디터)</title>
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- ✨ 네이버(치지직) 아이디 로그인 라이브러리 교체 -->
+    <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js" charset="utf-8"></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #e0e0e0; display: flex; flex-direction: column; overflow: hidden; }
         button { cursor: pointer; border: none; border-radius: 4px; outline: none; transition: 0.2s; }
@@ -65,14 +66,13 @@
             </div>
             
             <div class="header-group" id="login-container">
-                <div id="g_id_onload" data-client_id="YOUR_GOOGLE_CLIENT_ID_HERE" data-callback="handleCredentialResponse" data-auto_prompt="false"></div>
-                <div class="g_id_signin" data-type="standard" data-theme="outline" data-text="signin_with" data-shape="rectangular" data-logo_alignment="left"></div>
+                <!-- ✨ 네이버 로그인 버튼이 생성될 자리 -->
+                <div id="naverIdLogin"></div>
             </div>
 
             <div class="header-group" id="donation-container" style="display: none;">
                 <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                 <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
-                <!-- 금액 입력창 삭제됨 -->
                 <button id="btn-send">화면에 띄우기 (전송)</button>
             </div>
         </div>
@@ -395,20 +395,37 @@
 
         createLayer(); 
 
-        let loggedInUser = null; let isDonationEnabled = true; const btnSend = document.getElementById('btn-send');
+        // --- ✨ 네이버(치지직) 로그인 로직 ---
+        let loggedInUser = null; 
+        let isDonationEnabled = true; 
+        const btnSend = document.getElementById('btn-send');
 
-        function handleCredentialResponse(response) {
-            const responsePayload = decodeJwtResponse(response.credential);
-            loggedInUser = { name: responsePayload.name, email: responsePayload.email };
-            document.getElementById('login-container').style.display = 'none';
-            document.getElementById('donation-container').style.display = 'flex';
-            document.getElementById('custom-nickname').value = loggedInUser.name;
-        }
+        // 네이버 아이디로 로그인 초기화
+        const naverLogin = new naver.LoginWithNaverId({
+            clientId: "vvc6338uO8TYXNMje6Dj", // ⚠️ 여기에 네이버 개발자 센터에서 발급받은 Client ID를 넣으세요!
+            callbackUrl: window.location.origin + "/draw", 
+            isPopup: false,
+            loginButton: {color: "green", type: 3, height: 40} // 버튼 디자인
+        });
+        naverLogin.init();
 
-        function decodeJwtResponse(token) {
-            let base64Url = token.split('.')[1]; let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            return JSON.parse(decodeURIComponent(atob(base64).split('').map(function(c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join('')));
-        }
+        // 페이지가 로드될 때 로그인 상태 확인
+        window.addEventListener('load', function () {
+            naverLogin.getLoginStatus(function (status) {
+                if (status) {
+                    // 로그인 성공 시 정보 추출
+                    const email = naverLogin.user.getEmail();
+                    const name = naverLogin.user.getNickName() || naverLogin.user.getName();
+                    
+                    loggedInUser = { name: name, email: email };
+                    
+                    // UI 변경
+                    document.getElementById('login-container').style.display = 'none';
+                    document.getElementById('donation-container').style.display = 'flex';
+                    document.getElementById('custom-nickname').value = loggedInUser.name;
+                }
+            });
+        });
 
         async function checkDonationStatus() {
             try {
