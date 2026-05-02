@@ -10,24 +10,40 @@
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; transition: opacity 1.5s ease-in-out; opacity: 1; }
         #alert-container {
             position: absolute; top: 50px; left: 50px; background: rgba(0, 0, 0, 0.8);
-            color: white; padding: 20px; border-radius: 10px; font-family: 'Malgun Gothic', sans-serif;
+            color: white; padding: 20px 30px; border-radius: 10px; font-family: 'Malgun Gothic', sans-serif;
             z-index: 10; opacity: 0; transition: opacity 0.5s ease-in-out; border: 2px solid #007acc;
         }
         #alert-container.show { opacity: 1; }
         .highlight { color: #ff9800; font-weight: bold; font-size: 24px; }
+        
+        /* ✨ 프로필 사진 스타일 (배경 이미지 활용으로 찌그러짐 방지) */
+        #alert-profile-img {
+            width: 45px; height: 45px; border-radius: 50%; 
+            background-color: white; /* 기본값: 하얀 원 */
+            background-size: cover; background-position: center;
+            border: 2px solid #ff9800;
+        }
     </style>
 </head>
 <body>
     <canvas id="canvas" width="1920" height="1080"></canvas>
+    
+    <!-- ✨ 알림창 구조 업데이트 -->
     <div id="alert-container">
-        <div>🎉 <span id="donor-name-display" class="highlight"></span> 님이 그림을 보냈습니다!</div>
-        <div style="font-size: 18px; margin-top: 10px;">제목: <span id="drawing-title-display"></span></div>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <div id="alert-profile-img"></div>
+            <div>
+                <div>🎉 <span id="donor-name-display" class="highlight"></span> 님이 그림을 보냈습니다!</div>
+                <div style="font-size: 18px; margin-top: 5px;">제목: <span id="drawing-title-display" style="color: #ccc;"></span></div>
+            </div>
+        </div>
     </div>
 
     <script>
         const canvas = document.getElementById('canvas'); const ctx = canvas.getContext('2d');
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         const alertContainer = document.getElementById("alert-container");
+        const profileImgDiv = document.getElementById("alert-profile-img");
 
         const API_BASE = window.location.origin;
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -56,6 +72,14 @@
                 if (data.type === 'alert') {
                     document.getElementById('donor-name-display').innerText = data.name;
                     document.getElementById('drawing-title-display').innerText = data.title;
+                    
+                    // ✨ 프로필 사진 유무에 따른 처리 (없으면 하얀 원 유지)
+                    if (data.profileImage) {
+                        profileImgDiv.style.backgroundImage = `url('${data.profileImage}')`;
+                    } else {
+                        profileImgDiv.style.backgroundImage = 'none';
+                    }
+
                     alertContainer.classList.add('show');
                     setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); 
                     const audio = new Audio(`${API_BASE}/coin.mp3`);

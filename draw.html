@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>시청자용 그리기 (전체화면 에디터)</title>
-    <!-- ✨ 네이버(치지직) 아이디 로그인 라이브러리 교체 -->
+    <!-- ✨ 네이버 아이디 로그인 라이브러리 -->
     <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js" charset="utf-8"></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #e0e0e0; display: flex; flex-direction: column; overflow: hidden; }
@@ -21,6 +21,9 @@
         #btn-send:hover { background: #fb8c00; }
         .disclaimer { font-size: 11px; color: #888; text-align: right; width: 100%; }
 
+        /* ✨ 내 프로필 미리보기용 동그라미 스타일 */
+        #profile-preview { width: 34px; height: 34px; border-radius: 50%; background-color: white; background-size: cover; background-position: center; border: 1px solid #555;}
+        
         .app-body { display: flex; flex: 1; overflow: hidden; }
         .sidebar-left { width: 80px; background: #252526; border-right: 1px solid #444; display: flex; flex-direction: column; align-items: center; padding: 15px 0; gap: 15px; overflow-y: visible; flex-shrink: 0; position: relative; }
         .tool-btn { width: 60px; height: 45px; background: #333; color: #ccc; font-size: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid #444; }
@@ -66,11 +69,18 @@
             </div>
             
             <div class="header-group" id="login-container">
-                <!-- ✨ 네이버 로그인 버튼이 생성될 자리 -->
                 <div id="naverIdLogin"></div>
             </div>
 
+            <!-- ✨ 전송 폼에 프사 미리보기 및 체크박스 추가 -->
             <div class="header-group" id="donation-container" style="display: none;">
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+                    <div id="profile-preview"></div>
+                    <label style="font-size: 10px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+                        <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사 전송
+                    </label>
+                </div>
+
                 <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                 <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
                 <button id="btn-send">화면에 띄우기 (전송)</button>
@@ -395,36 +405,45 @@
 
         createLayer(); 
 
-        // --- ✨ 네이버(치지직) 로그인 로직 ---
+        // --- ✨ 네이버 로그인 및 프로필 연동 로직 ---
         let loggedInUser = null; 
         let isDonationEnabled = true; 
         const btnSend = document.getElementById('btn-send');
+        const profilePreview = document.getElementById('profile-preview');
+        const useProfileCheckbox = document.getElementById('use-profile');
 
-        // 네이버 아이디로 로그인 초기화
         const naverLogin = new naver.LoginWithNaverId({
-            clientId: "vvc6338uO8TYXNMje6Dj", // ⚠️ 여기에 네이버 개발자 센터에서 발급받은 Client ID를 넣으세요!
+            clientId: "vvc6338uO8TYXNMje6Dj", // ✨ 적용된 Client ID
             callbackUrl: window.location.origin + "/draw", 
             isPopup: false,
-            loginButton: {color: "green", type: 3, height: 40} // 버튼 디자인
+            loginButton: {color: "green", type: 3, height: 40}
         });
         naverLogin.init();
 
-        // 페이지가 로드될 때 로그인 상태 확인
         window.addEventListener('load', function () {
             naverLogin.getLoginStatus(function (status) {
                 if (status) {
-                    // 로그인 성공 시 정보 추출
                     const email = naverLogin.user.getEmail();
                     const name = naverLogin.user.getNickName() || naverLogin.user.getName();
+                    const profileImage = naverLogin.user.getProfileImage(); // ✨ 프로필 사진 가져오기
                     
-                    loggedInUser = { name: name, email: email };
+                    loggedInUser = { name: name, email: email, profileImage: profileImage };
                     
-                    // UI 변경
                     document.getElementById('login-container').style.display = 'none';
                     document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
+
+                    // 프사가 있으면 띄우고, 없으면 기본 하얀 원 유지
+                    if (profileImage) {
+                        profilePreview.style.backgroundImage = `url('${profileImage}')`;
+                    }
                 }
             });
+        });
+
+        // 체크박스 클릭 시 미리보기 흐려지게(투명하게) 처리하여 직관성 제공
+        useProfileCheckbox.addEventListener('change', (e) => {
+            profilePreview.style.opacity = e.target.checked ? "1" : "0.3";
         });
 
         async function checkDonationStatus() {
@@ -455,7 +474,16 @@
             if (history.length === 0) { alert("그림을 그려주세요!"); return; }
             if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
 
-            const payload = { name: customName, email: loggedInUser.email, title: title, drawingData: history };
+            // ✨ 유저가 '프사 전송' 체크를 해제했거나 프사가 없으면 빈 값으로 전송
+            const finalProfileImage = (useProfileCheckbox.checked && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
+
+            const payload = { 
+                name: customName, 
+                email: loggedInUser.email, 
+                profileImage: finalProfileImage, 
+                title: title, 
+                drawingData: history 
+            };
 
             try {
                 const res = await fetch(`${API_BASE}/api/submit-drawing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });

@@ -9,8 +9,6 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
-# (구글 관련 dotenv 로드 부분 삭제됨)
-
 CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD", "streamer777!")
 
 app = FastAPI()
@@ -22,7 +20,8 @@ app.add_middleware(
 active_connections = []
 drawing_queue = asyncio.Queue()
 
-DB_FILE = "donation_ledger_v3.db"
+# ✨ 프로필 사진 칼럼이 추가된 새로운 장부(v4)
+DB_FILE = "donation_ledger_v4.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -32,6 +31,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             donor_email TEXT,
             donor_name TEXT NOT NULL,
+            donor_profile_image TEXT,
             drawing_title TEXT,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             drawing_data TEXT,
@@ -134,11 +134,16 @@ async def get_recent_donations():
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):
     conn = sqlite3.connect(DB_FILE)
-    row = conn.cursor().execute("SELECT donor_name, drawing_title, drawing_data FROM ledger WHERE id = ?", (ledger_id,)).fetchone()
+    row = conn.cursor().execute("SELECT donor_name, donor_profile_image, drawing_title, drawing_data FROM ledger WHERE id = ?", (ledger_id,)).fetchone()
     conn.close()
     
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
-    await drawing_queue.put({"name": row[0], "title": row[1], "drawingData": json.loads(row[2])})
+    await drawing_queue.put({
+        "name": row[0], 
+        "profileImage": row[1], 
+        "title": row[2], 
+        "drawingData": json.loads(row[3])
+    })
     return {"message": "success"}
 
 @app.post("/api/submit-drawing")
@@ -150,7 +155,8 @@ async def submit_drawing(request: Request):
     try:
         data = await request.json()
         email = data.get("email") 
-        name = data.get("name") 
+        name = data.get("name")
+        profile_image = data.get("profileImage", "") # ✨ 프사 데이터 추출
         title = data.get("title", "제목없음")
         drawing_history = data.get("drawingData")
 
@@ -160,8 +166,8 @@ async def submit_drawing(request: Request):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO ledger (donor_email, donor_name, drawing_title, drawing_data) VALUES (?, ?, ?, ?)",
-            (email, name, title, json.dumps(drawing_history))
+            "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (?, ?, ?, ?, ?)",
+            (email, name, profile_image, title, json.dumps(drawing_history))
         )
         conn.commit()
         conn.close()
@@ -179,7 +185,13 @@ async def process_drawing_queue():
         data = await drawing_queue.get()
         for connection in active_connections:
             try:
-                await connection.send_json({"type": "alert", "name": data.get("name"), "title": data.get("title", "")})
+                # ✨ 방송 화면에 프사 URL도 함께 전송
+                await connection.send_json({
+                    "type": "alert", 
+                    "name": data.get("name"), 
+                    "profileImage": data.get("profileImage", ""),
+                    "title": data.get("title", "")
+                })
                 await connection.send_json({"type": "clear"})
                 for item in data.get("drawingData"):
                     item_type = item.get("type", "path")
