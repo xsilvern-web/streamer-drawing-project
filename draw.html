@@ -188,7 +188,6 @@
                     📁 이미지 불러오기
                     <input type="file" id="rough-file" accept="image/*" style="display: none;">
                 </label>
-                <!-- ✨ 러프 이미지 투명도 컨트롤 복원 -->
                 <div id="rough-controls" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
                     <label style="font-size: 11px; color: #aaa; display: flex; justify-content: space-between;">투명도 <span id="rough-opacity-val">50%</span></label>
                     <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5" style="width: 100%;">
@@ -385,26 +384,53 @@
             document.getElementById('rough-controls').style.display = 'none';
         });
 
-        // 텍스트 래스터화
+        // ✨ 텍스트 완벽 래스터화 (XMLSerializer 활용 고화질 압축)
         function rasterizeText(layerId) {
             const layer = layers.find(l => l.id === layerId);
             if (!layer || layer.type !== 'text') return;
             
             const contentDiv = layer.element.querySelector('.content');
-            if (!contentDiv.innerHTML.trim() || contentDiv.innerHTML === '텍스트 입력...') {
-                layer.element.remove(); layers = layers.filter(l => l.id !== layerId); updateLayersZIndex(); renderLayerUI(); return;
+            if (!contentDiv.innerText.trim() || contentDiv.innerText === '텍스트 입력...') {
+                deleteLayer(layerId); return;
             }
 
-            const w = layer.element.offsetWidth; const h = layer.element.offsetHeight;
-            const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="font-family: 'Malgun Gothic', sans-serif; font-size: ${contentDiv.style.fontSize}; color: ${contentDiv.style.color}; width: 100%; height: 100%; box-sizing: border-box; display: flex; text-align: left; font-weight: bold; padding: 5px; white-space: pre-wrap; word-wrap: break-word;">${contentDiv.innerHTML}</div></foreignObject></svg>`;
+            // 정확한 크기 측정 (패딩 제외)
+            const w = contentDiv.offsetWidth; 
+            const h = contentDiv.offsetHeight;
+            
+            // 현재 적용된 스타일 복제
+            const style = window.getComputedStyle(contentDiv);
+            const cssText = `
+                font-family: ${style.fontFamily}; font-size: ${style.fontSize}; font-weight: ${style.fontWeight};
+                color: ${style.color}; line-height: ${style.lineHeight}; text-align: ${style.textAlign};
+                white-space: pre-wrap; word-wrap: break-word; width: ${w}px; height: ${h}px; box-sizing: border-box;
+                margin: 0; padding: 0; display: block;
+            `;
+
+            // HTML을 완전한 XHTML 규격으로 변환
+            const clone = contentDiv.cloneNode(true);
+            clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+            clone.removeAttribute('contenteditable');
+            clone.style.cssText = cssText;
+            
+            // 고해상도 처리
+            const scale = window.devicePixelRatio || 2;
+            clone.style.transform = `scale(${scale})`; clone.style.transformOrigin = 'top left';
+
+            const xmlString = new XMLSerializer().serializeToString(clone);
+            const svgData = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}"><foreignObject width="100%" height="100%">${xmlString}</foreignObject></svg>`;
             
             const img = new Image();
             img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
             
             img.onload = () => {
-                const localCvs = document.createElement('canvas'); localCvs.width = w; localCvs.height = h;
+                const localCvs = document.createElement('canvas'); 
+                localCvs.width = w * scale; localCvs.height = h * scale;
+                localCvs.style.width = '100%'; localCvs.style.height = '100%';
                 localCvs.className = 'content';
-                const ctx = localCvs.getContext('2d'); ctx.drawImage(img, 0, 0, w, h);
+                
+                const ctx = localCvs.getContext('2d'); 
+                ctx.drawImage(img, 0, 0, w * scale, h * scale);
                 
                 contentDiv.replaceWith(localCvs); 
                 layer.type = 'raster_image'; 
@@ -433,8 +459,7 @@
                     else if (l.element) l.element.remove();
                     layers = layers.filter(layer => layer.id !== id);
                     if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
-                    updateLayersZIndex();
-                    renderLayerUI();
+                    updateLayersZIndex(); renderLayerUI();
                 }
             }
         }
@@ -452,8 +477,7 @@
                 div.ondragover = (e) => { e.preventDefault(); div.style.borderTop = '2px solid #007acc'; };
                 div.ondragleave = (e) => { div.style.borderTop = '1px solid transparent'; };
                 div.ondrop = (e) => {
-                    e.preventDefault();
-                    div.style.borderTop = '1px solid transparent';
+                    e.preventDefault(); div.style.borderTop = '1px solid transparent';
                     const draggedId = e.dataTransfer.getData('text/plain');
                     if(draggedId === l.id) return;
 
@@ -463,8 +487,7 @@
                     if (draggedIndex > -1 && targetIndex > -1) {
                         const [draggedLayer] = layers.splice(draggedIndex, 1);
                         layers.splice(targetIndex, 0, draggedLayer);
-                        updateLayersZIndex();
-                        renderLayerUI();
+                        updateLayersZIndex(); renderLayerUI();
                     }
                 };
                 
@@ -580,7 +603,7 @@
                     if (transformState.action.includes('s')) dh = ldy;
                     if (transformState.action.includes('n')) dh = -ldy;
 
-                    // ✨ Shift 키를 눌렀을 때 비율 유지 크기 조절
+                    // ✨ Shift 키 비율 유지 조작
                     if (e.shiftKey) {
                         const aspect = transformState.startW / transformState.startH;
                         if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } 
@@ -590,7 +613,6 @@
                     let newW = transformState.startW + dw; 
                     let newH = transformState.startH + dh;
 
-                    // 최소 크기 제한 밑 뒤집힘 방지
                     if (newW < 50) { newW = 50; dw = 50 - transformState.startW; if(e.shiftKey) dh = dw / aspect; }
                     if (newH < 30) { newH = 30; dh = 30 - transformState.startH; if(e.shiftKey) dw = dh * aspect; }
                     newW = transformState.startW + dw; newH = transformState.startH + dh;
@@ -678,7 +700,7 @@
             if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); } 
         });
 
-        // ✨ 개선된 파일 저장 (텍스트와 이미지 데이터 전부 완벽하게 저장)
+        // ✨ 개선된 세이브/로드
         document.getElementById('btn-save').onclick = () => {
             const savedTransformObjects = [];
             layers.forEach(l => {
@@ -695,7 +717,6 @@
                 }
             });
             
-            // 참고용 러프 이미지도 저장
             document.querySelectorAll('.transform-box.type-rough').forEach((box, i) => {
                 let angle = 0; const transform = window.getComputedStyle(box).transform;
                 if(transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
@@ -713,7 +734,6 @@
             const a = document.createElement('a'); a.href = dataStr; a.download = "drawing_advanced.json"; document.body.appendChild(a); a.click(); a.remove();
         };
 
-        // ✨ 개선된 파일 불러오기 (텍스트, 러프, 래스터 모두 복구)
         document.getElementById('file-input').addEventListener('change', (e) => {
             const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
             reader.onload = (event) => {
@@ -760,7 +780,7 @@
             }; reader.readAsText(file); 
         });
 
-        // 리치 텍스트 서식 툴바 로직
+        // 툴바 액션
         let activeTextContent = null;
         document.getElementById('tb-color').addEventListener('input', (e) => document.execCommand('foreColor', false, e.target.value));
         document.getElementById('tb-bold').onclick = () => document.execCommand('bold', false, null);
@@ -793,9 +813,7 @@
             } else floatingToolbar.style.display = 'none';
         });
 
-        createLayer(); 
-
-        // --- 네이버 로그인 및 서버 전송 로직 유지 ---
+        // 네이버 로그인 및 서버 전송
         let loggedInUser = null; 
         let isDonationEnabled = true; 
         const btnSend = document.getElementById('btn-send');
@@ -825,9 +843,7 @@
 
                     if (profileImage) { profilePreview.style.backgroundImage = `url('${profileImage}')`; } 
                     else { profilePreview.style.backgroundImage = 'none'; }
-                } else {
-                    document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null;
-                }
+                } else { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null; }
             });
         });
 
