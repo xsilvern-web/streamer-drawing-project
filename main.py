@@ -12,7 +12,6 @@ import uvicorn
 
 load_dotenv()
 
-TOSS_SECRET_KEY = os.getenv("TOSS_SECRET_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 app = FastAPI()
@@ -24,43 +23,38 @@ app.add_middleware(
 active_connections = []
 drawing_queue = asyncio.Queue()
 
-# ✨ DB 파일 경로 (클라우드타입 영구 저장소 경로를 위해 ./data/ 폴더 사용 권장, 아래 2단계 참고)
-DB_FILE = "donation_ledger_v2.db"
+# ✨ 결제 기능이 빠진 새로운 장부(v3)
+DB_FILE = "donation_ledger_v3.db"
 
-# --- DB 초기화 (장부 + 설정 테이블) ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # 1. 후원 장부 테이블
+    # 1. 그림 장부 테이블 (amount 삭제)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ledger (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             donor_email TEXT,
             donor_name TEXT NOT NULL,
             drawing_title TEXT,
-            amount INTEGER NOT NULL,
             timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
             drawing_data TEXT,
             is_played BOOLEAN DEFAULT FALSE
         )
     ''')
-    # ✨ 2. 크리에이터 설정 테이블 (메모리가 아닌 DB에 영구 저장)
+    # 2. 크리에이터 설정 테이블 (min_amount 삭제)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY DEFAULT 1,
             is_donation_enabled BOOLEAN DEFAULT 1,
-            min_amount INTEGER DEFAULT 1000,
             blocked_emails TEXT DEFAULT '[]'
         )
     ''')
-    # 설정이 아예 없으면 기본값 한 줄 생성
     cursor.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
     conn.commit()
     conn.close()
 
 init_db()
 
-# --- DB에서 설정값 불러오기/저장하기 도우미 함수 ---
 def get_db_settings():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -68,22 +62,18 @@ def get_db_settings():
     conn.close()
     return {
         "is_donation_enabled": bool(row["is_donation_enabled"]),
-        "min_amount": row["min_amount"],
         "blocked_emails": json.loads(row["blocked_emails"])
     }
 
-def update_db_settings(is_enabled=None, min_amount=None, blocked_emails=None):
+def update_db_settings(is_enabled=None, blocked_emails=None):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     if is_enabled is not None:
         cursor.execute("UPDATE settings SET is_donation_enabled = ? WHERE id = 1", (int(is_enabled),))
-    if min_amount is not None:
-        cursor.execute("UPDATE settings SET min_amount = ? WHERE id = 1", (min_amount,))
     if blocked_emails is not None:
         cursor.execute("UPDATE settings SET blocked_emails = ? WHERE id = 1", (json.dumps(blocked_emails),))
     conn.commit()
     conn.close()
-
 
 @app.get("/draw")
 async def serve_draw_page(): return FileResponse("draw.html")
@@ -98,7 +88,6 @@ async def serve_creator_page(): return FileResponse("creator.html")
 @app.get("/coin.mp3")
 async def serve_coin_sound(): return FileResponse("coin.mp3")
 
-# --- 크리에이터 설정 API (DB 연동) ---
 @app.get("/api/settings")
 async def get_settings(): 
     return get_db_settings()
@@ -109,19 +98,15 @@ async def toggle_donation(enable: bool):
     return {"message": "success"}
 
 class SettingsUpdate(BaseModel):
-    min_amount: int = None
     add_blocked_email: str = None
     remove_blocked_email: str = None
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
     current_settings = get_db_settings()
-    
-    if data.min_amount is not None: 
-        update_db_settings(min_amount=data.min_amount)
-        
     blocked = current_settings["blocked_emails"]
     changed = False
+    
     if data.add_blocked_email and data.add_blocked_email not in blocked:
         blocked.append(data.add_blocked_email)
         changed = True
@@ -134,49 +119,45 @@ async def update_settings(data: SettingsUpdate):
         
     return {"message": "success"}
 
-# --- 최근 후원 내역 및 다시보기 API ---
 @app.get("/api/recent-donations")
 async def get_recent_donations():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
-    rows = conn.cursor().execute("SELECT id, donor_name, drawing_title, amount, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
+    rows = conn.cursor().execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "amount": r["amount"], "time": r["timestamp"]} for r in rows]
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": r["timestamp"]} for r in rows]
 
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):
     conn = sqlite3.connect(DB_FILE)
-    row = conn.cursor().execute("SELECT donor_name, drawing_title, amount, drawing_data FROM ledger WHERE id = ?", (ledger_id,)).fetchone()
+    row = conn.cursor().execute("SELECT donor_name, drawing_title, drawing_data FROM ledger WHERE id = ?", (ledger_id,)).fetchone()
     conn.close()
     
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
-    await drawing_queue.put({"name": row[0], "title": row[1], "amount": row[2], "drawingData": json.loads(row[3])})
+    await drawing_queue.put({"name": row[0], "title": row[1], "drawingData": json.loads(row[2])})
     return {"message": "success"}
 
-# --- 데이터 수신 API ---
 @app.post("/api/submit-drawing")
 async def submit_drawing(request: Request):
     settings = get_db_settings()
     if not settings["is_donation_enabled"]:
-        raise HTTPException(status_code=403, detail="현재 크리에이터가 후원을 닫아두었습니다.")
+        raise HTTPException(status_code=403, detail="현재 그림 받기가 닫혀있습니다.")
 
     try:
         data = await request.json()
         email = data.get("email") 
         name = data.get("name") 
         title = data.get("title", "제목없음")
-        amount = int(data.get("amount", 0))
         drawing_history = data.get("drawingData")
 
         if not email: raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
-        if amount < settings["min_amount"]: raise HTTPException(status_code=400, detail=f"최소 후원 금액은 {settings['min_amount']}원 이상입니다.")
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO ledger (donor_email, donor_name, drawing_title, amount, drawing_data) VALUES (?, ?, ?, ?, ?)",
-            (email, name, title, amount, json.dumps(drawing_history))
+            "INSERT INTO ledger (donor_email, donor_name, drawing_title, drawing_data) VALUES (?, ?, ?, ?)",
+            (email, name, title, json.dumps(drawing_history))
         )
         conn.commit()
         conn.close()
@@ -189,13 +170,12 @@ async def submit_drawing(request: Request):
         print(f"❌ 오류: {e}")
         raise HTTPException(status_code=500, detail="서버 오류 발생")
 
-# --- OBS 전송 및 파기 스케줄러 ---
 async def process_drawing_queue():
     while True:
         data = await drawing_queue.get()
         for connection in active_connections:
             try:
-                await connection.send_json({"type": "alert", "name": data.get("name"), "title": data.get("title", ""), "amount": data.get("amount")})
+                await connection.send_json({"type": "alert", "name": data.get("name"), "title": data.get("title", "")})
                 await connection.send_json({"type": "clear"})
                 for item in data.get("drawingData"):
                     item_type = item.get("type", "path")
