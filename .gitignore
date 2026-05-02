@@ -1,0 +1,4 @@
+# 깃허브에 올리지 않을 파일 목록
+.env
+donation_ledger.db
+__pycache__/
