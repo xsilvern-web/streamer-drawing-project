@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>OBS 알림 오버레이 (전체화면 + 그림 최우선)</title>
+    <style>
+        /* OBS 기본 여백 제거 및 화면 꽉 채우기 */
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            width: 1920px; 
+            height: 1080px; 
+            background-color: transparent; 
+            overflow: hidden; 
+            font-family: 'Malgun Gothic', sans-serif; 
+        }
+        
+        #alert-container { 
+            display: none; /* 평소엔 숨김 */
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 1. 후원 텍스트 (그림 뒤로 배치, 화면 상단 중앙) */
+        #message-text {
+            position: absolute;
+            top: 50px; 
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1; /* 낮을수록 뒤로 감 */
+            color: #ffffff; 
+            font-size: 36px;
+            font-weight: bold;
+            text-shadow: 0px 4px 10px rgba(0, 0, 0, 0.9), 0px 0px 5px rgba(0,0,0,0.5);
+            margin: 0;
+            text-align: center;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 30px;
+            border-radius: 50px;
+        }
+
+        /* 2. 그림 캔버스 (화면 전체 덮기, 텍스트보다 위로) */
+        #drawing-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10; /* 그림이 텍스트 위를 덮도록 최상단 배치 */
+            background-color: transparent; /* 완전 투명 (그림만 남김) */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="alert-container">
+        <!-- 후원 알림 글씨 (그림보다 뒤에 위치) -->
+        <h1 id="message-text"></h1>
+        
+        <!-- 1920x1080 캔버스 (가장 위에서 렌더링) -->
+        <canvas id="drawing-canvas" width="1920" height="1080"></canvas>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin
+        const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+        const ws = new WebSocket(`${protocol}${window.location.host}/ws`);  
+        const alertContainer = document.getElementById("alert-container");
+        const messageText = document.getElementById("message-text");
+        
+        const canvas = document.getElementById("drawing-canvas");
+        const ctx = canvas.getContext("2d");
+        
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        let hideTimeout;
+
+        // ✨ 사운드 객체 생성 (같은 폴더에 coin.mp3 파일을 꼭 넣어주세요!)
+        const coinSound = new Audio("coin.mp3");
+        coinSound.volume = 0.5; // 소리 크기 (0.0 ~ 1.0 사이 조절)
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === "alert") {
+                // ✨ 알림이 올 때 사운드 재생
+                coinSound.currentTime = 0; // 연속으로 올 때를 대비해 재생 위치 초기화
+                coinSound.play().catch(e => console.log("사운드 재생 에러:", e));
+
+                const titleText = data.title ? `[${data.title}] ` : '';
+                messageText.innerText = `🎉 ${data.name}님께서 ${titleText}${data.amount}원을 후원하셨습니다!`;
+                
+                alertContainer.style.display = "block";
+                clearTimeout(hideTimeout);
+            } 
+            else if (data.type === "clear") {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            else if (data.type === "start_path") {
+                ctx.beginPath();
+                if (data.color === 'erase') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.strokeStyle = 'rgba(0,0,0,1)';
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = data.color;
+                }
+                ctx.moveTo(data.point.x, data.point.y);
+            } 
+            else if (data.type === "draw_line") {
+                ctx.lineTo(data.point.x, data.point.y);
+                ctx.lineWidth = data.point.w; 
+                ctx.stroke();
+            }
+            else if (data.type === "draw_shape") {
+                ctx.beginPath();
+                if (data.color === 'erase') {
+                    ctx.globalCompositeOperation = 'destination-out';
+                    ctx.strokeStyle = 'rgba(0,0,0,1)';
+                } else {
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.strokeStyle = data.color;
+                }
+                ctx.lineWidth = data.width;
+
+                if (data.shape === 'line') {
+                    ctx.moveTo(data.start.x, data.start.y);
+                    ctx.lineTo(data.end.x, data.end.y);
+                    ctx.stroke();
+                } else if (data.shape === 'rect') {
+                    ctx.strokeRect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y);
+                } else if (data.shape === 'circle') {
+                    let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y);
+                    ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
+            else if (data.type === "done") {
+                hideTimeout = setTimeout(() => {
+                    alertContainer.style.display = "none";
+                    ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                }, 5000); 
+            }
+        };
+    </script>
+
+</body>
+</html>
