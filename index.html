@@ -94,26 +94,26 @@
                     renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, data.point.x, data.point.y, data.point.w, data.color, data.color === 'erase');
                     lastPoint = data.point;
                 } 
-                else if (data.type === 'draw_shape') {
+               else if (data.type === 'draw_shape') {
                     ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
                     ctx.strokeStyle = data.color; ctx.lineWidth = data.width; ctx.globalCompositeOperation = 'source-over';
-                    
                     if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); ctx.stroke(); } 
                     else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
                     else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
-                    
-                    // ✨ 텍스트 엔진 추가 (파이썬 코드 수정 없이 data.end.text 안에 숨겨진 글씨를 꺼내서 씁니다)
-                    else if (data.shape === 'text') {
-                        ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
-                        ctx.fillStyle = data.color;
-                        ctx.textBaseline = 'top';
-                        const lines = data.end.text.split('\n');
-                        let curY = data.start.y;
-                        for(let line of lines) {
-                            ctx.fillText(line, data.start.x, curY);
-                            curY += data.width * 1.2;
-                        }
-                    }
+                }
+                // ✨ 새롭게 추가된 '래스터 이미지(그림화된 리치 텍스트 등)' 렌더링 엔진
+                else if (data.type === 'raster_image') {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.save();
+                        // 중심점을 기준으로 이동 후 회전
+                        ctx.translate(data.cx, data.cy);
+                        ctx.rotate(data.angle);
+                        // 이미지를 중심점에 맞춰 그리기
+                        ctx.drawImage(img, -data.width / 2, -data.height / 2, data.width, data.height);
+                        ctx.restore();
+                    };
+                    img.src = data.src;
                 }
                 else if (data.type === 'fade_out') { canvas.style.opacity = '0'; }
             };
