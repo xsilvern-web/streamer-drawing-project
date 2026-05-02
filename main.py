@@ -34,7 +34,7 @@ CREATOR_SETTINGS = {
 }
 
 # --- 1. SQLite 데이터베이스 초기화 ---
-DB_FILE = "donation_ledger.db"
+DB_FILE = "donation_ledger_v2.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
