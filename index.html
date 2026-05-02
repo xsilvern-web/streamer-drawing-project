@@ -7,6 +7,7 @@
         body, html {
             margin: 0; padding: 0; width: 1920px; height: 1080px; background-color: transparent; overflow: hidden;
         }
+        /* ✨ 1.5초에 걸쳐 서서히 사라짐 */
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; transition: opacity 1.5s ease-in-out; opacity: 1; }
         #alert-container {
             position: absolute; top: 50px; left: 50px; background: rgba(0, 0, 0, 0.8);
@@ -16,7 +17,6 @@
         #alert-container.show { opacity: 1; }
         .highlight { color: #ff9800; font-weight: bold; font-size: 24px; }
         
-        /* ✨ 프로필 사진 스타일 (배경 이미지 활용으로 찌그러짐 방지) */
         #alert-profile-img {
             width: 45px; height: 45px; border-radius: 50%; 
             background-color: white; 
@@ -73,11 +73,8 @@
                     document.getElementById('donor-name-display').innerText = data.name;
                     document.getElementById('drawing-title-display').innerText = data.title;
                     
-                    if (data.profileImage) {
-                        profileImgDiv.style.backgroundImage = `url('${data.profileImage}')`;
-                    } else {
-                        profileImgDiv.style.backgroundImage = 'none';
-                    }
+                    if (data.profileImage) { profileImgDiv.style.backgroundImage = `url('${data.profileImage}')`; } 
+                    else { profileImgDiv.style.backgroundImage = 'none'; }
 
                     alertContainer.classList.add('show');
                     setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); 
@@ -86,7 +83,19 @@
                 } 
                 else if (data.type === 'clear') {
                     canvas.style.opacity = '1'; ctx.clearRect(0, 0, canvas.width, canvas.height);
-                } 
+                }
+                
+                // ✨ 애니메이션 모드에서 개별 프레임 이미지가 날아올 경우
+                else if (data.type === 'draw_frame') {
+                    const img = new Image();
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); // 이전 프레임을 싹 지움
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height); // 새 프레임으로 덮어씀
+                    };
+                    img.src = data.src;
+                }
+
+                // 기존 그리기 모드 궤적
                 else if (data.type === 'start_path') { lastPoint = data.point; } 
                 else if (data.type === 'draw_line') {
                     if (!lastPoint) return;
@@ -101,30 +110,27 @@
                     else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
                     else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
                     
-                    // (하위호환 유지용) 구버전 텍스트 처리
                     else if (data.shape === 'text') {
                         ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
                         ctx.fillStyle = data.color; ctx.textBaseline = 'top';
-                        const lines = data.end.text.split('\n');
-                        let curY = data.start.y;
+                        const lines = data.end.text.split('\n'); let curY = data.start.y;
                         for(let line of lines) { ctx.fillText(line, data.start.x, curY); curY += data.width * 1.2; }
                     }
                     
-                    // ✨ 신규 추가: 고급 리치 텍스트 및 회전된 이미지를 화면에 그리는 로직
                     else if (data.shape === 'raster_image') {
                         const img = new Image();
                         img.onload = () => {
                             ctx.save();
-                            ctx.translate(data.cx, data.cy); // 중심점으로 이동
-                            ctx.rotate(data.angle);          // 회전값 적용
-                            // 중심을 기준으로 이미지 렌더링
+                            ctx.translate(data.cx, data.cy); ctx.rotate(data.angle);
                             ctx.drawImage(img, -data.width/2, -data.height/2, data.width, data.height);
                             ctx.restore();
                         };
                         img.src = data.src;
                     }
                 }
-                else if (data.type === 'fade_out') { canvas.style.opacity = '0'; }
+                else if (data.type === 'fade_out') { 
+                    canvas.style.opacity = '0'; // 모든 과정이 끝나고 opacity 조절
+                }
             };
             ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
             ws.onerror = (err) => { ws.close(); };
