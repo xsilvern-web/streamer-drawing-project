@@ -6,8 +6,8 @@
     <style>
         body, html {
             margin: 0; padding: 0;
-            width: 1920px; height: 1080px;
-            background-color: transparent;
+            width: 1920px; height: 1080px; /* OBS 권장 해상도 */
+            background-color: transparent; /* 배경 투명 (방송에 합성하기 위해) */
             overflow: hidden;
         }
         
@@ -37,8 +37,10 @@
 </head>
 <body>
 
+    <!-- 그림이 그려질 캔버스 영역 -->
     <canvas id="canvas" width="1920" height="1080"></canvas>
 
+    <!-- 후원 알림창 영역 -->
     <div id="alert-container">
         <div>🎉 <span id="donor-name-display" class="highlight"></span> 님이 후원하셨습니다!</div>
         <div style="font-size: 18px; margin-top: 10px;">제목: <span id="drawing-title-display"></span></div>
@@ -46,18 +48,46 @@
     </div>
 
     <script>
+        // 1. 캔버스와 붓(ctx) 준비
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
 
+        // 2. 알림창 UI 요소 가져오기
         const alertContainer = document.getElementById("alert-container");
 
+        // 3. 웹소켓 및 자동 감지 통신 로직
         const API_BASE = window.location.origin;
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         const wsUrl = `${protocol}${window.location.host}/ws`;
 
         let ws;
+        let lastPoint = null;
+
+        // ✨ [프로 렌더링] 방송 화면용 도장 찍기 함수 (확장성 대비)
+        function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser) {
+            ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+            ctx.fillStyle = isEraser ? "rgba(0,0,0,1)" : color;
+
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const distance = Math.hypot(dx, dy);
+            
+            // 브러시 간격(Spacing)
+            const spacing = Math.max(1, Math.min(w1, w2) * 0.1); 
+            const steps = Math.max(1, Math.floor(distance / spacing));
+
+            // 두 점 사이를 촘촘하게 채웁니다
+            for (let i = 0; i <= steps; i++) {
+                const ratio = steps === 0 ? 1 : i / steps;
+                const cx = x1 + dx * ratio;
+                const cy = y1 + dy * ratio;
+                const cw = w1 + (w2 - w1) * ratio;
+
+                ctx.beginPath();
+                ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); 
+                ctx.fill();
+            }
+        }
 
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
@@ -68,40 +98,53 @@
                 const data = JSON.parse(event.data);
                 
                 if (data.type === 'alert') {
+                    // 알림창 텍스트 변경
                     document.getElementById('donor-name-display').innerText = data.name;
                     document.getElementById('drawing-title-display').innerText = data.title;
                     document.getElementById('donation-amount-display').innerText = data.amount + '원';
                     
+                    // 알림창 띄우기 (5초 뒤 숨김)
                     alertContainer.classList.add('show');
-                    setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); // 알림창은 5초 뒤 먼저 숨김
+                    setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); 
                     
+                    // 소리 재생
                     const audio = new Audio(`${API_BASE}/coin.mp3`);
-                    audio.play().catch(e => console.log("오디오 에러:", e));
+                    audio.play().catch(e => console.log("오디오 재생 에러:", e));
                 } 
                 else if (data.type === 'clear') {
-                    // ✨ 다음 그림이 그려지기 전에 도화지 투명도를 다시 100%로 살려냅니다.
+                    // 다음 그림이 그려지기 전에 도화지 투명도를 다시 100%로 살려냅니다.
                     canvas.style.opacity = '1';
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                 } 
                 else if (data.type === 'start_path') {
-                    ctx.beginPath();
-                    ctx.moveTo(data.point.x, data.point.y);
-                    ctx.strokeStyle = data.color === 'erase' ? 'rgba(0,0,0,1)' : data.color;
-                    ctx.globalCompositeOperation = data.color === 'erase' ? 'destination-out' : 'source-over';
+                    lastPoint = data.point; // 그리기 시작 위치 기억
                 } 
                 else if (data.type === 'draw_line') {
-                    ctx.lineTo(data.point.x, data.point.y);
-                    ctx.lineWidth = data.point.w;
-                    ctx.stroke();
+                    if (!lastPoint) return;
+                    
+                    // 이전 점과 현재 점 사이에 촘촘하게 도장을 찍습니다.
+                    renderBrushStroke(
+                        ctx, 
+                        lastPoint.x, lastPoint.y, lastPoint.w, 
+                        data.point.x, data.point.y, data.point.w, 
+                        data.color, 
+                        data.color === 'erase'
+                    );
+                    
+                    lastPoint = data.point; // 다음을 위해 갱신
                 } 
                 else if (data.type === 'draw_shape') {
+                    // 도형은 일반적인 선 긋기 방식을 유지합니다
+                    ctx.lineCap = 'round'; 
+                    ctx.lineJoin = 'round'; 
                     ctx.beginPath();
-                    ctx.strokeStyle = data.color;
-                    ctx.lineWidth = data.width;
+                    ctx.strokeStyle = data.color; 
+                    ctx.lineWidth = data.width; 
                     ctx.globalCompositeOperation = 'source-over';
                     
                     if (data.shape === 'line') {
-                        ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y);
+                        ctx.moveTo(data.start.x, data.start.y); 
+                        ctx.lineTo(data.end.x, data.end.y);
                     } else if (data.shape === 'rect') {
                         ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y);
                     } else if (data.shape === 'circle') {
@@ -110,16 +153,25 @@
                     }
                     ctx.stroke();
                 }
-                // ✨ 서버에서 fade_out 명령이 오면 캔버스의 투명도를 0으로 만듭니다.
                 else if (data.type === 'fade_out') {
+                    // 서버에서 fade_out 명령이 오면 캔버스의 투명도를 0으로 만듭니다.
                     canvas.style.opacity = '0';
                 }
             };
 
-            ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
-            ws.onerror = (err) => { ws.close(); };
+            // 서버가 끊으면 알아서 다시 연결합니다
+            ws.onclose = () => {
+                console.log("🔴 웹소켓 연결 끊김. 3초 후 재연결 시도...");
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (err) => {
+                console.error("❌ 웹소켓 오류:", err);
+                ws.close(); 
+            };
         }
 
+        // 최초 연결 실행
         connectWebSocket();
     </script>
 </body>

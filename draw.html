@@ -35,7 +35,7 @@
         .btn-header:hover, .file-label:hover { background: #555; }
         input[type="file"] { display: none; }
         
-        #btn-send { background: #ff9800; color: white; border: none; font-size: 15px; padding: 8px 20px; }
+        #btn-send { background: #ff9800; color: white; border: none; font-size: 15px; padding: 8px 20px; font-weight: bold; }
         #btn-send:hover { background: #fb8c00; }
 
         .disclaimer { font-size: 11px; color: #888; text-align: right; width: 100%; }
@@ -47,7 +47,7 @@
         .sidebar-left {
             width: 80px; background: #252526; border-right: 1px solid #444;
             display: flex; flex-direction: column; align-items: center; padding: 15px 0; gap: 15px; overflow-y: visible; flex-shrink: 0;
-            position: relative; /* 플라이아웃 메뉴 기준점 */
+            position: relative;
         }
         
         .tool-btn { 
@@ -58,10 +58,9 @@
         .tool-btn:hover:not(.active-tool) { background: #444; }
         .tool-btn.active-tool { background: #007acc; color: white; font-weight: bold; border-color: #007acc; }
 
-        /* ✨ 도형 플라이아웃 메뉴 스타일 */
         .shape-container { position: relative; width: 100%; display: flex; justify-content: center; }
         .shape-flyout {
-            display: none; /* 평소엔 숨김 */
+            display: none; 
             position: absolute; left: 70px; top: 0; 
             background: #252526; border: 1px solid #555; border-radius: 4px; 
             padding: 5px; gap: 5px; z-index: 100; box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
@@ -70,7 +69,6 @@
         .sub-tool { width: 40px; height: 40px; padding: 5px; }
         .sub-tool svg { stroke: currentColor; fill: none; stroke-width: 2; width: 24px; height: 24px; }
 
-        /* 슬라이더 컨트롤 */
         .control-group { display: flex; flex-direction: column; align-items: center; width: 80%; gap: 5px; font-size: 11px; color: #aaa; }
         .control-group input[type="range"] { width: 100%; cursor: pointer; }
         #color-picker { width: 50px; height: 50px; padding: 0; border: 2px solid #555; border-radius: 8px; cursor: pointer; background: transparent; }
@@ -104,7 +102,7 @@
 
         /* 우측: 레이어 패널 */
         .sidebar-right {
-            width: 220px; background: #252526; border-left: 1px solid #444;
+            width: 240px; background: #252526; border-left: 1px solid #444;
             display: flex; flex-direction: column; padding: 15px; box-sizing: border-box; flex-shrink: 0; gap: 15px;
         }
 
@@ -119,7 +117,7 @@
         .layer-item:hover:not(.active) { background: #555; }
         .layer-name { font-size: 13px; flex-grow: 1; padding-left: 10px; color: white;}
         
-        .sys-btn { background: #444; color: white; padding: 6px; font-size: 12px; width: 100%; border: 1px solid #555; }
+        .sys-btn { background: #444; color: white; padding: 6px; font-size: 12px; width: 100%; border: 1px solid #555; font-weight: bold; cursor: pointer;}
         .sys-btn:hover { background: #555; }
 
         .toggle-label { font-size: 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc; }
@@ -127,21 +125,19 @@
 </head>
 <body>
 
-    <!-- ✨ 개편된 상단 바 -->
+    <!-- 상단 바 -->
     <div class="app-header">
         <div class="header-top">
-                <div class="header-group">
+            <div class="header-group">
                 <button id="btn-save" class="btn-header">파일 저장</button>
                 <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
-                
-                <!-- ✨ 새로 추가된 휴지통(전체 삭제) 버튼 -->
-                <button id="btn-clear-all" class="btn-header" style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️ 전체 삭제</button>
+                <!-- 휴지통 버튼 -->
+                <button id="btn-clear-all" class="btn-header" style="background-color: #ff4757; color: white; border: none; padding: 8px 15px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️ 전체 삭제</button>
             </div>
             
             <div class="header-group" id="login-container">
-                <!-- ✨ 구글 로그인 버튼 -->
                 <div id="g_id_onload"
-                     data-client_id="614606068793-er7vl8fm5foh6pad6erohkq87v0l3bbd.apps.googleusercontent.com" 
+                     data-client_id="YOUR_GOOGLE_CLIENT_ID_HERE" 
                      data-callback="handleCredentialResponse"
                      data-auto_prompt="false">
                 </div>
@@ -149,21 +145,21 @@
             </div>
 
             <div class="header-group" id="donation-container" style="display: none;">
-                <!-- ✨ 닉네임 수정 가능하게 변경 -->
                 <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                 <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
                 <input type="number" id="donation-amount" placeholder="후원 금액" min="0" style="width: 120px;">
                 <button id="btn-send">화면에 띄우기 (전송)</button>
             </div>
         </div>
-        <!-- ✨ 법적 면책 고지 영역 -->
         <div class="disclaimer">
             ※ 본 사이트는 후원 결제 인터페이스만을 제공하며, 거래 당사자는 시청자와 크리에이터입니다. 환불 및 서비스 제공에 관한 책임은 크리에이터에게 있습니다.
         </div>
     </div>
 
+    <!-- 메인 워크스페이스 -->
     <div class="app-body">
         
+        <!-- 좌측 도구바 -->
         <div class="sidebar-left">
             <input type="color" id="color-picker" value="#ffffff">
             
@@ -185,15 +181,9 @@
             <div class="shape-container">
                 <button class="tool-btn" id="btn-shape">도형 ▶</button>
                 <div id="shape-flyout" class="shape-flyout">
-                    <button class="tool-btn sub-tool" data-tool="line" title="직선">
-                        <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"></line></svg>
-                    </button>
-                    <button class="tool-btn sub-tool" data-tool="rect" title="사각형">
-                        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"></rect></svg>
-                    </button>
-                    <button class="tool-btn sub-tool" data-tool="circle" title="원">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg>
-                    </button>
+                    <button class="tool-btn sub-tool" data-tool="line" title="직선"><svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"></line></svg></button>
+                    <button class="tool-btn sub-tool" data-tool="rect" title="사각형"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"></rect></svg></button>
+                    <button class="tool-btn sub-tool" data-tool="circle" title="원"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg></button>
                 </div>
             </div>
 
@@ -203,15 +193,20 @@
             <button class="tool-btn" id="btn-redo" style="height:35px;">다음</button>
         </div>
 
+        <!-- 중앙 도화지 영역 -->
         <div class="workspace">
             <div id="scroll-container">
                 <div id="layer-wrapper">
                     <div id="offline-text">현재 방송 중 아님</div>
                     <iframe id="broadcast-bg" src="https://chzzk.naver.com/live/bc2dbff369307b5c446224cce192c8b1" frameborder="0" allow="autoplay; fullscreen"></iframe>
+                    
+                    <!-- ✨ 러프 이미지 -->
+                    <img id="rough-image" style="display: none; position: absolute; top: 0; left: 0; transform-origin: top left; z-index: 0; opacity: 0.5; pointer-events: none;">
                 </div>
             </div>
         </div>
 
+        <!-- 우측 레이어 및 설정 패널 -->
         <div class="sidebar-right">
             <div class="panel-section">
                 <div class="panel-title">화면 제어</div>
@@ -225,6 +220,25 @@
                 </label>
             </div>
 
+            <!-- ✨ 러프 이미지 컨트롤 패널 -->
+            <div class="panel-section">
+                <div class="panel-title" style="color: #4CAF50;">참고 이미지 (전송 제외)</div>
+                <label class="sys-btn" style="text-align: center; background: #2e7d32; border-color: #1b5e20; cursor: pointer;">
+                    📁 이미지 불러오기
+                    <input type="file" id="rough-file" accept="image/*" style="display: none;">
+                </label>
+                
+                <div id="rough-controls" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <label style="font-size: 11px; color: #aaa; display: flex; justify-content: space-between;">
+                        투명도 <span id="rough-opacity-val">50%</span>
+                    </label>
+                    <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5" style="width: 100%;">
+                    
+                    <button id="btn-move-rough" class="sys-btn" style="background: #ff9800; border-color: #e65100; color: white;">✋ 위치 이동 모드 (끄기)</button>
+                    <button id="btn-delete-rough" class="sys-btn" style="background: #ff4757; border-color: #c0392b;">🗑️ 러프 닫기</button>
+                </div>
+            </div>
+
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
                 <div class="panel-title">레이어 패널</div>
                 <button id="btn-add-layer" class="sys-btn" style="background: #007acc; border-color: #007acc; margin-bottom: 10px;">새 레이어</button>
@@ -234,7 +248,7 @@
     </div>
 
     <script>
-        // --- ✨ 전역 변수 및 초기화 ---
+        // --- 전역 변수 ---
         const CANVAS_WIDTH = 1920;
         const CANVAS_HEIGHT = 1080;
         const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1'; 
@@ -260,30 +274,20 @@
             document.getElementById('width-val').innerText = currentWidth;
         };
         
-        // --- ✨ 도구 선택 및 플라이아웃 메뉴 로직 ---
+        // --- 도구 선택 및 플라이아웃 ---
         const btnShape = document.getElementById('btn-shape');
         const shapeFlyout = document.getElementById('shape-flyout');
         const allToolBtns = document.querySelectorAll('.tool-btn[data-tool]');
 
-        btnShape.addEventListener('click', (e) => {
-            shapeFlyout.classList.toggle('show');
-            e.stopPropagation();
-        });
-
-        document.addEventListener('click', (e) => {
-            if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) {
-                shapeFlyout.classList.remove('show');
-            }
-        });
+        btnShape.addEventListener('click', (e) => { shapeFlyout.classList.toggle('show'); e.stopPropagation(); });
+        document.addEventListener('click', (e) => { if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) shapeFlyout.classList.remove('show'); });
 
         allToolBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 allToolBtns.forEach(b => b.classList.remove('active-tool'));
                 btnShape.classList.remove('active-tool');
-                
                 if (e.currentTarget.classList.contains('sub-tool')) {
-                    btnShape.classList.add('active-tool');
-                    shapeFlyout.classList.remove('show');
+                    btnShape.classList.add('active-tool'); shapeFlyout.classList.remove('show');
                 } else {
                     e.currentTarget.classList.add('active-tool');
                 }
@@ -291,7 +295,7 @@
             });
         });
 
-        // --- ✨ 방송 배경 제어 ---
+        // --- 방송 배경 제어 ---
         const toggleBgBtn = document.getElementById('toggle-bg');
         const broadcastBg = document.getElementById('broadcast-bg');
         const offlineText = document.getElementById('offline-text');
@@ -313,12 +317,9 @@
 
         toggleBgBtn.addEventListener('change', (e) => {
             if (e.target.checked) {
-                checkLiveStatus(); 
-                layerWrapper.classList.remove('checker-bg');
+                checkLiveStatus(); layerWrapper.classList.remove('checker-bg');
             } else { 
-                broadcastBg.style.display = 'none'; 
-                offlineText.style.display = 'none'; 
-                layerWrapper.classList.add('checker-bg');
+                broadcastBg.style.display = 'none'; offlineText.style.display = 'none'; layerWrapper.classList.add('checker-bg');
             }
         });
 
@@ -329,15 +330,54 @@
         }
         document.getElementById('btn-zoom-in').onclick = () => updateZoom(zoomLevel + 0.1);
         document.getElementById('btn-zoom-out').onclick = () => updateZoom(zoomLevel - 0.1);
-
         scrollContainer.addEventListener('wheel', (e) => {
-            if (e.altKey) {
-                e.preventDefault(); 
-                if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01);
-            }
+            if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
         }, { passive: false });
 
-        // --- ✨ 레이어 제어 ---
+        // --- ✨ 러프 이미지 (참고용) 로직 ---
+        const roughFile = document.getElementById('rough-file');
+        const roughImg = document.getElementById('rough-image');
+        const roughControls = document.getElementById('rough-controls');
+        const roughOpacity = document.getElementById('rough-opacity');
+        const btnMoveRough = document.getElementById('btn-move-rough');
+        const btnDeleteRough = document.getElementById('btn-delete-rough');
+
+        let isMovingRoughMode = false; let isDraggingRough = false;
+        let roughX = 0, roughY = 0; let roughOffsetX = 0, roughOffsetY = 0;
+
+        roughFile.addEventListener('change', (e) => {
+            const file = e.target.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                roughImg.src = event.target.result; roughImg.style.display = 'block'; roughControls.style.display = 'flex';
+                roughImg.style.opacity = roughOpacity.value; roughX = 0; roughY = 0;
+                roughImg.style.left = '0px'; roughImg.style.top = '0px';
+                if (!isMovingRoughMode) toggleRoughMoveMode();
+            };
+            reader.readAsDataURL(file); e.target.value = ''; 
+        });
+
+        roughOpacity.addEventListener('input', (e) => {
+            roughImg.style.opacity = e.target.value;
+            document.getElementById('rough-opacity-val').innerText = `${Math.round(e.target.value * 100)}%`;
+        });
+
+        btnDeleteRough.addEventListener('click', () => {
+            roughImg.style.display = 'none'; roughImg.src = ''; roughControls.style.display = 'none';
+            if (isMovingRoughMode) toggleRoughMoveMode(); 
+        });
+
+        function toggleRoughMoveMode() {
+            isMovingRoughMode = !isMovingRoughMode;
+            if (isMovingRoughMode) {
+                btnMoveRough.innerText = '✋ 위치 이동 모드 (켜짐)'; btnMoveRough.style.background = '#e65100'; layerWrapper.style.cursor = 'move';
+            } else {
+                btnMoveRough.innerText = '✋ 위치 이동 모드 (끄기)'; btnMoveRough.style.background = '#ff9800'; layerWrapper.style.cursor = 'crosshair';
+            }
+        }
+        btnMoveRough.addEventListener('click', toggleRoughMoveMode);
+
+        // --- 레이어 제어 ---
         function createLayer() {
             layerCounter++; const lId = `layer_${layerCounter}`;
             const cvs = document.createElement('canvas');
@@ -364,14 +404,9 @@
 
                 const eyeBtn = document.createElement('span');
                 eyeBtn.innerText = l.visible ? '표시' : '숨김'; 
-                eyeBtn.style.cursor = 'pointer';
-                eyeBtn.style.fontSize = '11px';
-                eyeBtn.style.color = l.visible ? '#fff' : '#aaa';
-                eyeBtn.style.border = '1px solid #555';
-                eyeBtn.style.padding = '2px 5px';
-                eyeBtn.style.borderRadius = '3px';
+                eyeBtn.style.cursor = 'pointer'; eyeBtn.style.fontSize = '11px'; eyeBtn.style.color = l.visible ? '#fff' : '#aaa';
+                eyeBtn.style.border = '1px solid #555'; eyeBtn.style.padding = '2px 5px'; eyeBtn.style.borderRadius = '3px';
                 eyeBtn.style.backgroundColor = l.visible ? '#007acc' : '#444';
-                
                 eyeBtn.onclick = (e) => { e.stopPropagation(); toggleLayerVisibility(l.id); };
 
                 const nameSpan = document.createElement('span');
@@ -382,21 +417,39 @@
         }
         document.getElementById('btn-add-layer').onclick = createLayer;
 
-        // --- ✨ 그리기 로직 ---
+        // --- ✨ 프로급 브러시 렌더링 엔진 (점 찍기 방식) ---
+        function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser) {
+            ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+            ctx.fillStyle = isEraser ? "rgba(0,0,0,1)" : color;
+
+            const dx = x2 - x1; const dy = y2 - y1; const distance = Math.hypot(dx, dy);
+            const spacing = Math.max(1, Math.min(w1, w2) * 0.1); 
+            const steps = Math.max(1, Math.floor(distance / spacing));
+
+            for (let i = 0; i <= steps; i++) {
+                const ratio = steps === 0 ? 1 : i / steps;
+                const cx = x1 + dx * ratio; const cy = y1 + dy * ratio; const cw = w1 + (w2 - w1) * ratio;
+                ctx.beginPath(); ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+
         function getPointerPos(e) {
             const rect = layerWrapper.getBoundingClientRect();
             return { x: (e.clientX - rect.left) / zoomLevel, y: (e.clientY - rect.top) / zoomLevel };
         }
 
         layerWrapper.addEventListener('pointerdown', (e) => {
+            if (isMovingRoughMode) {
+                isDraggingRough = true; const pos = getPointerPos(e);
+                roughOffsetX = pos.x - roughX; roughOffsetY = pos.y - roughY; return; 
+            }
             const activeLayer = layers.find(l => l.id === activeLayerId);
             if (!activeLayer || !activeLayer.visible) return; 
 
             isDrawing = true; const pos = getPointerPos(e);
             
             if (currentTool === 'pen' || currentTool === 'eraser') {
-                let pressure = e.pointerType === 'pen' ? e.pressure : 1;
-                if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
+                let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
                 let targetWidth = Math.max(currentWidth * pressure, 1);
                 smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY;
                 currentPath = [{x: smX, y: smY, w: smW}];
@@ -407,24 +460,24 @@
         });
 
         layerWrapper.addEventListener('pointermove', (e) => {
+            if (isMovingRoughMode && isDraggingRough) {
+                const pos = getPointerPos(e);
+                roughX = pos.x - roughOffsetX; roughY = pos.y - roughOffsetY;
+                roughImg.style.left = `${roughX}px`; roughImg.style.top = `${roughY}px`; return; 
+            }
             if (!isDrawing) return;
             const activeLayer = layers.find(l => l.id === activeLayerId);
             const ctx = activeLayer.ctx; const pos = getPointerPos(e);
 
             if (currentTool === 'pen' || currentTool === 'eraser') {
-                let pressure = e.pointerType === 'pen' ? e.pressure : 1;
-                if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
+                let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
                 let targetWidth = Math.max(currentWidth * pressure, 1);
                 const smoothingLevel = parseInt(document.getElementById('smoothing-level').value);
                 const factor = 1 / (smoothingLevel + 1);
 
                 smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor; 
 
-                ctx.beginPath();
-                if (currentTool === 'eraser') { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = "rgba(0,0,0,1)"; } 
-                else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; }
-
-                ctx.moveTo(lastX, lastY); ctx.lineTo(smX, smY); ctx.lineWidth = smW; ctx.stroke();
+                renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length-1].w, smX, smY, smW, currentColor, currentTool === 'eraser');
                 lastX = smX; lastY = smY; currentPath.push({x: smX, y: smY, w: smW});
             } else {
                 ctx.putImageData(canvasSnapshot, 0, 0);
@@ -437,6 +490,7 @@
         });
 
         layerWrapper.addEventListener('pointerup', (e) => {
+            if (isMovingRoughMode) { isDraggingRough = false; return; }
             if (!isDrawing) return;
             isDrawing = false; const pos = getPointerPos(e);
             if (currentTool === 'pen' || currentTool === 'eraser') {
@@ -448,6 +502,7 @@
         });
 
         layerWrapper.addEventListener('pointerleave', () => { 
+            if (isMovingRoughMode) { isDraggingRough = false; return; }
             if (!isDrawing) return; 
             isDrawing = false; 
             if (currentTool === 'pen' || currentTool === 'eraser') {
@@ -464,16 +519,22 @@
                 const targetLayer = layers.find(l => l.id === item.layerId);
                 if(!targetLayer) continue;
                 const ctx = targetLayer.ctx;
-                if (item.color === 'erase') { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = "rgba(0,0,0,1)"; } 
-                else { ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = item.color; }
-                ctx.beginPath();
+                
                 if (item.type === 'path' || !item.type) {
-                    if (item.points.length < 2) continue;
-                    for (let i = 1; i < item.points.length; i++) { let p1 = item.points[i - 1]; let p2 = item.points[i]; ctx.lineWidth = p2.w; ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
-                } 
-                else if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); } 
-                else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); } 
-                else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                    if (item.points.length < 2) {
+                        renderBrushStroke(ctx, item.points[0].x, item.points[0].y, item.points[0].w, item.points[0].x, item.points[0].y, item.points[0].w, item.color, item.color === 'erase');
+                        continue;
+                    }
+                    for (let i = 1; i < item.points.length; i++) { 
+                        let p1 = item.points[i - 1]; let p2 = item.points[i]; 
+                        renderBrushStroke(ctx, p1.x, p1.y, p1.w, p2.x, p2.y, p2.w, item.color, item.color === 'erase');
+                    }
+                } else {
+                    ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = item.color;
+                    if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); } 
+                    else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); } 
+                    else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                }
             }
         }
 
@@ -494,11 +555,9 @@
             reader.onload = (event) => {
                 try {
                     const data = JSON.parse(event.target.result);
-                    layerWrapper.innerHTML = ''; layers = []; layerCounter = data.layerCount || 0;
-                    
-                    const textDiv = document.createElement('div'); textDiv.id = 'offline-text'; textDiv.innerText = '현재 방송 중 아님'; textDiv.style.display = offlineText.style.display;
-                    const iframe = document.createElement('iframe'); iframe.id = 'broadcast-bg'; iframe.src = broadcastBg.src; iframe.style.display = broadcastBg.style.display; iframe.frameBorder = "0"; iframe.allow = "autoplay; fullscreen";
-                    layerWrapper.appendChild(textDiv); layerWrapper.appendChild(iframe);
+                    // 캔버스 초기화 (러프 이미지와 방송 화면은 유지)
+                    Array.from(layerWrapper.querySelectorAll('canvas')).forEach(c => c.remove());
+                    layers = []; layerCounter = data.layerCount || 0;
 
                     data.layersInfo.forEach(lInfo => {
                         const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
@@ -518,23 +577,15 @@
 
         function handleCredentialResponse(response) {
             const responsePayload = decodeJwtResponse(response.credential);
-            
-            loggedInUser = {
-                name: responsePayload.name,
-                email: responsePayload.email
-            };
-
+            loggedInUser = { name: responsePayload.name, email: responsePayload.email };
             document.getElementById('login-container').style.display = 'none';
             document.getElementById('donation-container').style.display = 'flex';
-            document.getElementById('user-info-display').innerText = `👤 ${loggedInUser.name} (${loggedInUser.email})`;
+            document.getElementById('custom-nickname').value = loggedInUser.name;
         }
 
         function decodeJwtResponse(token) {
-            let base64Url = token.split('.')[1];
-            let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-            let jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-            }).join(''));
+            let base64Url = token.split('.')[1]; let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            let jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) { return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); }).join(''));
             return JSON.parse(jsonPayload);
         }
 
@@ -542,67 +593,29 @@
             try {
                 const response = await fetch(`${API_BASE}/api/settings`);
                 const data = await response.json();
-                
                 if (data.is_donation_enabled) {
-                    isDonationEnabled = true;
-                    btnSend.style.backgroundColor = '#ff9800';
-                    btnSend.style.cursor = 'pointer';
-                    btnSend.innerText = '화면에 띄우기 (전송)';
+                    isDonationEnabled = true; btnSend.style.backgroundColor = '#ff9800'; btnSend.style.cursor = 'pointer'; btnSend.innerText = '화면에 띄우기 (전송)';
                 } else {
-                    isDonationEnabled = false;
-                    btnSend.style.backgroundColor = '#777';
-                    btnSend.style.cursor = 'not-allowed';
-                    btnSend.innerText = '현재 후원이 닫혀있습니다';
+                    isDonationEnabled = false; btnSend.style.backgroundColor = '#777'; btnSend.style.cursor = 'not-allowed'; btnSend.innerText = '현재 후원이 닫혀있습니다';
                 }
-            } catch (error) {
-                console.log("서버 상태 확인 불가");
-            }
+            } catch (error) { console.log("서버 상태 확인 불가"); }
         }
 
         checkDonationStatus();
         setInterval(checkDonationStatus, 10000); 
 
-function handleCredentialResponse(response) {
-        const responsePayload = decodeJwtResponse(response.credential);
-        
-        loggedInUser = {
-            name: responsePayload.name,
-            email: responsePayload.email
-        };
-
-        document.getElementById('login-container').style.display = 'none';
-        document.getElementById('donation-container').style.display = 'flex';
-        
-        // ✨ 구글 계정 이름을 기본값으로 넣어주되, 유저가 자유롭게 수정할 수 있습니다.
-        document.getElementById('custom-nickname').value = loggedInUser.name;
-    }
-
-    // 전송 버튼 클릭 로직
-// ✨ [수정됨] 도화지와 데이터를 완벽하게 리셋하는 전용 함수 (레이어 시스템 호환)
+        // ✨ 전체 삭제 함수 (잔상 완벽 해결)
         function clearMyCanvas() {
-            history = []; // 그림 기록 배열 완벽 삭제
-            redoStack = []; // 앞으로 돌리기 기록도 삭제
-            
-            // 모든 레이어를 하나씩 꺼내서 싹 지웁니다. (ctx 오류 해결!)
-            layers.forEach(layer => {
-                layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height);
-            });
-
-            redrawCanvas(); // 빈 화면으로 확실하게 다시 그리기 갱신
+            history = []; redoStack = [];
+            layers.forEach(layer => layer.ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height));
+            redrawCanvas(); 
         }
 
-        // ✨ 휴지통(전체 삭제) 버튼 클릭 시 작동할 로직
         document.getElementById('btn-clear-all').onclick = () => {
-            if (history.length === 0) {
-                alert("지울 그림이 없습니다.");
-                return;
-            }
-            if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) {
-                clearMyCanvas();
-            }
+            if (history.length === 0) return alert("지울 그림이 없습니다.");
+            if (confirm("정말 모든 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
         };
 
-        // ✨ 수정된 전송 버튼 클릭 로직
         btnSend.onclick = async () => {
             const title = document.getElementById('drawing-title').value || "제목없음";
             const amount = document.getElementById('donation-amount').value;
@@ -613,38 +626,28 @@ function handleCredentialResponse(response) {
             if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
 
             const payload = { 
-                name: customName, 
-                email: loggedInUser.email, 
-                title: title, 
-                amount: parseInt(amount), 
-                drawingData: history 
+                name: customName, email: loggedInUser.email, title: title, 
+                amount: parseInt(amount), drawingData: history 
             };
 
             try {
                 const res = await fetch(`${API_BASE}/api/submit-drawing`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
                 });
                 const data = await res.json();
                 
                 if (res.ok) {
                     alert("전송 성공!");
-                    
-                    // 전송 성공 시 마법의 리셋 함수 호출! (잔상 완벽 해결)
                     clearMyCanvas(); 
-                    
-                    // 후원 입력칸 깔끔하게 비우기
                     document.getElementById('drawing-title').value = '';
                     document.getElementById('donation-amount').value = '';
                 } else {
                     alert("전송 실패: " + data.detail);
                 }
             } catch (error) {
-                console.error("Error:", error);
-                alert("서버 연결에 실패했습니다.");
+                console.error("Error:", error); alert("서버 연결에 실패했습니다.");
             }
-    };
+        };
     </script>
 </body>
 </html>
