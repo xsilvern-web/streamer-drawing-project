@@ -7,13 +7,11 @@ from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from dotenv import load_dotenv  # 환경변수 로드용
+from dotenv import load_dotenv
 import uvicorn
 
-# .env 파일이 있다면 읽어오고, 클라우드타입 환경변수도 자동으로 읽어옵니다.
 load_dotenv()
 
-# 🚨 하드코딩된 키 대신 환경변수에서 불러오기 (보안 적용)
 TOSS_SECRET_KEY = os.getenv("TOSS_SECRET_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
@@ -26,14 +24,12 @@ app.add_middleware(
 active_connections = []
 drawing_queue = asyncio.Queue()
 
-# ✨ 크리에이터 설정 (메모리 저장)
 CREATOR_SETTINGS = {
     "is_donation_enabled": True,
     "min_amount": 1000,
-    "blocked_emails": []  # 이메일 기반 차단
+    "blocked_emails": []  
 }
 
-# --- 1. SQLite 데이터베이스 초기화 ---
 DB_FILE = "donation_ledger_v2.db"
 
 def init_db():
@@ -56,7 +52,6 @@ def init_db():
 
 init_db()
 
-# --- 2. 웹페이지 서빙 ---
 @app.get("/draw")
 async def serve_draw_page(): return FileResponse("draw.html")
 
@@ -70,7 +65,6 @@ async def serve_creator_page(): return FileResponse("creator.html")
 @app.get("/coin.mp3")
 async def serve_coin_sound(): return FileResponse("coin.mp3")
 
-# --- 3. 크리에이터 설정 API ---
 @app.get("/api/settings")
 async def get_settings(): return CREATOR_SETTINGS
 
@@ -79,18 +73,55 @@ async def toggle_donation(enable: bool):
     CREATOR_SETTINGS["is_donation_enabled"] = enable
     return {"message": "success"}
 
+# ✨ 차단 해제를 위한 모델 업데이트
 class SettingsUpdate(BaseModel):
     min_amount: int = None
     add_blocked_email: str = None
+    remove_blocked_email: str = None
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
-    if data.min_amount is not None: CREATOR_SETTINGS["min_amount"] = data.min_amount
+    if data.min_amount is not None: 
+        CREATOR_SETTINGS["min_amount"] = data.min_amount
     if data.add_blocked_email and data.add_blocked_email not in CREATOR_SETTINGS["blocked_emails"]:
         CREATOR_SETTINGS["blocked_emails"].append(data.add_blocked_email)
+    # ✨ 차단 해제 로직 추가
+    if data.remove_blocked_email and data.remove_blocked_email in CREATOR_SETTINGS["blocked_emails"]:
+        CREATOR_SETTINGS["blocked_emails"].remove(data.remove_blocked_email)
     return {"message": "success"}
 
-# --- 4. ✨ 데이터 수신 (로그인 이메일 검증) ---
+# ✨ 최근 후원 내역 10개 불러오기 API
+@app.get("/api/recent-donations")
+async def get_recent_donations():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, donor_name, drawing_title, amount, timestamp FROM ledger ORDER BY id DESC LIMIT 10")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "amount": r["amount"], "time": r["timestamp"]} for r in rows]
+
+# ✨ 후원 다시보기(재생) API
+@app.post("/api/replay-donation/{ledger_id}")
+async def replay_donation(ledger_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT donor_name, drawing_title, amount, drawing_data FROM ledger WHERE id = ?", (ledger_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
+        
+    data = {
+        "name": row[0],
+        "title": row[1],
+        "amount": row[2],
+        "drawingData": json.loads(row[3])
+    }
+    await drawing_queue.put(data) # 다시 큐에 넣어서 화면에 띄움
+    return {"message": "success"}
+
 @app.post("/api/submit-drawing")
 async def submit_drawing(request: Request):
     if not CREATOR_SETTINGS["is_donation_enabled"]:
@@ -98,8 +129,8 @@ async def submit_drawing(request: Request):
 
     try:
         data = await request.json()
-        email = data.get("email") # 구글 로그인 이메일
-        name = data.get("name")
+        email = data.get("email") 
+        name = data.get("name") # ✨ 사용자가 입력한 커스텀 닉네임
         title = data.get("title", "제목없음")
         amount = int(data.get("amount", 0))
         drawing_history = data.get("drawingData")
@@ -114,11 +145,9 @@ async def submit_drawing(request: Request):
             "INSERT INTO ledger (donor_email, donor_name, drawing_title, amount, drawing_data) VALUES (?, ?, ?, ?, ?)",
             (email, name, title, amount, json.dumps(drawing_history))
         )
-        ledger_id = cursor.lastrowid
         conn.commit()
         conn.close()
         
-        data['ledger_id'] = ledger_id
         await drawing_queue.put(data)
         return {"status": "success"}
         
@@ -126,18 +155,15 @@ async def submit_drawing(request: Request):
         raise he
     except Exception as e:
         print(f"❌ 오류: {e}")
-        raise HTTPException(status_code=500, detail="서버 처리 중 오류가 발생했습니다.")
+        raise HTTPException(status_code=500, detail="서버 오류 발생")
 
-# --- 5. OBS 전송 및 자동 파기 ---
 async def process_drawing_queue():
     while True:
         data = await drawing_queue.get()
-        
-        # 1. 시청자 화면에 그리기 시작
         for connection in active_connections:
             try:
                 await connection.send_json({"type": "alert", "name": data.get("name"), "title": data.get("title", ""), "amount": data.get("amount")})
-                await connection.send_json({"type": "clear"}) # 프론트에서 화면을 깨끗하게 지우고 투명도 원복
+                await connection.send_json({"type": "clear"})
                 for item in data.get("drawingData"):
                     item_type = item.get("type", "path")
                     color = item.get("color")
@@ -154,16 +180,13 @@ async def process_drawing_queue():
                 await connection.send_json({"type": "done"})
             except Exception as e: pass
             
-        # ✨ 2. 그림이 다 그려진 후 8초 동안 감상할 시간을 줍니다.
         await asyncio.sleep(8)
         
-        # ✨ 3. 8초 뒤, 화면에서 서서히 사라지라는 명령을 보냅니다.
         for connection in active_connections:
             try:
                 await connection.send_json({"type": "fade_out"})
             except: pass
             
-        # ✨ 4. 서서히 사라지는 애니메이션이 끝날 때까지 1.5초 대기 후, 다음 후원 그림으로 순서를 넘깁니다.
         await asyncio.sleep(1.5)
         drawing_queue.task_done()
 

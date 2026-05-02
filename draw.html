@@ -146,10 +146,10 @@
             </div>
 
             <div class="header-group" id="donation-container" style="display: none;">
-                <!-- 로그인 성공 시 보여질 영역 -->
-                <span id="user-info-display" style="font-size: 13px; font-weight: bold; margin-right: 10px; color: #4CAF50;"></span>
+                <!-- ✨ 닉네임 수정 가능하게 변경 -->
+                <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                 <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
-                <input type="number" id="donation-amount" placeholder="후원 금액 (원)" min="0" style="width: 120px;">
+                <input type="number" id="donation-amount" placeholder="후원 금액" min="0" style="width: 120px;">
                 <button id="btn-send">화면에 띄우기 (전송)</button>
             </div>
         </div>
@@ -559,40 +559,58 @@
         checkDonationStatus();
         setInterval(checkDonationStatus, 10000); 
 
-        btnSend.onclick = async () => {
-            if (!isDonationEnabled) { alert("현재 크리에이터가 후원 접수를 일시 중단했습니다."); return; }
-            if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
+function handleCredentialResponse(response) {
+        const responsePayload = decodeJwtResponse(response.credential);
+        
+        loggedInUser = {
+            name: responsePayload.name,
+            email: responsePayload.email
+        };
 
-            const title = document.getElementById('drawing-title').value.trim();
-            const amount = document.getElementById('donation-amount').value;
+        document.getElementById('login-container').style.display = 'none';
+        document.getElementById('donation-container').style.display = 'flex';
+        
+        // ✨ 구글 계정 이름을 기본값으로 넣어주되, 유저가 자유롭게 수정할 수 있습니다.
+        document.getElementById('custom-nickname').value = loggedInUser.name;
+    }
 
-            if (!title) { alert("그림 제목을 입력해주세요."); return; }
-            if (!amount || parseInt(amount) <= 0) { alert("올바른 후원 금액을 입력해주세요."); return; }
-            if (history.length === 0) { alert("전송할 그림이 없습니다. 화면에 그림을 그려주세요!"); return; }
+    // 전송 버튼 클릭 로직
+    btnSend.onclick = async () => {
+        const title = document.getElementById('drawing-title').value || "제목없음";
+        const amount = document.getElementById('donation-amount').value;
+        const customName = document.getElementById('custom-nickname').value || loggedInUser.name; // ✨ 커스텀 닉네임 읽기
 
-            const payload = { 
-                name: loggedInUser.name, 
-                email: loggedInUser.email,
-                title: title, 
-                amount: parseInt(amount), 
-                drawingData: history 
-            };
+        if (history.length === 0) { alert("그림을 그려주세요!"); return; }
+        if (!amount || parseInt(amount) <= 0) { alert("금액을 입력해주세요!"); return; }
+        if (!loggedInUser) { alert("로그인이 필요합니다."); return; }
 
-            try {
-                const response = await fetch(`${API_BASE}/api/submit-drawing`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-                });
-                
-                if (response.ok) { 
-                    alert("성공적으로 화면에 전송되었습니다!"); 
-                } else {
-                    const errorData = await response.json();
-                    alert(`전송 실패: ${errorData.detail}`); 
-                    checkDonationStatus();
-                }
-            } catch (error) { 
-                alert("서버에 연결할 수 없습니다."); 
+        // payload에 수정된 닉네임을 전송합니다. (이메일은 계정 식별을 위해 그대로 보냅니다)
+        const payload = { 
+            name: customName, 
+            email: loggedInUser.email, 
+            title: title, 
+            amount: parseInt(amount), 
+            drawingData: history 
+        };
+
+        try {
+            const res = await fetch(`${API_BASE}/api/submit-drawing`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert("전송 성공!");
+                history = [];
+                redraw();
+            } else {
+                alert("전송 실패: " + data.detail);
             }
+        } catch (error) {
+            console.error("Error:", error);
+            alert("서버 연결에 실패했습니다.");
+        }
         };
     </script>
 </body>

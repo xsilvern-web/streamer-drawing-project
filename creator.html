@@ -5,18 +5,23 @@
     <title>크리에이터 제어판</title>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #eee; padding: 40px; display: flex; justify-content: center; }
-        .dashboard { background: #2d2d2d; padding: 30px; border-radius: 10px; width: 500px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .dashboard { background: #2d2d2d; padding: 30px; border-radius: 10px; width: 600px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         h2 { border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-top: 0; }
         .setting-group { margin-bottom: 20px; background: #333; padding: 15px; border-radius: 6px; }
         label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
         input[type="number"], input[type="text"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
         button { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
         button:hover { background: #005f9e; }
-        
         .toggle-btn { background: #ff4757; }
         .toggle-btn.on { background: #2ed573; }
         
-        .ban-list { margin-top: 10px; font-size: 13px; color: #ff6b81; white-space: pre-line; }
+        /* 리스트 UI 디자인 */
+        .list-item { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 10px; margin-bottom: 5px; border-radius: 4px; font-size: 13px; }
+        .action-btn { padding: 5px 10px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; width: auto; }
+        .unban-btn { background: #555; color: white; }
+        .unban-btn:hover { background: #777; }
+        .replay-btn { background: #ff9800; color: white; }
+        .replay-btn:hover { background: #e68a00; }
     </style>
 </head>
 <body>
@@ -40,18 +45,21 @@
         <div class="setting-group">
             <label>3. 악성 유저 이메일 차단</label>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="ban-email" placeholder="차단할 이메일 입력 (예: bad@gmail.com)">
+                <input type="text" id="ban-email" placeholder="차단할 이메일 입력">
                 <button id="btn-ban" style="width: 80px; background: #ff4757;">차단</button>
             </div>
-            <div class="ban-list" id="ban-list-display">차단된 이메일: 없음</div>
+            <div id="ban-list-container" style="margin-top: 10px;"></div>
+        </div>
+
+        <div class="setting-group">
+            <label>4. 📺 최근 후원 다시보기 (최대 10개)</label>
+            <div id="recent-donations-container">내역을 불러오는 중...</div>
         </div>
     </div>
 
     <script>
-        // ✨ 마법의 핵심: 현재 접속한 클라우드타입 웹 주소를 자동으로 감지합니다.
         const API_BASE = window.location.origin;
 
-        // 1. 서버에서 최신 설정 불러오기
         async function fetchSettings() {
             try {
                 const res = await fetch(`${API_BASE}/api/settings`);
@@ -65,77 +73,109 @@
                     btnToggle.className = 'toggle-btn';
                     btnToggle.innerText = '🔴 현재 상태: 후원 닫힘 (클릭하여 열기)';
                 }
-
-                // 서버에서 가져온 정상적인 숫자만 입력창에 넣도록 안전장치 추가
                 if(data.min_amount !== null && data.min_amount !== undefined) {
                     document.getElementById('min-amount').value = data.min_amount;
                 }
                 
-                document.getElementById('ban-list-display').innerText = data.blocked_emails.length > 0 ? `차단된 이메일:\n${data.blocked_emails.join('\n')}` : '차단된 이메일: 없음';
-            } catch (error) {
-                console.error("서버와 통신할 수 없습니다.", error);
-            }
+                // ✨ 차단 목록 UI 생성
+                const banContainer = document.getElementById('ban-list-container');
+                banContainer.innerHTML = '';
+                if(data.blocked_emails.length === 0) {
+                    banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 이메일이 없습니다.</div>';
+                } else {
+                    data.blocked_emails.forEach(email => {
+                        const item = document.createElement('div');
+                        item.className = 'list-item';
+                        item.innerHTML = `
+                            <span style="color: #ff6b81;">${email}</span>
+                            <button class="action-btn unban-btn" onclick="unbanEmail('${email}')">차단 해제</button>
+                        `;
+                        banContainer.appendChild(item);
+                    });
+                }
+            } catch (error) { console.error("설정 불러오기 실패", error); }
         }
 
-        // 2. 후원 열기/닫기 토글
+        // ✨ 최근 후원 목록 불러오기
+        async function fetchRecentDonations() {
+            try {
+                const res = await fetch(`${API_BASE}/api/recent-donations`);
+                const donations = await res.json();
+                
+                const container = document.getElementById('recent-donations-container');
+                container.innerHTML = '';
+                
+                if(donations.length === 0) {
+                    container.innerHTML = '<div style="font-size: 13px; color: #aaa;">최근 후원 내역이 없습니다.</div>';
+                    return;
+                }
+                
+                donations.forEach(d => {
+                    const item = document.createElement('div');
+                    item.className = 'list-item';
+                    item.innerHTML = `
+                        <div>
+                            <span style="color: #2ed573; font-weight: bold;">${d.amount}원</span> | 
+                            <strong>${d.name}</strong> - ${d.title}
+                        </div>
+                        <button class="action-btn replay-btn" onclick="replayDonation(${d.id})">다시보기</button>
+                    `;
+                    container.appendChild(item);
+                });
+            } catch (error) { console.error("후원 내역 불러오기 실패", error); }
+        }
+
+        // 차단 해제 함수
+        async function unbanEmail(email) {
+            if(!confirm(`${email} 계정의 차단을 해제하시겠습니까?`)) return;
+            await fetch(`${API_BASE}/api/update-settings`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ remove_blocked_email: email })
+            });
+            fetchSettings();
+        }
+
+        // 다시보기 전송 함수
+        async function replayDonation(id) {
+            try {
+                await fetch(`${API_BASE}/api/replay-donation/${id}`, { method: 'POST' });
+                alert("해당 그림을 방송 화면에 다시 전송했습니다!");
+            } catch (error) { alert("다시보기 재생에 실패했습니다."); }
+        }
+
+        // 이벤트 리스너들
         document.getElementById('btn-toggle').onclick = async () => {
             const isCurrentlyOn = document.getElementById('btn-toggle').classList.contains('on');
-            try {
-                await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
-                fetchSettings(); // 변경 후 화면 즉시 새로고침
-            } catch (error) {
-                alert("상태 변경에 실패했습니다.");
-            }
+            await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
+            fetchSettings();
         };
 
-        // 3. 최소 금액 저장
         document.getElementById('btn-save-amount').onclick = async () => {
-            const amountVal = document.getElementById('min-amount').value;
-            const amount = parseInt(amountVal);
-
-            // 빈칸이거나 숫자가 아닌 값이 들어오는 것을 완벽 차단
-            if (isNaN(amount) || amount < 0) {
-                alert("올바른 금액을 입력해주세요.");
-                return;
-            }
-
-            try {
-                await fetch(`${API_BASE}/api/update-settings`, {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ min_amount: amount })
-                });
-                alert(`최소 후원 금액이 ${amount}원으로 저장되었습니다.`);
-                fetchSettings(); // 저장 후 화면 즉시 새로고침
-            } catch (error) {
-                alert("서버 연결 문제로 저장에 실패했습니다.");
-            }
+            const amount = parseInt(document.getElementById('min-amount').value);
+            if (isNaN(amount) || amount < 0) return;
+            await fetch(`${API_BASE}/api/update-settings`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ min_amount: amount })
+            });
+            alert(`최소 금액이 ${amount}원으로 저장되었습니다.`);
+            fetchSettings();
         };
 
-        // 4. 이메일 차단
         document.getElementById('btn-ban').onclick = async () => {
             const banEmail = document.getElementById('ban-email').value.trim();
-            if(!banEmail || !banEmail.includes('@')) {
-                alert("유효한 이메일 주소를 입력해주세요.");
-                return;
-            }
-
-            try {
-                await fetch(`${API_BASE}/api/update-settings`, {
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ add_blocked_email: banEmail })
-                });
-                document.getElementById('ban-email').value = '';
-                alert(`${banEmail} 계정이 차단되었습니다.`);
-                fetchSettings();
-            } catch (error) {
-                alert("차단에 실패했습니다.");
-            }
+            if(!banEmail || !banEmail.includes('@')) return alert("유효한 이메일을 입력하세요.");
+            await fetch(`${API_BASE}/api/update-settings`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ add_blocked_email: banEmail })
+            });
+            document.getElementById('ban-email').value = '';
+            fetchSettings();
         };
 
-        // 페이지가 열리면 즉시 서버 설정 불러오기
         fetchSettings();
+        fetchRecentDonations();
+        // 10초마다 최근 후원 내역 자동 갱신
+        setInterval(fetchRecentDonations, 10000);
     </script>
 </body>
 </html>
