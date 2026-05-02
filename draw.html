@@ -420,15 +420,25 @@
         });
         naverLogin.init();
 
+// 페이지가 로드될 때 로그인 상태 확인
         window.addEventListener('load', function () {
             naverLogin.getLoginStatus(function (status) {
                 if (status) {
                     const email = naverLogin.user.getEmail();
-                    const name = naverLogin.user.getNickName() || naverLogin.user.getName();
-                    const profileImage = naverLogin.user.getProfileImage(); // ✨ 프로필 사진 가져오기
+
+                    // ✨ 핵심 해결책: 로그인 상태지만 이메일을 못 가져온 '좀비 상태'일 경우 강제 재로그인 유도
+                    if (email === undefined || email === null || email === '') {
+                        alert("세션이 만료되었거나 이메일 정보가 누락되었습니다. 정상적인 전송을 위해 다시 로그인해주세요.");
+                        naverLogin.reprompt(); // 네이버 동의창 강제로 다시 띄우기
+                        return;
+                    }
+
+                    const name = naverLogin.user.getNickName() || naverLogin.user.getName() || "시청자";
+                    const profileImage = naverLogin.user.getProfileImage();
                     
                     loggedInUser = { name: name, email: email, profileImage: profileImage };
                     
+                    // UI 변경
                     document.getElementById('login-container').style.display = 'none';
                     document.getElementById('donation-container').style.display = 'flex';
                     document.getElementById('custom-nickname').value = loggedInUser.name;
@@ -437,6 +447,11 @@
                     if (profileImage) {
                         profilePreview.style.backgroundImage = `url('${profileImage}')`;
                     }
+                } else {
+                    // 로그인이 아예 풀렸거나 에러가 났을 때의 안전장치
+                    document.getElementById('login-container').style.display = 'flex';
+                    document.getElementById('donation-container').style.display = 'none';
+                    loggedInUser = null;
                 }
             });
         });
