@@ -1557,7 +1557,9 @@
             }
 
             let transformState = null;
-
+            layerWrapper.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+            });
             layerWrapper.addEventListener('pointerdown', (e) => {
                 const pos = getPointerPos(e);
 
