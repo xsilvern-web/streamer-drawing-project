@@ -977,6 +977,14 @@
             btnShape.addEventListener('click', (e) => { shapeFlyout.classList.toggle('show'); e.stopPropagation(); });
             document.addEventListener('click', (e) => { if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) shapeFlyout.classList.remove('show'); });
 
+            // ✨ 일반그림 객체의 자동 확정(래스터화) 처리 함수
+            function autoRasterizeAllTransforms() {
+                const transformLayers = layers.filter(l => l.type === 'transform_box');
+                transformLayers.forEach(l => {
+                    applyTransform(l.id);
+                });
+            }
+
             allToolBtns.forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     allToolBtns.forEach(b => b.classList.remove('active-tool')); btnShape.classList.remove('active-tool');
@@ -988,7 +996,10 @@
                         if (l.type === 'canvas' && l.canvas) l.canvas.style.pointerEvents = (currentTool === 'pen' || currentTool === 'eraser' || currentTool === 'line' || currentTool === 'rect' || currentTool === 'circle' || currentTool === 'fill') ? 'auto' : 'none';
                     });
 
-                    if (currentTool !== 'cursor') document.querySelectorAll('.transform-box').forEach(box => box.classList.remove('active'));
+                    if (currentTool !== 'cursor') {
+                        document.querySelectorAll('.transform-box').forEach(box => box.classList.remove('active'));
+                        autoRasterizeAllTransforms(); // 다른 도구 선택 시 자동 확정
+                    }
 
                     updateTopOptionBar(currentTool);
                 });
@@ -1033,7 +1044,6 @@
                     const oldF = frames.find(f => f.id === currentFrameId);
                     if (oldF) {
                         oldF.layers.forEach(l => {
-                            // ✨ 존재 여부를 철저히 검사하여 TypeError 원천 차단
                             if (l.type === 'canvas' && l.canvas) l.canvas.style.display = 'none';
                             else if (l.element) l.element.style.display = 'none';
                         });
@@ -1356,7 +1366,7 @@
                 return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
             }
 
-            // ✨ 객체 변환 중 발생할 수 있는 레이어 꼬임 문제를 해결한 로직
+            // ✨ 오류의 원인이었던 객체 변환 로직 완전 수정판 (꼬임 방지)
             function activateTransform(layer) {
                 const bbox = getBoundingBox(layer.ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
                 if (!bbox) return alert('변형할 그림이 없습니다.');
@@ -1364,23 +1374,36 @@
                 const tempCvs = document.createElement('canvas'); tempCvs.width = bbox.w; tempCvs.height = bbox.h;
                 tempCvs.getContext('2d').putImageData(layer.ctx.getImageData(bbox.x, bbox.y, bbox.w, bbox.h), 0, 0);
 
-                layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
-                if(layer.canvas) layer.canvas.remove();
-                delete layer.canvas; 
+                layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                if (layer.canvas) layer.canvas.remove();
+                delete layer.canvas;
                 delete layer.ctx;
 
-                const box = createTransformObject('transform_box', bbox.x + bbox.w / 2, bbox.y + bbox.h / 2, bbox.w, bbox.h, tempCvs);
+                const wrapper = document.createElement('div');
+                wrapper.className = `transform-box type-transform_box active`;
+                wrapper.style.left = `${bbox.x}px`;
+                wrapper.style.top = `${bbox.y}px`;
+                wrapper.style.width = `${bbox.w}px`;
+                wrapper.style.height = `${bbox.h}px`;
 
-                // 방금 새로 생성된 임시 레이어는 배열에서 지우고, 원본 레이어 객체를 덮어씌웁니다.
-                const newLayerId = `layer_${layerCounter}`;
-                layers = layers.filter(ll => ll.id !== newLayerId);
-                
-                layer.type = 'transform_box'; 
-                layer.element = box;
+                tempCvs.className = 'content';
+
+                const handles = ['nw', 'ne', 'sw', 'se'];
+                handles.forEach(dir => {
+                    const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h);
+                    const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
+                });
+
+                wrapper.appendChild(tempCvs);
+                layerWrapper.appendChild(wrapper);
+
+                // 기존 배열에서 삭제하지 않고 속성만 교체하여 안전하게 보호
+                layer.type = 'transform_box';
+                layer.element = wrapper;
                 layer.name = "변형 이미지";
 
                 document.querySelector('.tool-btn[data-tool="cursor"]').click();
-                updateLayersZIndex(); 
+                updateLayersZIndex();
                 renderLayerUI();
             }
 
@@ -1540,7 +1563,7 @@
 
                 if (currentTool === 'eyedropper') {
                     const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
-                    const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas.style.zIndex : a.element.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas.style.zIndex : b.element.style.zIndex) || 0));
+                    const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0));
                     offC.translate(-pos.x, -pos.y);
                     sortedLayers.forEach(l => {
                         if (l.type === 'canvas' && l.canvas) offC.drawImage(l.canvas, 0, 0);
@@ -1562,6 +1585,7 @@
                     }
                     return;
                 }
+                
                 if (currentTool === 'cursor') {
                     const box = e.target.closest('.transform-box');
                     if (box) {
@@ -1578,7 +1602,11 @@
                                 startCx: wrapperCx, startCy: wrapperCy, startLeft: parseFloat(box.style.left), startTop: parseFloat(box.style.top), startAngle: angle
                             };
                         }
-                    } else document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
+                    } else {
+                        // ✨ 조작 모드에서 빈 캔버스 클릭 시 변형을 종료하고 자동 확정(래스터화)
+                        document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active'));
+                        autoRasterizeAllTransforms();
+                    }
                     return;
                 }
 
@@ -1795,6 +1823,11 @@
             document.getElementById('btn-undo').onclick = undo; document.getElementById('btn-redo').onclick = redo;
 
             window.addEventListener('keydown', (e) => {
+                // ✨ 엔터키 입력 시 모든 변형 객체 자동 확정(래스터화)
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    autoRasterizeAllTransforms();
+                }
                 if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
                 if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
                 if (e.altKey && e.key.toLowerCase() === 't') {
@@ -2061,7 +2094,6 @@
                 });
             };
 
-            // ✨ 상하단 및 좌우 패널 접기/펴기 로직
             const topWrapper = document.getElementById('top-wrapper');
             const framePanel = document.getElementById('frame-panel');
             const btnToggleTop = document.getElementById('btn-toggle-top');
