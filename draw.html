@@ -243,50 +243,27 @@
             position: relative;
         }
 
-        #frame-panel {
-            height: 110px;
-            background: #252526;
-            border-top: 1px solid #444;
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
+        /* ✨ 하단 타임라인 슬림 반응형(가로 1줄 배치) 설정 */
+        #frame-panel { 
+            height: 45px; flex-direction: row; align-items: center; padding: 0; 
+            transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative; z-index: 150;
         }
-
-        .frame-header {
-            padding: 5px 10px;
-            background: #333;
-            font-size: 12px;
-            font-weight: bold;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #444;
+        #frame-panel.collapsed { margin-bottom: -45px; }
+        
+        .frame-header { 
+            width: auto; height: 100%; flex-direction: row; justify-content: center;
+            border-bottom: none; border-right: 1px solid #444; padding: 0 15px; gap: 5px; background: #252526; 
         }
-
-        #frame-list {
-            display: flex;
-            flex: 1;
-            overflow-x: auto;
-            padding: 10px;
-            gap: 10px;
-            align-items: center;
+        .frame-header span { display: none; /* 공간 확보를 위해 '애니메이션 타임라인' 텍스트 숨김 */ }
+        
+        #frame-list { padding: 0 10px; height: 100%; gap: 5px; align-items: center; }
+        
+        /* 프레임 아이템도 가로형으로 납작하게 변경 */
+        .frame-item { 
+            width: auto; min-width: 150px; height: 32px; flex-direction: row; 
+            padding: 0 8px; align-items: center; justify-content: space-between; border-radius: 4px; 
         }
-
-        .frame-item {
-            width: 110px;
-            height: 100%;
-            background: #444;
-            border: 2px solid transparent;
-            border-radius: 6px;
-            padding: 8px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            cursor: grab;
-            flex-shrink: 0;
-        }
-
         .frame-item.active {
             background: #094771;
             border-color: #007acc;
@@ -976,16 +953,10 @@
             <!-- ✨ 하단 프레임 패널 추가 -->
             <div id="frame-panel">
                 <div class="panel-toggle-h toggle-bottom" id="btn-toggle-bottom" title="타임라인 숨기기">▼</div>
-                <div class="frame-header">
-                    <span>🎬 애니메이션 프레임 타임라인</span>
-                    <div>
-                        <button id="btn-play-anim" class="sys-btn"
-                            style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 10px; margin-right: 5px; font-weight: bold;">▶
-                            재생</button>
-                        <button id="btn-add-frame" class="sys-btn"
-                            style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px;">+ 새
-                            프레임</button>
-                    </div>
+                
+                <div class="frame-header" style="display: flex; align-items: center;">
+                    <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 10px; font-weight: bold;">▶ 재생</button>
+                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px; margin-left: 5px;">+ 새 프레임</button>
                 </div>
                 <div id="frame-list"></div>
             </div>
@@ -1352,11 +1323,12 @@
                     };
 
                     item.innerHTML = `
-                    <div style="font-weight:bold; font-size:12px; margin-bottom:5px;">프레임 ${idx + 1}</div>
-                    <div style="display:flex; gap:5px; align-items:center; font-size:11px;">
-                        <input type="number" value="${f.duration}" title="노출 시간(ms)" style="width:50px; padding:2px; font-size:11px;" onchange="updateFrameDuration('${f.id}', this.value)"> ms
+                    <div style="font-weight:bold; font-size:11px; white-space:nowrap; color:#fff;">#${idx+1}</div>
+                    <div style="display:flex; align-items:center; gap:2px;">
+                        <input type="number" value="${f.duration}" title="노출 시간(ms)" style="width:40px; padding:2px; font-size:10px; text-align:center; height:14px;" onchange="updateFrameDuration('${f.id}', this.value)">
+                        <span style="font-size:9px; color:#aaa;">ms</span>
                     </div>
-                    <div style="margin-top:8px; display:flex; gap:5px;">
+                    <div style="display:flex; gap:3px;">
                         <button class="sys-btn" style="padding:2px 5px; font-size:10px; background:#007acc; border-color:#005f9e;" onclick="copyFrame('${f.id}')">복사</button>
                         <button class="sys-btn" style="padding:2px 5px; font-size:10px; background:#d32f2f; border-color:#b71c1c;" onclick="deleteFrame('${f.id}')">삭제</button>
                     </div>
