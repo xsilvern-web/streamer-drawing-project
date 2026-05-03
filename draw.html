@@ -172,6 +172,7 @@
     <div class="app-body">
         <div class="sidebar-left">
             <input type="color" id="color-picker" value="#ffffff">
+            <button class="tool-btn" data-tool="eyedropper" style="height: 30px; font-size: 11px; margin-top: -10px;" title="스포이드">스포이드</button>
             <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range" id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
             <div class="control-group"><label>굵기 <span id="width-val">5</span></label><input type="range" id="line-width" min="1" max="50" value="5"></div>
             <div class="control-group"><label>떨림방지</label><input type="range" id="smoothing-level" min="0" max="20" value="7"></div>
@@ -201,15 +202,19 @@
                 <div id="layer-wrapper" class="checker-bg">
                     <div id="offline-text">현재 방송 중 아님</div>
                     <iframe id="broadcast-bg" src="https://chzzk.naver.com/live/bc2dbff369307b5c446224cce192c8b1" frameborder="0" allow="autoplay; fullscreen"></iframe>
+                    <canvas id="draft-layer" width="1920" height="1080" style="position: absolute; top: 0; left: 0; pointer-events: none; display: none; z-index: 1000;"></canvas>
                 </div>
             </div>
             
             <!-- ✨ 하단 프레임 패널 추가 -->
             <div id="frame-panel">
-                <div class="frame-header">
-                    <span>🎬 애니메이션 프레임 타임라인</span>
-                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px;">+ 새 프레임</button>
-                </div>
+<div class="frame-header">
+    <span>🎬 애니메이션 프레임 타임라인</span>
+    <div>
+        <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 10px; margin-right: 5px; font-weight: bold;">▶ 재생</button>
+        <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px;">+ 새 프레임</button>
+    </div>
+</div>
                 <div id="frame-list"></div>
             </div>
         </div>
@@ -305,7 +310,7 @@
             
             const toolNames = {
                 'cursor': '선택 및 조작', 'pen': '펜', 'eraser': '지우개', 'text': '텍스트',
-                'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기'
+                'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기', 'eyedropper': '스포이드'
             };
             if(toolNameDisplay) toolNameDisplay.innerText = toolNames[tool] || tool;
 
@@ -811,66 +816,116 @@
         }
 
         // ✨ 채우기(Flood Fill) 알고리즘
-        function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
-            const canvasW = CANVAS_WIDTH; const canvasH = CANVAS_HEIGHT;
-            const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
-            const data = imgData.data;
-            const sx = Math.floor(startX); const sy = Math.floor(startY);
-            if(sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
-            
-            const startPos = (sy * canvasW + sx) * 4;
-            const targetR = data[startPos], targetG = data[startPos+1], targetB = data[startPos+2], targetA = data[startPos+3];
-            
-            const m = colorStr.match(/[\d.]+/g);
-            if(!m || m.length < 3) return;
-            const fillR = parseInt(m[0]), fillG = parseInt(m[1]), fillB = parseInt(m[2]), fillA = m[3] ? Math.round(parseFloat(m[3])*255) : 255;
-            
-            if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
+        // ✨ 클립스튜디오식 틈새 닫기 (Gap Closing) 완벽 지원 알고리즘
+function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
+    const canvasW = ctx.canvas.width; const canvasH = ctx.canvas.height;
+    const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
+    const data = imgData.data;
+    const sx = Math.floor(startX); const sy = Math.floor(startY);
+    if(sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
+    
+    const startPos = (sy * canvasW + sx) * 4;
+    const targetR = data[startPos], targetG = data[startPos+1], targetB = data[startPos+2], targetA = data[startPos+3];
+    
+    const m = colorStr.match(/[\d.]+/g);
+    if(!m || m.length < 3) return;
+    const fillR = parseInt(m[0]), fillG = parseInt(m[1]), fillB = parseInt(m[2]), fillA = m[3] ? Math.round(parseFloat(m[3])*255) : 255;
+    
+    if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
 
-            const visited = new Uint8Array(canvasW * canvasH);
-            const pixelStack = [[sx, sy]];
+    // 틈새 닫기를 위해 경계선을 일시적으로 확장(Dilate)하여 검사 기준 데이터 생성
+    let checkData = data;
+    if (gap > 0) {
+        const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+        const offCtx = offCvs.getContext('2d');
+        offCtx.drawImage(ctx.canvas, 0, 0);
+        offCtx.globalAlpha = 1.0; offCtx.globalCompositeOperation = 'source-over';
+        for(let a=0; a<Math.PI*2; a+=Math.PI/4) { offCtx.drawImage(ctx.canvas, Math.cos(a)*gap, Math.sin(a)*gap); }
+        checkData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+    }
 
-            function matchColor(x, y) {
-                if (x < 0 || x >= canvasW || y < 0 || y >= canvasH) return false;
-                const p = (y * canvasW + x) * 4;
-                if (data[p+3] === 0 && targetA === 0) return true;
-                return Math.abs(data[p]-targetR)<=tolerance && Math.abs(data[p+1]-targetG)<=tolerance && Math.abs(data[p+2]-targetB)<=tolerance && Math.abs(data[p+3]-targetA)<=tolerance;
+    const visited = new Uint8Array(canvasW * canvasH);
+    const pixelStack = [[sx, sy]];
+
+    function matchColor(x, y) {
+        if (x < 0 || x >= canvasW || y < 0 || y >= canvasH) return false;
+        const p = (y * canvasW + x) * 4;
+        if (checkData[p+3] === 0 && targetA === 0) return true;
+        return Math.abs(checkData[p]-targetR)<=tolerance && Math.abs(checkData[p+1]-targetG)<=tolerance && Math.abs(checkData[p+2]-targetB)<=tolerance && Math.abs(checkData[p+3]-targetA)<=tolerance;
+    }
+
+    while (pixelStack.length > 0) {
+        const [cx, cy] = pixelStack.pop();
+        let x = cx, y = cy;
+        
+        while (y >= 0 && matchColor(x, y)) y--;
+        y++;
+        
+        let reachLeft = false, reachRight = false;
+        while (y < canvasH && matchColor(x, y)) {
+            visited[y * canvasW + x] = 1;
+            
+            if (x > 0) {
+                if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
+                    if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
+                } else if (reachLeft) reachLeft = false;
             }
-
-            while (pixelStack.length > 0) {
-                const [cx, cy] = pixelStack.pop();
-                let x = cx, y = cy;
-                
-                while (y >= 0 && matchColor(x, y)) y--;
-                y++;
-                
-                let reachLeft = false, reachRight = false;
-                while (y < canvasH && matchColor(x, y)) {
-                    const p = (y * canvasW + x) * 4;
-                    data[p] = fillR; data[p+1] = fillG; data[p+2] = fillB; data[p+3] = fillA;
-                    visited[y * canvasW + x] = 1;
-                    
-                    if (x > 0) {
-                        if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
-                            if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
-                        } else if (reachLeft) reachLeft = false;
-                    }
-                    if (x < canvasW - 1) {
-                        if (matchColor(x + 1, y) && !visited[y * canvasW + x + 1]) {
-                            if (!reachRight) { pixelStack.push([x + 1, y]); reachRight = true; }
-                        } else if (reachRight) reachRight = false;
-                    }
-                    y++;
-                }
+            if (x < canvasW - 1) {
+                if (matchColor(x + 1, y) && !visited[y * canvasW + x + 1]) {
+                    if (!reachRight) { pixelStack.push([x + 1, y]); reachRight = true; }
+                } else if (reachRight) reachRight = false;
             }
-            ctx.putImageData(imgData, 0, 0);
+            y++;
         }
+    }
+
+    // 채색될 마스크 생성
+    const fillCvs = document.createElement('canvas'); fillCvs.width = canvasW; fillCvs.height = canvasH;
+    const fillCtx = fillCvs.getContext('2d');
+    const fillImgData = fillCtx.createImageData(canvasW, canvasH);
+    const fd = fillImgData.data;
+    for(let i=0; i<canvasW*canvasH; i++) {
+        if(visited[i]) { fd[i*4] = fillR; fd[i*4+1] = fillG; fd[i*4+2] = fillB; fd[i*4+3] = fillA; }
+    }
+    fillCtx.putImageData(fillImgData, 0, 0);
+
+    // 원본 캔버스에 병합 (틈새 닫기로 인해 덜 칠해진 영역을 팽창시켜 라인에 밀착)
+    ctx.globalCompositeOperation = 'source-over';
+    if (gap > 0) {
+        for(let a=0; a<Math.PI*2; a+=Math.PI/4) { ctx.drawImage(fillCvs, Math.cos(a)*gap, Math.sin(a)*gap); }
+    } else { ctx.drawImage(fillCvs, 0, 0); }
+}
 
         let transformState = null;
 
-        layerWrapper.addEventListener('pointerdown', (e) => {
-            const pos = getPointerPos(e);
-
+       layerWrapper.addEventListener('pointerdown', (e) => {
+    const pos = getPointerPos(e);
+    
+    // ✨ 스포이드 기능
+    if (currentTool === 'eyedropper') {
+        const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
+        const sortedLayers = [...layers].filter(l => l.visible).sort((a,b) => (parseInt(a.type==='canvas'?a.canvas.style.zIndex:a.element.style.zIndex)||0) - (parseInt(b.type==='canvas'?b.canvas.style.zIndex:b.element.style.zIndex)||0));
+        offC.translate(-pos.x, -pos.y);
+        sortedLayers.forEach(l => {
+            if (l.type === 'canvas') offC.drawImage(l.canvas, 0, 0);
+            else if (l.type === 'raster_image' || l.type === 'transform_box') {
+                const box = l.element; const cvs = box.querySelector('canvas.content');
+                if (cvs) {
+                    const w = box.offsetWidth, h = box.offsetHeight;
+                    const cx = parseFloat(box.style.left)+w/2, cy = parseFloat(box.style.top)+h/2;
+                    let angle = 0; const tr = window.getComputedStyle(box).transform;
+                    if (tr !== 'none') angle = Math.atan2(tr.split(',')[1], tr.split(',')[0]);
+                    offC.save(); offC.translate(cx, cy); offC.rotate(angle); offC.drawImage(cvs, -w/2, -h/2, w, h); offC.restore();
+                }
+            }
+        });
+        const pixel = offC.getImageData(0,0,1,1).data;
+        if (pixel[3] > 0) { 
+            const hex = "#" + (1 << 24 | pixel[0] << 16 | pixel[1] << 8 | pixel[2]).toString(16).slice(1).toUpperCase();
+            document.getElementById('color-picker').value = hex; currentColorHex = hex; updateCurrentColor();
+        }
+        return;
+    }
             if (currentTool === 'cursor') {
                 const box = e.target.closest('.transform-box');
                 if (box) {
@@ -918,13 +973,19 @@
                 return;
             }
 
-            isDrawing = true; 
-            if (currentTool === 'pen' || currentTool === 'eraser') {
-                let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
-                let targetWidth = Math.max(currentWidth * pressure, 1);
-                smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{x: smX, y: smY, w: smW}];
-            } else { shapeStartX = pos.x; shapeStartY = pos.y; canvasSnapshot = activeLayer.ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
-        });
+isDrawing = true; 
+    if (currentTool === 'pen' || currentTool === 'eraser') {
+        let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
+        let targetWidth = Math.max(currentWidth * pressure, 1);
+        smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{x: smX, y: smY, w: smW}];
+        
+        if (currentTool === 'pen') {
+            const draftLayer = document.getElementById('draft-layer');
+            draftLayer.style.display = 'block'; draftLayer.style.opacity = currentOpacity;
+            draftLayer.getContext('2d').clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        }
+    } else { shapeStartX = pos.x; shapeStartY = pos.y; canvasSnapshot = activeLayer.ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
+});
 
         layerWrapper.addEventListener('pointermove', (e) => {
             const pos = getPointerPos(e);
@@ -971,14 +1032,22 @@
             if (!isDrawing) return;
             const activeLayer = layers.find(l => l.id === activeLayerId); const ctx = activeLayer.ctx;
 
-            if (currentTool === 'pen' || currentTool === 'eraser') {
-                let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
-                let targetWidth = Math.max(currentWidth * pressure, 1);
-                const smoothingLevel = parseInt(document.getElementById('smoothing-level').value); const factor = 1 / (smoothingLevel + 1);
-                smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor; 
-                renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length-1].w, smX, smY, smW, currentColor, currentTool === 'eraser');
-                lastX = smX; lastY = smY; currentPath.push({x: smX, y: smY, w: smW});
-            } else if (currentTool !== 'fill') {
+if (currentTool === 'pen' || currentTool === 'eraser') {
+        let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1; 
+        let targetWidth = Math.max(currentWidth * pressure, 1);
+        const smoothingLevel = parseInt(document.getElementById('smoothing-level').value); const factor = 1 / (smoothingLevel + 1);
+        smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor; 
+        
+        if (currentTool === 'pen') {
+            const draftCtx = document.getElementById('draft-layer').getContext('2d');
+            const opaqueColor = `rgba(${parseInt(currentColorHex.slice(1,3),16)}, ${parseInt(currentColorHex.slice(3,5),16)}, ${parseInt(currentColorHex.slice(5,7),16)}, 1)`;
+            renderBrushStroke(draftCtx, lastX, lastY, currentPath[currentPath.length-1].w, smX, smY, smW, opaqueColor, false);
+        } else {
+            renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length-1].w, smX, smY, smW, currentColor, true);
+        }
+        
+        lastX = smX; lastY = smY; currentPath.push({x: smX, y: smY, w: smW});
+    } else if (currentTool !== 'fill') {
                 ctx.putImageData(canvasSnapshot, 0, 0); ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth;
                 if (currentTool === 'line') { ctx.moveTo(shapeStartX, shapeStartY); ctx.lineTo(pos.x, pos.y); } 
                 else if (currentTool === 'rect') { ctx.rect(shapeStartX, shapeStartY, pos.x - shapeStartX, pos.y - shapeStartY); } 
@@ -987,24 +1056,61 @@
             }
         });
 
-        layerWrapper.addEventListener('pointerup', (e) => {
-            if (transformState) { transformState = null; return; }
-            if (!isDrawing) return;
-            isDrawing = false; const pos = getPointerPos(e);
-            if (currentTool === 'pen' || currentTool === 'eraser') {
-                if (currentPath.length > 0) history.push({ layerId: activeLayerId, type: 'path', color: currentTool === 'eraser' ? 'erase' : currentColor, points: currentPath });
-            } else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
-            redoStack = []; canvasSnapshot = null; 
-        });
-
-        layerWrapper.addEventListener('pointerleave', () => { 
-            if (transformState) transformState = null;
-            if (!isDrawing) return; isDrawing = false; 
-            if (currentTool === 'pen' || currentTool === 'eraser') {
-                if (currentPath.length > 0) { history.push({ layerId: activeLayerId, type: 'path', color: currentTool === 'eraser' ? 'erase' : currentColor, points: currentPath }); redoStack = []; }
-            } else if (currentTool !== 'fill') { if(canvasSnapshot && activeLayerId) { const activeLayer = layers.find(l => l.id === activeLayerId); activeLayer.ctx.putImageData(canvasSnapshot, 0, 0); } }
-            canvasSnapshot = null;
-        });
+layerWrapper.addEventListener('pointerup', (e) => {
+    if (transformState) { transformState = null; return; }
+    if (!isDrawing) return;
+    isDrawing = false; const pos = getPointerPos(e);
+    
+    // ✨ 드래프트 레이어를 본 레이어에 구워넣기
+    if (currentTool === 'pen' || currentTool === 'eraser') {
+        if (currentPath.length > 0) {
+            if (currentTool === 'pen') {
+                const activeLayer = layers.find(l => l.id === activeLayerId);
+                const draftLayer = document.getElementById('draft-layer');
+                activeLayer.ctx.globalAlpha = currentOpacity;
+                activeLayer.ctx.drawImage(draftLayer, 0, 0);
+                activeLayer.ctx.globalAlpha = 1.0;
+                draftLayer.style.display = 'none';
+                
+                history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath });
+            } else {
+                history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath });
+            }
+        }
+    } else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
+    redoStack = []; canvasSnapshot = null; 
+});
+layerWrapper.addEventListener('pointerleave', () => { 
+    if (transformState) transformState = null;
+    if (!isDrawing) return; 
+    isDrawing = false; 
+    
+    // ✨ 마우스가 캔버스 밖으로 나갔을 때도 드래프트 레이어를 본 레이어에 구워넣기
+    if (currentTool === 'pen' || currentTool === 'eraser') {
+        if (currentPath.length > 0) { 
+            if (currentTool === 'pen') {
+                const activeLayer = layers.find(l => l.id === activeLayerId);
+                const draftLayer = document.getElementById('draft-layer');
+                
+                activeLayer.ctx.globalAlpha = currentOpacity;
+                activeLayer.ctx.drawImage(draftLayer, 0, 0);
+                activeLayer.ctx.globalAlpha = 1.0;
+                draftLayer.style.display = 'none';
+                
+                history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath });
+            } else {
+                history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath });
+            }
+            redoStack = []; 
+        }
+    } else if (currentTool !== 'fill') { 
+        if(canvasSnapshot && activeLayerId) { 
+            const activeLayer = layers.find(l => l.id === activeLayerId); 
+            activeLayer.ctx.putImageData(canvasSnapshot, 0, 0); 
+        } 
+    }
+    canvasSnapshot = null;
+});
 
         async function redrawCanvas() {
             layers.forEach(l => { if(l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
@@ -1022,13 +1128,27 @@
                 else if (item.type === 'fill') {
                     doFloodFill(ctx, item.point.x, item.point.y, item.color, item.tolerance, item.gapSize);
                 }
-                else if (item.type === 'path' || !item.type) {
-                    if (item.points.length < 2) { renderBrushStroke(ctx, item.points[0].x, item.points[0].y, item.points[0].w, item.points[0].x, item.points[0].y, item.points[0].w, item.color, item.color === 'erase'); continue; }
-                    for (let i = 1; i < item.points.length; i++) { 
-                        let p1 = item.points[i - 1]; let p2 = item.points[i]; 
-                        renderBrushStroke(ctx, p1.x, p1.y, p1.w, p2.x, p2.y, p2.w, item.color, item.color === 'erase');
-                    }
-                } else {
+               else if (item.type === 'path' || !item.type) {
+    if (item.points.length < 2) continue;
+    if (item.color === 'erase') {
+        for (let i = 1; i < item.points.length; i++) { 
+            renderBrushStroke(ctx, item.points[i-1].x, item.points[i-1].y, item.points[i-1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
+        }
+    } else {
+        // 투명도 겹침 방지용 임시 캔버스 활용
+        const tmpCvs = document.createElement('canvas'); tmpCvs.width = CANVAS_WIDTH; tmpCvs.height = CANVAS_HEIGHT;
+        const tmpCtx = tmpCvs.getContext('2d');
+        const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
+        const opaqueColor = `rgba(${parseInt(rgbColor.slice(1,3),16)}, ${parseInt(rgbColor.slice(3,5),16)}, ${parseInt(rgbColor.slice(5,7),16)}, 1)`;
+        
+        for (let i = 1; i < item.points.length; i++) { 
+            renderBrushStroke(tmpCtx, item.points[i-1].x, item.points[i-1].y, item.points[i-1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false);
+        }
+        ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
+        ctx.drawImage(tmpCvs, 0, 0);
+        ctx.globalAlpha = 1;
+    }
+} else {
                     ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = item.color;
                     if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); } 
                     else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); } 
@@ -1316,6 +1436,91 @@
                 }, index * 300);
             });
         };
+
+
+        let isPlaying = false;
+        let playTimeout = null;
+        let playbackIndex = 0;
+
+        function startAnimationPlayback() {
+            if (frames.length === 0) return;
+            isPlaying = true;
+            
+            const playBtn = document.getElementById('btn-play-anim');
+            playBtn.innerText = '⏹ 정지';
+            playBtn.style.background = '#d32f2f';
+            playBtn.style.borderColor = '#b71c1c';
+            
+            // 재생 시작 전 현재 편집 중인 정보 동기화
+            syncToFrame();
+            
+            // 현재 활성화된 프레임부터 재생 시작 (없으면 처음부터)
+            playbackIndex = frames.findIndex(f => f.id === currentFrameId);
+            if(playbackIndex === -1) playbackIndex = 0;
+            
+            // 재생 중에는 캔버스 조작 방지 (선택 도구로 강제 변경)
+            document.querySelector('.tool-btn[data-tool="cursor"]').click();
+            
+            playNextFrame();
+        }
+
+        function stopAnimationPlayback() {
+            isPlaying = false;
+            clearTimeout(playTimeout);
+            
+            const playBtn = document.getElementById('btn-play-anim');
+            playBtn.innerText = '▶ 재생';
+            playBtn.style.background = '#4CAF50';
+            playBtn.style.borderColor = '#388E3C';
+        }
+
+        function playNextFrame() {
+            if (!isPlaying) return;
+            if (frames.length === 0) {
+                stopAnimationPlayback();
+                return;
+            }
+            
+            // 인덱스가 프레임 개수를 넘어가면 처음(0)으로 루프
+            if (playbackIndex >= frames.length) playbackIndex = 0;
+            
+            const frameToPlay = frames[playbackIndex];
+            selectFrame(frameToPlay.id);
+            
+            // 해당 프레임의 노출 시간(duration)만큼 대기 후 다음 프레임 호출
+            playTimeout = setTimeout(() => {
+                playbackIndex++;
+                playNextFrame();
+            }, frameToPlay.duration || 500);
+        }
+
+        document.getElementById('btn-play-anim').addEventListener('click', () => {
+            if (isPlaying) {
+                stopAnimationPlayback();
+            } else {
+                startAnimationPlayback();
+            }
+        });
+
+        // 프레임 추가/삭제 시 재생 중이면 충돌 방지를 위해 정지 처리
+        const originalCreateNewFrame = createNewFrame;
+        createNewFrame = function() {
+            if(isPlaying) stopAnimationPlayback();
+            originalCreateNewFrame();
+        };
+
+        const originalDeleteFrame = deleteFrame;
+        deleteFrame = function(fId) {
+            if(isPlaying) stopAnimationPlayback();
+            originalDeleteFrame(fId);
+        };
+        
+        const originalCopyFrame = copyFrame;
+        copyFrame = function(sourceId) {
+            if(isPlaying) stopAnimationPlayback();
+            originalCopyFrame(sourceId);
+        };
+
         btnSend.onclick = async () => {
             syncToFrame(); 
 
