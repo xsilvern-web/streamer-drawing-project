@@ -97,6 +97,52 @@
 
         #floating-toolbar { position: fixed; display: none; background: #252526; padding: 8px 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.8); z-index: 2000; gap: 8px; align-items: center; border: 1px solid #444; }
         .toolbar-btn { background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; }
+        /* ✨ 사이드바 접기/펴기 트랜지션 및 토글 버튼 CSS */
+       /* ✨ 사이드바 접기/펴기 애니메이션 및 컴팩트 크기 설정 */
+        .sidebar-left, .sidebar-right {
+            transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            z-index: 150;
+        }
+        
+        /* 타블렛용 컴팩트 사이즈 (너비 및 숨김 마진 조정) */
+        .sidebar-left { width: 60px; padding: 10px 0; gap: 10px; }
+        .sidebar-left.collapsed { margin-left: -60px; }
+        
+        .sidebar-right { width: 200px; padding: 10px; gap: 10px; }
+        .sidebar-right.collapsed { margin-right: -200px; }
+
+        /* 토글 버튼(◀, ▶) 디자인 */
+        .panel-toggle {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 20px; height: 60px; background: #333; color: #ccc;
+            border: 1px solid #555; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 200; font-size: 14px; font-weight: bold;
+        }
+        .panel-toggle:hover { background: #555; color: white; }
+        .toggle-left { right: -20px; border-radius: 0 6px 6px 0; border-left: none; }
+        .toggle-right { left: -20px; border-radius: 6px 0 0 6px; border-right: none; }
+
+        /* 나머지 내부 요소 컴팩트 스타일 */
+        .tool-btn { width: 45px; height: 35px; font-size: 11px; }
+        #color-picker { width: 35px; height: 35px; border-radius: 6px; }
+        .control-group { font-size: 10px; gap: 2px; }
+        .control-group input[type="range"] { height: 10px; margin: 0; }
+        
+        .panel-section { padding: 8px; gap: 5px; }
+        .panel-title { font-size: 11px; margin-bottom: 2px; padding-bottom: 3px; }
+        .sys-btn { padding: 4px; font-size: 11px; }
+        .layer-item { padding: 4px; }
+        .layer-name { font-size: 11px; padding-left: 5px; }
+        
+        /* 상단/하단 영역 축소 */
+        .app-header { padding: 5px 15px; }
+        .btn-header, .file-label { padding: 5px 10px; font-size: 12px; }
+        #top-option-bar { min-height: 30px; padding: 4px 20px; font-size: 11px; }
+        #frame-panel { height: 95px; }
+        .frame-header { padding: 4px 10px; font-size: 11px; }
+        .frame-item { width: 95px; padding: 5px; }
+        
     </style>
 </head>
 <body>
@@ -170,7 +216,9 @@
     </div>
 
     <div class="app-body">
-        <div class="sidebar-left">
+        <div class="sidebar-left" id="sidebar-left">
+            <div class="panel-toggle toggle-left" id="btn-toggle-left" title="도구창 숨기기">◀</div>
+            
             <input type="color" id="color-picker" value="#ffffff">
             <button class="tool-btn" data-tool="eyedropper" style="height: 30px; font-size: 11px; margin-top: -10px;" title="스포이드">스포이드</button>
             <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range" id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
@@ -219,37 +267,40 @@
             </div>
         </div>
 
-        <div class="sidebar-right">
+<div class="sidebar-right" id="sidebar-right">
+            <div class="panel-toggle toggle-right" id="btn-toggle-right" title="레이어창 숨기기">▶</div>
+            
+            <!-- ✨ 화면 제어 & 이미지 불러오기 (통합 및 축소) -->
             <div class="panel-section">
-                <div class="panel-title">화면 제어</div>
-                <div style="display: flex; gap: 5px; align-items: center; justify-content: space-between;">
-                    <button class="sys-btn" id="btn-zoom-out">-</button>
-                    <span id="zoom-text" style="font-size: 12px; font-weight: bold; width: 40px; text-align: center;">100%</span>
-                    <button class="sys-btn" id="btn-zoom-in">+</button>
+                <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>화면 & 참고 이미지</span>
+                    <label class="toggle-label" style="font-size: 10px; margin: 0;"><input type="checkbox" id="toggle-bg" style="margin: 0 3px 0 0;">방송배경</label>
                 </div>
-                <label class="toggle-label" style="margin-top: 5px;"><input type="checkbox" id="toggle-bg"> 방송 배경 표시</label>
+                
+                <div style="display: flex; gap: 3px; align-items: center; justify-content: space-between;">
+                    <button class="sys-btn" id="btn-zoom-out" style="width: 25px; padding: 2px;">-</button>
+                    <span id="zoom-text" style="font-size: 11px; font-weight: bold; width: 35px; text-align: center;">100%</span>
+                    <button class="sys-btn" id="btn-zoom-in" style="width: 25px; padding: 2px;">+</button>
+                    <label class="sys-btn" style="text-align: center; background: #2e7d32; border-color: #1b5e20; cursor: pointer; flex: 1; margin-left: 5px;">
+                        📁 이미지 로드
+                        <input type="file" id="rough-file" accept="image/*" style="display: none;">
+                    </label>
+                </div>
+
+                <div id="rough-controls" style="display: none; gap: 5px; align-items: center; margin-top: 4px;">
+                    <span style="font-size: 10px; color: #aaa; white-space: nowrap;">투명도 <span id="rough-opacity-val">50%</span></span>
+                    <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5" style="width: 100%; height: 10px; margin: 0;">
+                    <button id="btn-delete-rough" class="sys-btn" style="background: #ff4757; border-color: #c0392b; width: 35px; padding: 2px;">삭제</button>
+                </div>
             </div>
 
-            <div class="panel-section">
-                <div class="panel-title" style="color: #4CAF50;">참고 이미지 (전송 제외)</div>
-                <label class="sys-btn" style="text-align: center; background: #2e7d32; border-color: #1b5e20; cursor: pointer;">
-                    📁 이미지 불러오기
-                    <input type="file" id="rough-file" accept="image/*" style="display: none;">
-                </label>
-                <div id="rough-controls" style="display: none; flex-direction: column; gap: 8px; margin-top: 8px;">
-                    <label style="font-size: 11px; color: #aaa; display: flex; justify-content: space-between;">투명도 <span id="rough-opacity-val">50%</span></label>
-                    <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5" style="width: 100%;">
-                    <button id="btn-delete-rough" class="sys-btn" style="background: #ff4757; border-color: #c0392b;">🗑️ 모든 러프 삭제</button>
-                </div>
-            </div>
-
+            <!-- ✨ 레이어 패널 (남은 공간 모두 차지) -->
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
                 <div class="panel-title">해당 프레임의 레이어</div>
-                <button id="btn-add-layer" class="sys-btn" style="background: #007acc; border-color: #007acc; margin-bottom: 10px;">새 레이어</button>
-                <div id="layer-list" style="display: flex; flex-direction: column-reverse; gap: 5px; overflow-y: auto; flex: 1;"></div>
+                <button id="btn-add-layer" class="sys-btn" style="background: #007acc; border-color: #007acc; margin-bottom: 5px;">+ 새 레이어</button>
+                <div id="layer-list" style="display: flex; flex-direction: column-reverse; gap: 3px; overflow-y: auto; flex: 1; padding-right: 2px;"></div>
             </div>
         </div>
-    </div>
 
 <script>
         const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
@@ -1436,7 +1487,27 @@ layerWrapper.addEventListener('pointerleave', () => {
                 }, index * 300);
             });
         };
+        const sidebarLeft = document.getElementById('sidebar-left');
+        const sidebarRight = document.getElementById('sidebar-right');
+        const btnToggleLeft = document.getElementById('btn-toggle-left');
+        const btnToggleRight = document.getElementById('btn-toggle-right');
 
+        btnToggleLeft.addEventListener('click', () => {
+            sidebarLeft.classList.toggle('collapsed');
+            btnToggleLeft.innerText = sidebarLeft.classList.contains('collapsed') ? '▶' : '◀';
+        });
+
+        btnToggleRight.addEventListener('click', () => {
+            sidebarRight.classList.toggle('collapsed');
+            btnToggleRight.innerText = sidebarRight.classList.contains('collapsed') ? '◀' : '▶';
+        });
+
+        // ✨ 캔버스 영역 크기 변화를 실시간으로 감지하여 부드럽게 핏 맞추기
+        // (기존 window.addEventListener('resize', ...)를 대체합니다)
+        const resizeObserver = new ResizeObserver(() => {
+            resizeCanvasToFit();
+        });
+        resizeObserver.observe(document.getElementById('scroll-container'));
 
         let isPlaying = false;
         let playTimeout = null;
