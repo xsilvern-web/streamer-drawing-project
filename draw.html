@@ -305,7 +305,6 @@
             position: relative;
         }
 
-        /* ✨ 하단 타임라인 슬림 반응형(어니언스킨 포함) */
         #frame-panel { 
             height: 40px; flex-direction: row; align-items: center; padding: 0; 
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -323,7 +322,6 @@
         
         #frame-list { padding: 0 10px; display: flex; flex: 1; overflow-x: auto; height: 100%; gap: 5px; align-items: center; }
         
-        /* ✨ 프레임 아이템 심플 네모칸 변경 */
         .frame-item { 
             width: 32px; height: 32px; display: flex; flex-direction: row; 
             padding: 0; align-items: center; justify-content: center; border-radius: 4px; 
@@ -337,7 +335,6 @@
             color: white;
         }
 
-        /* ✨ 커스텀 우클릭 메뉴 CSS */
         .frame-context-menu {
             position: absolute;
             background: #252526;
@@ -420,15 +417,16 @@
             padding-bottom: 3px;
         }
 
+        /* ✨ 개별 레이어 아이템의 투명도 조절용 UI 지원 구조 변경 */
         .layer-item {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
             background: #444;
-            padding: 4px;
+            padding: 6px;
             border-radius: 4px;
             border: 1px solid transparent;
             cursor: grab;
+            gap: 6px;
         }
 
         .layer-item:active {
@@ -449,6 +447,9 @@
             flex-grow: 1;
             padding-left: 5px;
             color: white;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .sys-btn {
@@ -540,8 +541,7 @@
             color: #aaa;
         }
 
-        .transform-box.type-transform_box .content,
-        .transform-box.type-rough .content {
+        .transform-box.type-transform_box .content {
             width: 100%;
             height: 100%;
             display: block;
@@ -763,7 +763,6 @@
         <button class="toolbar-btn" id="tb-italic" style="font-style: italic;">I</button>
     </div>
 
-    <!-- ✨ 우클릭 설정 메뉴 (프레임 시간/삭제/복사) -->
     <div id="frame-context-menu" class="frame-context-menu">
         <div style="font-size: 11px; color: #aaa; margin-bottom: 2px; text-align: center;">프레임 옵션</div>
         <div style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: white;">
@@ -820,13 +819,11 @@
                     <iframe id="broadcast-bg" src="https://chzzk.naver.com/live/bc2dbff369307b5c446224cce192c8b1"
                         frameborder="0" allow="autoplay; fullscreen"></iframe>
                     
-                    <!-- ✨ 어니언 스킨을 표시할 투명 캔버스 (앞뒤 잔상) -->
                     <canvas id="onion-prev" width="1920" height="1080" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; display: none;"></canvas>
                     <canvas id="onion-next" width="1920" height="1080" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; display: none;"></canvas>
                 </div>
             </div>
 
-            <!-- ✨ 개편된 하단 프레임 패널 -->
             <div id="frame-panel">
                 <div class="panel-toggle-h toggle-bottom" id="btn-toggle-bottom" title="타임라인 숨기기">▼</div>
                 
@@ -836,7 +833,6 @@
                     
                     <div style="width: 1px; height: 18px; background: #555; margin: 0 4px;"></div>
                     
-                    <!-- 어니언 스킨 토글 및 투명도 컨트롤 -->
                     <label style="font-size: 11px; color: #ccc; display: flex; align-items: center; gap: 3px; cursor: pointer; user-select: none;">
                         <input type="checkbox" id="chk-onion-skin" style="margin: 0; width: 13px; height: 13px;"> 어니언 스킨
                     </label>
@@ -851,7 +847,7 @@
 
             <div class="panel-section">
                 <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span>화면 & 참고 이미지</span>
+                    <span>화면 제어</span>
                     <label class="toggle-label" style="font-size: 10px; margin: 0;"><input type="checkbox"
                             id="toggle-bg" style="margin: 0 3px 0 0;">방송배경</label>
                 </div>
@@ -861,20 +857,13 @@
                     <span id="zoom-text"
                         style="font-size: 11px; font-weight: bold; width: 35px; text-align: center;">100%</span>
                     <button class="sys-btn" id="btn-zoom-in" style="width: 25px; padding: 2px;">+</button>
+                    
+                    <!-- ✨ 이미지 로드 버튼 (기존 러프 대신 일반 레이어로 삽입됨) -->
                     <label class="sys-btn"
                         style="text-align: center; background: #2e7d32; border-color: #1b5e20; cursor: pointer; flex: 1; margin-left: 5px;">
                         📁 이미지 로드
-                        <input type="file" id="rough-file" accept="image/*" style="display: none;">
+                        <input type="file" id="image-load-file" accept="image/*" style="display: none;">
                     </label>
-                </div>
-
-                <div id="rough-controls" style="display: none; gap: 5px; align-items: center; margin-top: 4px;">
-                    <span style="font-size: 10px; color: #aaa; white-space: nowrap;">투명도 <span
-                            id="rough-opacity-val">50%</span></span>
-                    <input type="range" id="rough-opacity" min="0" max="1" step="0.05" value="0.5"
-                        style="width: 100%; height: 10px; margin: 0;">
-                    <button id="btn-delete-rough" class="sys-btn"
-                        style="background: #ff4757; border-color: #c0392b; width: 35px; padding: 2px;">삭제</button>
                 </div>
             </div>
 
@@ -888,7 +877,7 @@
             </div>
         </div>
 
-<script>
+        <script>
             const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
             const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1';
             const API_BASE = window.location.origin;
@@ -1084,13 +1073,14 @@
             }
             
             function renderFrameToCtx(frameData, ctx) {
-                const sortedLayers = [...frameData.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
+                const sortedLayers = [...frameData.layers].filter(l => l.visible).sort((a, b) => {
                     const zA = parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0;
                     const zB = parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0;
                     return zA - zB;
                 });
                 
                 sortedLayers.forEach(l => {
+                    ctx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
                     if (l.type === 'canvas' && l.canvas) {
                         ctx.drawImage(l.canvas, 0, 0);
                     } else if (l.type === 'raster_image' || l.type === 'transform_box') {
@@ -1112,6 +1102,7 @@
                             ctx.restore();
                         }
                     }
+                    ctx.globalAlpha = 1.0;
                 });
             }
 
@@ -1197,6 +1188,7 @@
                         cvs.className = 'drawing-layer';
                         if(l.canvas) {
                             cvs.style.zIndex = l.canvas.style.zIndex;
+                            cvs.style.opacity = l.opacity !== undefined ? l.opacity : 1;
                             const ctx = cvs.getContext('2d');
                             ctx.lineCap = 'round'; ctx.lineJoin = 'round';
                             ctx.drawImage(l.canvas, 0, 0);
@@ -1209,6 +1201,7 @@
                     } else if (l.element) {
                         const box = l.element.cloneNode(true);
                         box.style.display = 'none';
+                        box.style.opacity = l.opacity !== undefined ? l.opacity : 1;
                         box.id = l.id + '_c' + Date.now();
                         layerWrapper.appendChild(box);
                         newL.element = box; newL.id = box.id;
@@ -1335,7 +1328,9 @@
                 cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                 layerWrapper.appendChild(cvs);
                 const context = cvs.getContext('2d'); context.lineCap = 'round'; context.lineJoin = 'round';
-                layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, type: 'canvas' });
+                
+                // ✨ 레이어 객체에 opacity 1 초기값 부여
+                layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, opacity: 1, type: 'canvas' });
 
                 updateLayersZIndex();
                 selectLayer(lId); renderLayerUI();
@@ -1348,8 +1343,6 @@
                 wrapper.className = `transform-box type-${type} active`;
                 wrapper.style.left = `${x - width / 2}px`; wrapper.style.top = `${y - height / 2}px`;
                 wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`;
-
-                if (type === 'rough') wrapper.style.zIndex = 900;
 
                 let content;
                 if (customContent) {
@@ -1368,38 +1361,36 @@
 
                 wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
 
-                if (type !== 'rough') {
-                    layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true });
-                    updateLayersZIndex(); selectLayer(lId);
-                }
+                layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true, opacity: 1 });
+                updateLayersZIndex(); selectLayer(lId);
+                
                 if (type === 'text') content.focus();
 
                 return wrapper;
             }
 
-            document.getElementById('rough-file').addEventListener('change', (e) => {
+            // ✨ 이미지 로드 파일 인풋 이벤트 (일반 트랜스폼 레이어로 삽입)
+            document.getElementById('image-load-file').addEventListener('change', (e) => {
                 const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
                 reader.onload = (event) => {
                     const img = new Image(); img.src = event.target.result;
                     img.onload = () => {
-                        const scale = Math.min(600 / img.width, 600 / img.height, 1);
-                        const wrapper = createTransformObject('rough', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, img.width * scale, img.height * scale, img);
-                        wrapper.querySelector('.content').style.opacity = document.getElementById('rough-opacity').value;
-                        document.getElementById('rough-controls').style.display = 'flex';
+                        const scale = Math.min(800 / img.width, 800 / img.height, 1);
+                        
+                        const customCvs = document.createElement('canvas');
+                        customCvs.width = img.width; customCvs.height = img.height;
+                        const ctx = customCvs.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        
+                        const wrapper = createTransformObject('transform_box', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, img.width * scale, img.height * scale, customCvs);
+                        const newLayer = layers.find(l => l.element === wrapper);
+                        if (newLayer) {
+                            newLayer.name = "불러온 이미지";
+                            renderLayerUI();
+                        }
                     }
                 };
                 reader.readAsDataURL(file); e.target.value = '';
-            });
-
-            document.getElementById('rough-opacity').addEventListener('input', (e) => {
-                const val = e.target.value;
-                document.getElementById('rough-opacity-val').innerText = `${Math.round(val * 100)}%`;
-                document.querySelectorAll('.transform-box.type-rough .content').forEach(img => { img.style.opacity = val; });
-            });
-
-            document.getElementById('btn-delete-rough').addEventListener('click', () => {
-                document.querySelectorAll('.transform-box.type-rough').forEach(el => el.remove());
-                document.getElementById('rough-controls').style.display = 'none';
             });
 
             function applyTransform(layerId) {
@@ -1430,6 +1421,7 @@
 
                         const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                         cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                        cvs.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
 
                         const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                         ctx.drawImage(img, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
@@ -1450,6 +1442,7 @@
 
                     const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                     cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                    cvs.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
 
                     const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                     ctx.drawImage(contentCvs, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
@@ -1497,6 +1490,7 @@
                 wrapper.style.top = `${bbox.y}px`;
                 wrapper.style.width = `${bbox.w}px`;
                 wrapper.style.height = `${bbox.h}px`;
+                wrapper.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
 
                 tempCvs.className = 'content';
 
@@ -1545,6 +1539,7 @@
                 }
             }
 
+            // ✨ 레이어 UI 개별 투명도 슬라이더 렌더링
             function renderLayerUI() {
                 layerListDiv.innerHTML = '';
                 layers.forEach(l => {
@@ -1560,6 +1555,9 @@
                         const draggedIndex = layers.findIndex(layer => layer.id === draggedId); const targetIndex = layers.findIndex(layer => layer.id === l.id);
                         if (draggedIndex > -1 && targetIndex > -1) { const [draggedLayer] = layers.splice(draggedIndex, 1); layers.splice(targetIndex, 0, draggedLayer); updateLayersZIndex(); renderLayerUI(); }
                     };
+
+                    const topRow = document.createElement('div');
+                    topRow.style.display = 'flex'; topRow.style.justifyContent = 'space-between'; topRow.style.alignItems = 'center';
 
                     const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '2px';
 
@@ -1579,7 +1577,38 @@
                     btnGroup.appendChild(delBtn);
 
                     const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
-                    div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
+                    topRow.appendChild(btnGroup); topRow.appendChild(nameSpan);
+
+                    const bottomRow = document.createElement('div');
+                    bottomRow.style.display = 'flex'; bottomRow.style.alignItems = 'center'; bottomRow.style.gap = '5px';
+                    
+                    const opLabel = document.createElement('span');
+                    opLabel.style.fontSize = '9px'; opLabel.style.color = '#aaa'; opLabel.innerText = '투명도';
+                    
+                    const opSlider = document.createElement('input');
+                    opSlider.type = 'range'; opSlider.min = '0'; opSlider.max = '1'; opSlider.step = '0.05';
+                    opSlider.value = l.opacity !== undefined ? l.opacity : 1;
+                    opSlider.style.flex = '1'; opSlider.style.height = '6px'; opSlider.style.margin = '0';
+                    
+                    const opVal = document.createElement('span');
+                    opVal.style.fontSize = '9px'; opVal.style.color = '#fff'; opVal.style.width = '24px'; opVal.style.textAlign = 'right';
+                    opVal.innerText = `${Math.round(opSlider.value * 100)}%`;
+
+                    opSlider.oninput = (e) => {
+                        l.opacity = parseFloat(e.target.value);
+                        opVal.innerText = `${Math.round(l.opacity * 100)}%`;
+                        if (l.type === 'canvas' && l.canvas) l.canvas.style.opacity = l.opacity;
+                        else if (l.element) l.element.style.opacity = l.opacity;
+                    };
+                    
+                    opSlider.onmousedown = (e) => e.stopPropagation();
+                    opSlider.ontouchstart = (e) => e.stopPropagation();
+                    opSlider.onclick = (e) => e.stopPropagation();
+
+                    bottomRow.appendChild(opLabel); bottomRow.appendChild(opSlider); bottomRow.appendChild(opVal);
+
+                    div.appendChild(topRow); div.appendChild(bottomRow);
+                    layerListDiv.appendChild(div);
                 });
             }
             document.getElementById('btn-add-layer').onclick = createLayer;
@@ -1912,7 +1941,6 @@
                 canvasSnapshot = null;
             });
 
-            // ✨ 지우개 컨텍스트 꼬임 및 병목 현상을 방지하는 최적화된 다시그리기(Redraw) 로직
             let isRedrawing = false;
             let needsRedraw = false;
 
@@ -1926,13 +1954,11 @@
                 layers.forEach(l => { 
                     if (l.type === 'canvas' && l.canvas && l.ctx) {
                         l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); 
-                        // ✨ 이전 지우개 작업 때문에 남아있던 destination-out 속성을 무조건 복구
                         l.ctx.globalCompositeOperation = 'source-over'; 
                         l.ctx.globalAlpha = 1.0;
                     }
                 });
 
-                // 메모리 누수를 방지하기 위한 전역 임시 캔버스 재사용
                 let tmpCvs = document.getElementById('redraw-tmp-layer');
                 if (!tmpCvs) {
                     tmpCvs = document.createElement('canvas');
@@ -1949,7 +1975,6 @@
                     if (!targetLayer || targetLayer.type !== 'canvas' || !targetLayer.ctx) continue;
                     const ctx = targetLayer.ctx;
 
-                    // ✨ 레이어를 그릴 때마다 안전하게 속성 초기화
                     ctx.globalCompositeOperation = 'source-over';
                     ctx.globalAlpha = 1.0;
 
@@ -2037,7 +2062,7 @@
                             const box = l.element;
                             let angle = 0; const transform = window.getComputedStyle(box).transform;
                             if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                            const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible };
+                            const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1 };
                             if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; }
                             else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
                             savedTransformObjects.push(obj);
@@ -2046,20 +2071,12 @@
 
                     return {
                         id: f.id, duration: f.duration, layerCounter: f.layerCounter, history: f.history,
-                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible })),
+                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1 })),
                         transformObjects: savedTransformObjects
                     };
                 });
 
-                const roughObjects = [];
-                document.querySelectorAll('.transform-box.type-rough').forEach((box, i) => {
-                    let angle = 0; const transform = window.getComputedStyle(box).transform;
-                    if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                    const img = box.querySelector('img');
-                    roughObjects.push({ id: 'rough_' + i, name: '참고이미지', type: 'rough', x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, src: img.src });
-                });
-
-                const saveData = { isMultiFrame: true, framesData: framesData, roughObjects: roughObjects };
+                const saveData = { isMultiFrame: true, framesData: framesData };
                 const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
                 const a = document.createElement('a'); a.href = dataStr; a.download = "drawing_advanced_anim.json"; document.body.appendChild(a); a.click(); a.remove();
             };
@@ -2070,7 +2087,6 @@
                     try {
                         const data = JSON.parse(event.target.result);
                         
-                        // ✨ [수정됨] 잔상 캔버스나 시스템 캔버스를 지우지 않고 그림 레이어만 쏙 골라내서 삭제
                         const elementsToRemove = Array.from(layerWrapper.querySelectorAll('.drawing-layer, .transform-box'));
                         elementsToRemove.forEach(c => c.remove());
                         
@@ -2083,8 +2099,9 @@
                                 fData.layersInfo.forEach(lInfo => {
                                     const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
                                     cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
+                                    cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1;
                                     layerWrapper.appendChild(cvs);
-                                    newF.layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, type: 'canvas' });
+                                    newF.layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, type: 'canvas' });
                                 });
 
                                 fData.transformObjects.forEach(obj => {
@@ -2098,6 +2115,7 @@
                                     wrapper.className = `transform-box type-${obj.type}`;
                                     wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
                                     wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none';
+                                    wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1;
 
                                     let content;
                                     if (customContent) { content = customContent; content.classList.add('content'); }
@@ -2108,7 +2126,7 @@
                                         const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
                                     });
                                     wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                                    newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false });
+                                    newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1 });
                                 });
 
                                 if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
@@ -2117,11 +2135,20 @@
 
                             if (data.roughObjects) {
                                 data.roughObjects.forEach(obj => {
-                                    const customContent = new Image(); customContent.src = obj.src; customContent.className = 'content';
-                                    customContent.style.opacity = document.getElementById('rough-opacity').value;
-                                    document.getElementById('rough-controls').style.display = 'flex';
-                                    const box = createTransformObject(obj.type, obj.x, obj.y, obj.width, obj.height, customContent);
-                                    box.style.transform = `rotate(${obj.angle}rad)`; box.style.zIndex = 900;
+                                    const customContent = document.createElement('canvas'); 
+                                    customContent.width = obj.width; customContent.height = obj.height;
+                                    const ctx = customContent.getContext('2d');
+                                    const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                                    
+                                    const wrapper = createTransformObject('transform_box', obj.x, obj.y, obj.width, obj.height, customContent);
+                                    wrapper.style.transform = `rotate(${obj.angle}rad)`; 
+                                    wrapper.style.opacity = 0.5;
+                                    
+                                    const newLayer = layers.find(l => l.element === wrapper);
+                                    if(newLayer) {
+                                        newLayer.name = "참고이미지 (구버전)";
+                                        newLayer.opacity = 0.5;
+                                    }
                                 });
                             }
 
@@ -2238,13 +2265,14 @@
                     offCanvas.height = CANVAS_HEIGHT;
                     const offCtx = offCanvas.getContext('2d');
 
-                    const sortedLayers = [...frameData.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
+                    const sortedLayers = [...frameData.layers].filter(l => l.visible).sort((a, b) => {
                         const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
                         const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
                         return zA - zB;
                     });
 
                     sortedLayers.forEach(l => {
+                        offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
                         if (l.type === 'canvas' && l.canvas) {
                             offCtx.drawImage(l.canvas, 0, 0);
                         } else if (l.type === 'raster_image' || l.type === 'transform_box') {
@@ -2269,6 +2297,7 @@
                                 offCtx.restore();
                             }
                         }
+                        offCtx.globalAlpha = 1.0;
                     });
 
                     const link = document.createElement('a');
@@ -2420,14 +2449,17 @@
                     frames.forEach(f => {
                         offCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-                        const sortedLayers = [...f.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
+                        const sortedLayers = [...f.layers].filter(l => l.visible).sort((a, b) => {
                             const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
                             const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
                             return zA - zB;
                         });
 
                         sortedLayers.forEach(l => {
-                            if (l.type === 'canvas' && l.canvas) { offCtx.drawImage(l.canvas, 0, 0); }
+                            offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                            if (l.type === 'canvas' && l.canvas) { 
+                                offCtx.drawImage(l.canvas, 0, 0); 
+                            }
                             else if (l.type === 'raster_image') {
                                 const box = l.element; const contentCvs = box.querySelector('canvas.content');
                                 const w = box.offsetWidth; const h = box.offsetHeight;
@@ -2438,6 +2470,7 @@
                                 offCtx.save(); offCtx.translate(cx, cy); offCtx.rotate(angle);
                                 offCtx.drawImage(contentCvs, -w / 2, -h / 2, w, h); offCtx.restore();
                             }
+                            offCtx.globalAlpha = 1.0;
                         });
 
                         animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
@@ -2451,12 +2484,19 @@
                     layers.forEach(l => {
                         if (l.type === 'raster_image') {
                             const box = l.element; const contentCvs = box.querySelector('canvas.content');
+                            
+                            const tempCvs = document.createElement('canvas');
+                            tempCvs.width = contentCvs.width; tempCvs.height = contentCvs.height;
+                            const tempCtx = tempCvs.getContext('2d');
+                            tempCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                            tempCtx.drawImage(contentCvs, 0, 0);
+
                             const w = box.offsetWidth; const h = box.offsetHeight;
                             const cx = parseFloat(box.style.left) + w / 2; const cy = parseFloat(box.style.top) + h / 2;
                             let angle = 0; const transform = window.getComputedStyle(box).transform;
                             if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
 
-                            singleHistoryPayload.push({ type: 'raster_image', src: contentCvs.toDataURL('image/png'), cx: cx, cy: cy, width: w, height: h, angle: angle });
+                            singleHistoryPayload.push({ type: 'raster_image', src: tempCvs.toDataURL('image/png'), cx: cx, cy: cy, width: w, height: h, angle: angle });
                         }
                     });
 
