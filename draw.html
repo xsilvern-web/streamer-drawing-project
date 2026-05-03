@@ -1228,7 +1228,7 @@
                 selectLayer(lId); renderLayerUI();
             }
 
-            function createTransformObject(type, x, y, width, height, customContent = null) {
+function createTransformObject(type, x, y, width, height, customContent = null) {
                 layerCounter++; const lId = `layer_${layerCounter}`;
 
                 const wrapper = document.createElement('div');
@@ -1236,8 +1236,8 @@
                 wrapper.style.left = `${x - width / 2}px`; wrapper.style.top = `${y - height / 2}px`;
                 wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`;
 
-                if (type === 'rough') wrapper.style.zIndex = 0;
-
+                // ✨ 러프 이미지의 z-index를 올려 가장 위에 보이도록 수정
+                if (type === 'rough') wrapper.style.zIndex = 900;
                 let content;
                 if (customContent) {
                     content = customContent; content.classList.add('content');
