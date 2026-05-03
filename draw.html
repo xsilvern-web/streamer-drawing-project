@@ -49,7 +49,7 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
-            padding: 10px 20px;
+            padding: 5px 15px; /* 컴팩트 축소 */
             flex-shrink: 0;
             gap: 8px;
         }
@@ -71,8 +71,8 @@
         .file-label {
             background: #444;
             color: white;
-            padding: 8px 15px;
-            font-size: 13px;
+            padding: 5px 10px; /* 컴팩트 축소 */
+            font-size: 12px; /* 컴팩트 축소 */
             font-weight: bold;
             border: 1px solid #555;
             border-radius: 4px;
@@ -125,26 +125,90 @@
             overflow: hidden;
         }
 
+        /* ✨ 사이드바 접기/펴기 애니메이션 및 컴팩트 크기 설정 */
+        .sidebar-left,
+        .sidebar-right {
+            transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            position: relative;
+            z-index: 150;
+        }
+
+        /* 타블렛용 컴팩트 사이즈 */
         .sidebar-left {
-            width: 80px;
+            width: 60px;
             background: #252526;
             border-right: 1px solid #444;
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 15px 0;
-            gap: 15px;
+            padding: 10px 0;
+            gap: 10px;
             overflow-y: visible;
             flex-shrink: 0;
-            position: relative;
+        }
+
+        .sidebar-left.collapsed {
+            margin-left: -60px;
+        }
+
+        .sidebar-right {
+            width: 200px;
+            background: #252526;
+            border-left: 1px solid #444;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            gap: 10px;
+        }
+
+        .sidebar-right.collapsed {
+            margin-right: -200px;
+        }
+
+        /* 토글 버튼(◀, ▶) 디자인 */
+        .panel-toggle {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 60px;
+            background: #333;
+            color: #ccc;
+            border: 1px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 200;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .panel-toggle:hover {
+            background: #555;
+            color: white;
+        }
+
+        .toggle-left {
+            right: -20px;
+            border-radius: 0 6px 6px 0;
+            border-left: none;
+        }
+
+        .toggle-right {
+            left: -20px;
+            border-radius: 6px 0 0 6px;
+            border-right: none;
         }
 
         .tool-btn {
-            width: 60px;
-            height: 45px;
+            width: 45px;
+            height: 35px;
+            font-size: 11px;
             background: #333;
             color: #ccc;
-            font-size: 12px;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -173,7 +237,7 @@
         .shape-flyout {
             display: none;
             position: absolute;
-            left: 70px;
+            left: 60px; /* 축소된 너비에 맞춤 */
             top: 0;
             background: #252526;
             border: 1px solid #555;
@@ -190,8 +254,8 @@
         }
 
         .sub-tool {
-            width: 40px;
-            height: 40px;
+            width: 35px;
+            height: 35px;
             padding: 5px;
         }
 
@@ -199,8 +263,8 @@
             stroke: currentColor;
             fill: none;
             stroke-width: 2;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
         }
 
         .control-group {
@@ -208,22 +272,24 @@
             flex-direction: column;
             align-items: center;
             width: 80%;
-            gap: 5px;
-            font-size: 11px;
+            gap: 2px;
+            font-size: 10px;
             color: #aaa;
         }
 
         .control-group input[type="range"] {
             width: 100%;
+            height: 10px;
+            margin: 0;
             cursor: pointer;
         }
 
         #color-picker {
-            width: 50px;
-            height: 50px;
+            width: 35px;
+            height: 35px;
             padding: 0;
             border: 2px solid #555;
-            border-radius: 8px;
+            border-radius: 6px;
             cursor: pointer;
             background: transparent;
         }
@@ -248,21 +314,25 @@
             height: 45px; flex-direction: row; align-items: center; padding: 0; 
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             position: relative; z-index: 150;
+            background: #252526;
+            border-top: 1px solid #444;
+            display: flex; /* 가로 배치 필수 */
         }
         #frame-panel.collapsed { margin-bottom: -45px; }
         
         .frame-header { 
-            width: auto; height: 100%; flex-direction: row; justify-content: center;
-            border-bottom: none; border-right: 1px solid #444; padding: 0 15px; gap: 5px; background: #252526; 
+            width: auto; height: 100%; display: flex; flex-direction: row; justify-content: center; align-items: center;
+            border-bottom: none; border-right: 1px solid #444; padding: 0 15px; gap: 5px; background: #333; 
         }
-        .frame-header span { display: none; /* 공간 확보를 위해 '애니메이션 타임라인' 텍스트 숨김 */ }
+        .frame-header span { display: none; }
         
-        #frame-list { padding: 0 10px; height: 100%; gap: 5px; align-items: center; }
+        #frame-list { padding: 0 10px; display: flex; flex: 1; overflow-x: auto; height: 100%; gap: 5px; align-items: center; }
         
-        /* 프레임 아이템도 가로형으로 납작하게 변경 */
+        /* 프레임 아이템 가로형 변경 */
         .frame-item { 
-            width: auto; min-width: 150px; height: 32px; flex-direction: row; 
+            width: auto; min-width: 150px; height: 32px; display: flex; flex-direction: row; 
             padding: 0 8px; align-items: center; justify-content: space-between; border-radius: 4px; 
+            background: #444; border: 2px solid transparent; cursor: grab; flex-shrink: 0; box-sizing: border-box;
         }
         .frame-item.active {
             background: #094771;
@@ -324,34 +394,22 @@
             pointer-events: none;
         }
 
-        .sidebar-right {
-            width: 240px;
-            background: #252526;
-            border-left: 1px solid #444;
-            display: flex;
-            flex-direction: column;
-            padding: 15px;
-            box-sizing: border-box;
-            flex-shrink: 0;
-            gap: 15px;
-        }
-
         .panel-section {
             background: #333;
-            padding: 10px;
+            padding: 8px;
             border-radius: 6px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 5px;
         }
 
         .panel-title {
-            font-size: 12px;
+            font-size: 11px;
             color: #aaa;
             font-weight: bold;
-            margin-bottom: 5px;
+            margin-bottom: 2px;
             border-bottom: 1px solid #444;
-            padding-bottom: 5px;
+            padding-bottom: 3px;
         }
 
         .layer-item {
@@ -359,7 +417,7 @@
             justify-content: space-between;
             align-items: center;
             background: #444;
-            padding: 8px;
+            padding: 4px;
             border-radius: 4px;
             border: 1px solid transparent;
             cursor: grab;
@@ -379,17 +437,17 @@
         }
 
         .layer-name {
-            font-size: 13px;
+            font-size: 11px;
             flex-grow: 1;
-            padding-left: 10px;
+            padding-left: 5px;
             color: white;
         }
 
         .sys-btn {
             background: #444;
             color: white;
-            padding: 6px;
-            font-size: 12px;
+            padding: 4px;
+            font-size: 11px;
             width: 100%;
             border: 1px solid #555;
             font-weight: bold;
@@ -409,8 +467,7 @@
             color: #ccc;
         }
 
-        .raster-btn {
-            background: #e65100;
+        .raster-btn, .del-btn {
             color: white;
             border: none;
             padding: 4px 6px;
@@ -420,26 +477,10 @@
             font-weight: bold;
             margin-left: 2px;
         }
-
-        .raster-btn:hover {
-            background: #ff9800;
-        }
-
-        .del-btn {
-            background: #d32f2f;
-            color: white;
-            border: none;
-            padding: 4px 6px;
-            font-size: 11px;
-            border-radius: 3px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-left: 2px;
-        }
-
-        .del-btn:hover {
-            background: #f44336;
-        }
+        .raster-btn { background: #e65100; }
+        .raster-btn:hover { background: #ff9800; }
+        .del-btn { background: #d32f2f; }
+        .del-btn:hover { background: #f44336; }
 
         /* 만능 객체 트랜스폼 박스 */
         .transform-box {
@@ -515,29 +556,10 @@
             display: block;
         }
 
-        .handle-nw {
-            top: -6px;
-            left: -6px;
-            cursor: nwse-resize;
-        }
-
-        .handle-ne {
-            top: -6px;
-            right: -6px;
-            cursor: nesw-resize;
-        }
-
-        .handle-sw {
-            bottom: -6px;
-            left: -6px;
-            cursor: nesw-resize;
-        }
-
-        .handle-se {
-            bottom: -6px;
-            right: -6px;
-            cursor: nwse-resize;
-        }
+        .handle-nw { top: -6px; left: -6px; cursor: nwse-resize; }
+        .handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
+        .handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+        .handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 
         .rotate-area {
             position: absolute;
@@ -550,29 +572,11 @@
             cursor: alias;
         }
 
-        .transform-box.active .rotate-area {
-            display: block;
-        }
-
-        .rot-nw {
-            top: -20px;
-            left: -20px;
-        }
-
-        .rot-ne {
-            top: -20px;
-            right: -20px;
-        }
-
-        .rot-sw {
-            bottom: -20px;
-            left: -20px;
-        }
-
-        .rot-se {
-            bottom: -20px;
-            right: -20px;
-        }
+        .transform-box.active .rotate-area { display: block; }
+        .rot-nw { top: -20px; left: -20px; }
+        .rot-ne { top: -20px; right: -20px; }
+        .rot-sw { bottom: -20px; left: -20px; }
+        .rot-se { bottom: -20px; right: -20px; }
 
         #floating-toolbar {
             position: fixed;
@@ -598,149 +602,16 @@
             font-weight: bold;
         }
 
-        /* ✨ 사이드바 접기/펴기 트랜지션 및 토글 버튼 CSS */
-        /* ✨ 사이드바 접기/펴기 애니메이션 및 컴팩트 크기 설정 */
-        .sidebar-left,
-        .sidebar-right {
-            transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            position: relative;
-            z-index: 150;
-        }
-
-        /* 타블렛용 컴팩트 사이즈 (너비 및 숨김 마진 조정) */
-        .sidebar-left {
-            width: 60px;
-            padding: 10px 0;
-            gap: 10px;
-        }
-
-        .sidebar-left.collapsed {
-            margin-left: -60px;
-        }
-
-        .sidebar-right {
-            width: 200px;
-            padding: 10px;
-            gap: 10px;
-        }
-
-        .sidebar-right.collapsed {
-            margin-right: -200px;
-        }
-
-        /* 토글 버튼(◀, ▶) 디자인 */
-        .panel-toggle {
-            position: absolute;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 20px;
-            height: 60px;
-            background: #333;
-            color: #ccc;
-            border: 1px solid #555;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 200;
-            font-size: 14px;
-            font-weight: bold;
-        }
-
-        .panel-toggle:hover {
-            background: #555;
-            color: white;
-        }
-
-        .toggle-left {
-            right: -20px;
-            border-radius: 0 6px 6px 0;
-            border-left: none;
-        }
-
-        .toggle-right {
-            left: -20px;
-            border-radius: 6px 0 0 6px;
-            border-right: none;
-        }
-
-        /* 나머지 내부 요소 컴팩트 스타일 */
-        .tool-btn {
-            width: 45px;
-            height: 35px;
-            font-size: 11px;
-        }
-
-        #color-picker {
-            width: 35px;
-            height: 35px;
-            border-radius: 6px;
-        }
-
-        .control-group {
-            font-size: 10px;
-            gap: 2px;
-        }
-
-        .control-group input[type="range"] {
-            height: 10px;
-            margin: 0;
-        }
-
-        .panel-section {
-            padding: 8px;
-            gap: 5px;
-        }
-
-        .panel-title {
-            font-size: 11px;
-            margin-bottom: 2px;
-            padding-bottom: 3px;
-        }
-
-        .sys-btn {
-            padding: 4px;
-            font-size: 11px;
-        }
-
-        .layer-item {
-            padding: 4px;
-        }
-
-        .layer-name {
-            font-size: 11px;
-            padding-left: 5px;
-        }
-
-        /* 상단/하단 영역 축소 */
-        .app-header {
-            padding: 5px 15px;
-        }
-
-        .btn-header,
-        .file-label {
-            padding: 5px 10px;
-            font-size: 12px;
-        }
-
         #top-option-bar {
             min-height: 30px;
             padding: 4px 20px;
             font-size: 11px;
-        }
-
-        #frame-panel {
-            height: 95px;
-        }
-
-        .frame-header {
-            padding: 4px 10px;
-            font-size: 11px;
-        }
-
-        .frame-item {
-            width: 95px;
-            padding: 5px;
+            background: #2d2d2d; 
+            border-bottom: 1px solid #444; 
+            display: flex; 
+            gap: 20px; 
+            align-items: center; 
+            flex-shrink: 0;
         }
 
         /* ✨ 상하단 패널 접기/펴기 로직 및 가로형 토글 버튼 */
@@ -750,25 +621,12 @@
             z-index: 150;
             display: flex;
             flex-direction: column;
+            background: #2d2d2d; /* 배경색 통일 */
         }
 
         #top-wrapper.collapsed {
-            margin-top: -88px;
+            margin-top: -100px; /* 상단 패널 높이만큼 충분히 숨김 */
         }
-
-        /* 상단 패널 높이만큼 위로 숨김 */
-
-        #frame-panel {
-            transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            position: relative;
-            z-index: 150;
-        }
-
-        #frame-panel.collapsed {
-            margin-bottom: -95px;
-        }
-
-        /* 타임라인 패널 높이만큼 아래로 숨김 */
 
         .panel-toggle-h {
             position: absolute;
@@ -808,13 +666,55 @@
 </head>
 
 <body>
+    <!-- ✨ 상단 래퍼 (이 안에 헤더와 옵션바, 토글버튼이 모두 들어갑니다) -->
     <div id="top-wrapper">
         <div class="app-header">
-        <div id="top-option-bar"
-            style="background: #2d2d2d; border-bottom: 1px solid #444; padding: 8px 20px; display: flex; gap: 20px; align-items: center; min-height: 35px; flex-shrink: 0;">
-            <div style="font-size: 13px; font-weight: bold; color: #aaa;" id="current-tool-name">선택 및 조작</div>
+            <div class="header-top">
+                <div class="header-group">
+                    <button id="btn-save" class="btn-header">파일 저장</button>
+                    <button id="btn-export-png" class="btn-header"
+                        style="background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold;">PNG
+                        내보내기</button>
+                    <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
+                    <button id="btn-clear-all" class="btn-header"
+                        style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️
+                        프레임 전체 지우기</button>
+                </div>
 
-            <!-- 텍스트 옵션 (기존 플로팅 툴바에서 이동) -->
+                <div class="header-group" id="login-container">
+                    <div id="naverIdLogin"></div>
+                </div>
+
+                <div class="header-group" id="donation-container" style="display: none;">
+                    <div
+                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+                        <div id="profile-preview"></div>
+                        <label
+                            style="font-size: 10px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 3px;">
+                            <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사
+                            전송
+                        </label>
+                    </div>
+                    <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
+                    <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
+
+                    <label
+                        style="color: #ff9800; font-weight: bold; margin-right: 5px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <input type="checkbox" id="chk-animation-mode" style="width: 15px; height: 15px;">
+                        🎬 다중 프레임 전송
+                    </label>
+
+                    <button id="btn-send">화면에 띄우기</button>
+                </div>
+            </div>
+            <div class="disclaimer">
+                ※ [조작 커서 ↖] 도구로 객체를 선택 및 이동하세요. (Shift 누르고 크기조절 시 비율 유지) / <b>일반 그림 조작 단축키: Alt + T</b>
+            </div>
+        </div>
+        
+        <div id="top-option-bar">
+            <div style="font-size: 12px; font-weight: bold; color: #aaa;" id="current-tool-name">선택 및 조작</div>
+
             <div id="opt-text" style="display: none; gap: 10px; align-items: center;">
                 <select id="tb-fontfamily"
                     style="background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;">
@@ -832,58 +732,18 @@
                     style="background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-style: italic;">I</button>
             </div>
 
-            <!-- 채우기 옵션 -->
-            <div id="opt-fill" style="display: none; gap: 15px; align-items: center; font-size: 12px; color: #ccc;">
+            <div id="opt-fill" style="display: none; gap: 15px; align-items: center; font-size: 11px; color: #ccc;">
                 <label>색 유사도 (0~255) <input type="number" id="fill-tolerance" value="32" min="0" max="255"
                         style="width: 50px; text-align: center; margin-left: 5px;"></label>
                 <label title="웹 캔버스 한계상 기초적인 형태만 지원합니다">틈새 닫기 강도 <input type="number" id="fill-gap" value="0" min="0"
                         max="20" style="width: 50px; text-align: center; margin-left: 5px;"></label>
             </div>
         </div>
-        <div class="header-top">
-            <div class="header-group">
-                <button id="btn-save" class="btn-header">파일 저장</button>
-                <button id="btn-export-png" class="btn-header"
-                    style="background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 15px; font-weight: bold;">PNG
-                    내보내기</button>
-                <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
-                <button id="btn-clear-all" class="btn-header"
-                    style="background-color: #ff4757; color: white; border: none; padding: 8px 15px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️
-                    프레임 전체 지우기</button>
-            </div>
-
-            <div class="header-group" id="login-container">
-                <div id="naverIdLogin"></div>
-            </div>
-
-            <div class="header-group" id="donation-container" style="display: none;">
-                <div
-                    style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
-                    <div id="profile-preview"></div>
-                    <label
-                        style="font-size: 10px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 3px;">
-                        <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사
-                        전송
-                    </label>
-                </div>
-                <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
-                <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
-
-                <!-- ✨ 애니메이션 모드 토글 -->
-                <label
-                    style="color: #ff9800; font-weight: bold; margin-right: 5px; font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                    <input type="checkbox" id="chk-animation-mode" style="width: 15px; height: 15px;">
-                    🎬 다중 프레임 애니메이션 전송
-                </label>
-
-                <button id="btn-send">화면에 띄우기 (전송)</button>
-            </div>
-        </div>
-        <div class="disclaimer">
-            ※ [조작 커서 ↖] 도구로 객체를 선택 및 이동하세요. (Shift 누르고 크기조절 시 비율 유지) / <b>일반 그림 조작 단축키: Alt + T</b>
-        </div>
-        </div>
+        
+        <!-- ✨ 상단 토글 버튼 (이 코드가 없어서 자바스크립트 에러가 났었습니다) -->
+        <div class="panel-toggle-h toggle-top" id="btn-toggle-top" title="상단바 숨기기">▲</div>
     </div>
+
     <div id="floating-toolbar">
         <select id="tb-fontfamily"
             style="background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;">
@@ -950,13 +810,12 @@
                 </div>
             </div>
 
-            <!-- ✨ 하단 프레임 패널 추가 -->
             <div id="frame-panel">
                 <div class="panel-toggle-h toggle-bottom" id="btn-toggle-bottom" title="타임라인 숨기기">▼</div>
                 
-                <div class="frame-header" style="display: flex; align-items: center;">
+                <div class="frame-header">
                     <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 10px; font-weight: bold;">▶ 재생</button>
-                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px; margin-left: 5px;">+ 새 프레임</button>
+                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px;">+ 새 프레임</button>
                 </div>
                 <div id="frame-list"></div>
             </div>
@@ -965,7 +824,6 @@
         <div class="sidebar-right" id="sidebar-right">
             <div class="panel-toggle toggle-right" id="btn-toggle-right" title="레이어창 숨기기">▶</div>
 
-            <!-- ✨ 화면 제어 & 이미지 불러오기 (통합 및 축소) -->
             <div class="panel-section">
                 <div class="panel-title" style="display:flex; justify-content:space-between; align-items:center;">
                     <span>화면 & 참고 이미지</span>
@@ -995,7 +853,6 @@
                 </div>
             </div>
 
-            <!-- ✨ 레이어 패널 (남은 공간 모두 차지) -->
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
                 <div class="panel-title">해당 프레임의 레이어</div>
                 <button id="btn-add-layer" class="sys-btn"
@@ -1019,12 +876,11 @@
             let baseScale = 1.0;
             let zoomLevel = 1.0;
 
-            // ✨ 캔버스를 스크롤 영역에 맞게 동적 크기 조절 및 중앙 정렬
             function resizeCanvasToFit() {
                 const wsRect = scrollContainer.getBoundingClientRect();
                 const scaleX = wsRect.width / CANVAS_WIDTH;
                 const scaleY = wsRect.height / CANVAS_HEIGHT;
-                baseScale = Math.min(scaleX, scaleY) * 0.98; // 여백을 위해 98%로 피팅
+                baseScale = Math.min(scaleX, scaleY) * 0.98;
                 updateZoom(zoomLevel);
             }
 
@@ -1033,7 +889,6 @@
                 const finalScale = baseScale * zoomLevel;
                 layerWrapper.style.transform = `scale(${finalScale})`;
 
-                // 중앙 정렬 로직
                 const wsRect = scrollContainer.getBoundingClientRect();
                 const scaledWidth = CANVAS_WIDTH * finalScale;
                 const scaledHeight = CANVAS_HEIGHT * finalScale;
@@ -1045,7 +900,6 @@
 
             window.addEventListener('resize', resizeCanvasToFit);
 
-            // 좌표 계산 시 baseScale을 곱하도록 수정
             function getPointerPos(e) {
                 const rect = layerWrapper.getBoundingClientRect();
                 return {
@@ -1054,46 +908,42 @@
                 };
             }
 
-            // ✨ 상단 옵션바 제어 함수
-            // ✨ 상단 옵션바 제어 함수 (자동 열림 기능 추가)
-        function updateTopOptionBar(tool) {
-            const optText = document.getElementById('opt-text');
-            const optFill = document.getElementById('opt-fill');
-            const toolNameDisplay = document.getElementById('current-tool-name');
+            function updateTopOptionBar(tool) {
+                const optText = document.getElementById('opt-text');
+                const optFill = document.getElementById('opt-fill');
+                const toolNameDisplay = document.getElementById('current-tool-name');
 
-            if(optText) optText.style.display = 'none';
-            if(optFill) optFill.style.display = 'none';
-            
-            const toolNames = {
-                'cursor': '선택 및 조작', 'pen': '펜', 'eraser': '지우개', 'text': '텍스트',
-                'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기',
-                'eyedropper': '스포이드'
-            };
-            if(toolNameDisplay) toolNameDisplay.innerText = toolNames[tool] || tool;
+                if(optText) optText.style.display = 'none';
+                if(optFill) optFill.style.display = 'none';
+                
+                const toolNames = {
+                    'cursor': '선택 및 조작', 'pen': '펜', 'eraser': '지우개', 'text': '텍스트',
+                    'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기',
+                    'eyedropper': '스포이드'
+                };
+                if(toolNameDisplay) toolNameDisplay.innerText = toolNames[tool] || tool;
 
-            let needsOptionBar = false;
+                let needsOptionBar = false;
 
-            if (tool === 'text') {
-                if (optText) optText.style.display = 'flex';
-                needsOptionBar = true;
-            }
-            if (tool === 'fill') {
-                if (optFill) optFill.style.display = 'flex';
-                needsOptionBar = true;
-            }
+                if (tool === 'text') {
+                    if (optText) optText.style.display = 'flex';
+                    needsOptionBar = true;
+                }
+                if (tool === 'fill') {
+                    if (optFill) optFill.style.display = 'flex';
+                    needsOptionBar = true;
+                }
 
-            // ✨ 옵션바가 필요한 도구를 선택했는데 상단바가 닫혀있다면 강제로 열어줍니다.
-            if (needsOptionBar) {
-                const topWrapper = document.getElementById('top-wrapper');
-                const btnToggleTop = document.getElementById('btn-toggle-top');
-                if (topWrapper && topWrapper.classList.contains('collapsed')) {
-                    topWrapper.classList.remove('collapsed');
-                    if (btnToggleTop) btnToggleTop.innerText = '▲';
+                if (needsOptionBar) {
+                    const topWrapper = document.getElementById('top-wrapper');
+                    const btnToggleTop = document.getElementById('btn-toggle-top');
+                    if (topWrapper && topWrapper.classList.contains('collapsed')) {
+                        topWrapper.classList.remove('collapsed');
+                        if (btnToggleTop) btnToggleTop.innerText = '▲';
+                    }
                 }
             }
-        }
 
-            // ✨ 멀티 프레임 데이터 관리
             let frames = [];
             let currentFrameId = null;
 
@@ -1591,8 +1441,6 @@
                 }
             }
 
-            // ✨ 채우기(Flood Fill) 알고리즘
-            // ✨ 클립스튜디오식 틈새 닫기 (Gap Closing) 완벽 지원 알고리즘
             function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
                 const canvasW = ctx.canvas.width; const canvasH = ctx.canvas.height;
                 const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
@@ -1609,7 +1457,6 @@
 
                 if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
 
-                // 틈새 닫기를 위해 경계선을 일시적으로 확장(Dilate)하여 검사 기준 데이터 생성
                 let checkData = data;
                 if (gap > 0) {
                     const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
@@ -1655,7 +1502,6 @@
                     }
                 }
 
-                // 채색될 마스크 생성
                 const fillCvs = document.createElement('canvas'); fillCvs.width = canvasW; fillCvs.height = canvasH;
                 const fillCtx = fillCvs.getContext('2d');
                 const fillImgData = fillCtx.createImageData(canvasW, canvasH);
@@ -1665,7 +1511,6 @@
                 }
                 fillCtx.putImageData(fillImgData, 0, 0);
 
-                // 원본 캔버스에 병합 (틈새 닫기로 인해 덜 칠해진 영역을 팽창시켜 라인에 밀착)
                 ctx.globalCompositeOperation = 'source-over';
                 if (gap > 0) {
                     for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) { ctx.drawImage(fillCvs, Math.cos(a) * gap, Math.sin(a) * gap); }
@@ -1677,7 +1522,6 @@
             layerWrapper.addEventListener('pointerdown', (e) => {
                 const pos = getPointerPos(e);
 
-                // ✨ 스포이드 기능
                 if (currentTool === 'eyedropper') {
                     const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
                     const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas.style.zIndex : a.element.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas.style.zIndex : b.element.style.zIndex) || 0));
@@ -1732,7 +1576,6 @@
                 const activeLayer = layers.find(l => l.id === activeLayerId);
                 if (!activeLayer || !activeLayer.visible || activeLayer.type !== 'canvas') return;
 
-                // ✨ 채우기(버킷) 클릭 시 처리
                 if (currentTool === 'fill') {
                     const tolInput = document.getElementById('fill-tolerance');
                     const gapInput = document.getElementById('fill-gap');
@@ -1837,7 +1680,6 @@
                 if (!isDrawing) return;
                 isDrawing = false; const pos = getPointerPos(e);
 
-                // ✨ 드래프트 레이어를 본 레이어에 구워넣기
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     if (currentPath.length > 0) {
                         if (currentTool === 'pen') {
@@ -1856,12 +1698,12 @@
                 } else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
                 redoStack = []; canvasSnapshot = null;
             });
+            
             layerWrapper.addEventListener('pointerleave', () => {
                 if (transformState) transformState = null;
                 if (!isDrawing) return;
                 isDrawing = false;
 
-                // ✨ 마우스가 캔버스 밖으로 나갔을 때도 드래프트 레이어를 본 레이어에 구워넣기
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     if (currentPath.length > 0) {
                         if (currentTool === 'pen') {
@@ -1911,7 +1753,6 @@
                                 renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
                             }
                         } else {
-                            // 투명도 겹침 방지용 임시 캔버스 활용
                             const tmpCvs = document.createElement('canvas'); tmpCvs.width = CANVAS_WIDTH; tmpCvs.height = CANVAS_HEIGHT;
                             const tmpCtx = tmpCvs.getContext('2d');
                             const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
@@ -2056,7 +1897,6 @@
                 }; reader.readAsText(file);
             });
 
-            // 텍스트 서식 툴바 연동
             let activeTextContent = null;
             document.getElementById('tb-color')?.addEventListener('input', (e) => document.execCommand('foreColor', false, e.target.value));
             document.getElementById('tb-bold')?.addEventListener('click', () => document.execCommand('bold', false, null));
@@ -2083,7 +1923,7 @@
 
             // --- 초기화 ---
             createNewFrame();
-            resizeCanvasToFit(); // 초기 화면 100% 피팅 연산 시작
+            resizeCanvasToFit();
 
             let loggedInUser = null;
             let isDonationEnabled = true;
@@ -2136,13 +1976,12 @@
             document.getElementById('btn-clear-all').onclick = () => {
                 if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
             };
-            document.getElementById('btn-export-png').onclick = () => {
-                syncToFrame(); // 현재 작업 중인 프레임 정보를 동기화
 
-                // 제목 입력란의 값을 파일명으로 사용 (없으면 'drawing'으로 기본 설정)
+            document.getElementById('btn-export-png').onclick = () => {
+                syncToFrame();
+
                 const baseFileName = document.getElementById('drawing-title').value || "drawing";
 
-                // 텍스트 객체 중 확정되지 않은 것이 있는지 검사
                 let hasUnrasterized = false;
                 frames.forEach(f => {
                     if (f.layers.some(l => l.type === 'text')) hasUnrasterized = true;
@@ -2152,21 +1991,18 @@
                     return;
                 }
 
-                // 개별 프레임을 렌더링하고 다운로드하는 내부 함수
                 const downloadFrame = (frameData, index, totalFrames) => {
                     const offCanvas = document.createElement('canvas');
                     offCanvas.width = CANVAS_WIDTH;
                     offCanvas.height = CANVAS_HEIGHT;
                     const offCtx = offCanvas.getContext('2d');
 
-                    // 러프 이미지를 제외하고 보이는 레이어만 Z-index 순서대로 정렬
                     const sortedLayers = [...frameData.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
                         const zA = a.type === 'canvas' ? parseInt(a.canvas.style.zIndex || 0) : parseInt(a.element.style.zIndex || 0);
                         const zB = b.type === 'canvas' ? parseInt(b.canvas.style.zIndex || 0) : parseInt(b.element.style.zIndex || 0);
                         return zA - zB;
                     });
 
-                    // 오프스크린 캔버스에 레이어 순서대로 그려넣기 (합성)
                     sortedLayers.forEach(l => {
                         if (l.type === 'canvas') {
                             offCtx.drawImage(l.canvas, 0, 0);
@@ -2194,9 +2030,7 @@
                         }
                     });
 
-                    // a 태그를 생성하여 다운로드 트리거
                     const link = document.createElement('a');
-                    // 프레임이 여러 개인 경우에만 _1, _2 접미사 추가
                     link.download = totalFrames > 1 ? `${baseFileName}_${index + 1}.png` : `${baseFileName}.png`;
                     link.href = offCanvas.toDataURL('image/png');
                     document.body.appendChild(link);
@@ -2204,8 +2038,6 @@
                     document.body.removeChild(link);
                 };
 
-                // 프레임 배열을 순회하며 다운로드 실행
-                // 브라우저의 다중 다운로드 차단 방지를 위해 300ms 간격으로 순차적 실행
                 frames.forEach((f, index) => {
                     setTimeout(() => {
                         downloadFrame(f, index, frames.length);
@@ -2213,21 +2045,21 @@
                 });
             };
 
-            // ✨ 상하단 패널 접기/펴기 로직
-        const topWrapper = document.getElementById('top-wrapper');
-        const framePanel = document.getElementById('frame-panel');
-        const btnToggleTop = document.getElementById('btn-toggle-top');
-        const btnToggleBottom = document.getElementById('btn-toggle-bottom');
+            // ✨ 상하단 및 좌우 패널 접기/펴기 로직
+            const topWrapper = document.getElementById('top-wrapper');
+            const framePanel = document.getElementById('frame-panel');
+            const btnToggleTop = document.getElementById('btn-toggle-top');
+            const btnToggleBottom = document.getElementById('btn-toggle-bottom');
 
-        btnToggleTop.addEventListener('click', () => {
-            topWrapper.classList.toggle('collapsed');
-            btnToggleTop.innerText = topWrapper.classList.contains('collapsed') ? '▼' : '▲';
-        });
+            btnToggleTop.addEventListener('click', () => {
+                topWrapper.classList.toggle('collapsed');
+                btnToggleTop.innerText = topWrapper.classList.contains('collapsed') ? '▼' : '▲';
+            });
 
-        btnToggleBottom.addEventListener('click', () => {
-            framePanel.classList.toggle('collapsed');
-            btnToggleBottom.innerText = framePanel.classList.contains('collapsed') ? '▲' : '▼';
-        });
+            btnToggleBottom.addEventListener('click', () => {
+                framePanel.classList.toggle('collapsed');
+                btnToggleBottom.innerText = framePanel.classList.contains('collapsed') ? '▲' : '▼';
+            });
 
             const sidebarLeft = document.getElementById('sidebar-left');
             const sidebarRight = document.getElementById('sidebar-right');
@@ -2244,8 +2076,6 @@
                 btnToggleRight.innerText = sidebarRight.classList.contains('collapsed') ? '◀' : '▶';
             });
 
-            // ✨ 캔버스 영역 크기 변화를 실시간으로 감지하여 부드럽게 핏 맞추기
-            // (기존 window.addEventListener('resize', ...)를 대체합니다)
             const resizeObserver = new ResizeObserver(() => {
                 resizeCanvasToFit();
             });
@@ -2264,14 +2094,11 @@
                 playBtn.style.background = '#d32f2f';
                 playBtn.style.borderColor = '#b71c1c';
 
-                // 재생 시작 전 현재 편집 중인 정보 동기화
                 syncToFrame();
 
-                // 현재 활성화된 프레임부터 재생 시작 (없으면 처음부터)
                 playbackIndex = frames.findIndex(f => f.id === currentFrameId);
                 if (playbackIndex === -1) playbackIndex = 0;
 
-                // 재생 중에는 캔버스 조작 방지 (선택 도구로 강제 변경)
                 document.querySelector('.tool-btn[data-tool="cursor"]').click();
 
                 playNextFrame();
@@ -2294,13 +2121,11 @@
                     return;
                 }
 
-                // 인덱스가 프레임 개수를 넘어가면 처음(0)으로 루프
                 if (playbackIndex >= frames.length) playbackIndex = 0;
 
                 const frameToPlay = frames[playbackIndex];
                 selectFrame(frameToPlay.id);
 
-                // 해당 프레임의 노출 시간(duration)만큼 대기 후 다음 프레임 호출
                 playTimeout = setTimeout(() => {
                     playbackIndex++;
                     playNextFrame();
@@ -2315,7 +2140,6 @@
                 }
             });
 
-            // 프레임 추가/삭제 시 재생 중이면 충돌 방지를 위해 정지 처리
             const originalCreateNewFrame = createNewFrame;
             createNewFrame = function () {
                 if (isPlaying) stopAnimationPlayback();
