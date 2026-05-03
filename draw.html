@@ -417,10 +417,11 @@
             padding-bottom: 3px;
         }
 
-        /* ✨ 개별 레이어 아이템의 투명도 조절용 UI 지원 구조 변경 */
+        /* 개별 레이어 아이템을 다시 슬림하게 변경 */
         .layer-item {
             display: flex;
-            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
             background: #444;
             padding: 6px;
             border-radius: 4px;
@@ -429,18 +430,9 @@
             gap: 6px;
         }
 
-        .layer-item:active {
-            cursor: grabbing;
-        }
-
-        .layer-item.active {
-            background: #094771;
-            border-color: #007acc;
-        }
-
-        .layer-item:hover:not(.active) {
-            background: #555;
-        }
+        .layer-item:active { cursor: grabbing; }
+        .layer-item.active { background: #094771; border-color: #007acc; }
+        .layer-item:hover:not(.active) { background: #555; }
 
         .layer-name {
             font-size: 11px;
@@ -464,9 +456,7 @@
             border-radius: 4px;
         }
 
-        .sys-btn:hover {
-            background: #555;
-        }
+        .sys-btn:hover { background: #555; }
 
         .toggle-label {
             font-size: 12px;
@@ -518,15 +508,8 @@
             z-index: 999 !important;
         }
 
-        .transform-box:hover {
-            border-color: rgba(0, 122, 204, 0.5);
-        }
-
-        .transform-box .content {
-            width: 100%;
-            height: 100%;
-            cursor: default;
-        }
+        .transform-box:hover { border-color: rgba(0, 122, 204, 0.5); }
+        .transform-box .content { width: 100%; height: 100%; cursor: default; }
 
         .transform-box.type-text .content {
             cursor: text;
@@ -536,48 +519,25 @@
             padding: 5px;
         }
 
-        .transform-box.type-text .content:empty:before {
-            content: "텍스트 입력...";
-            color: #aaa;
-        }
-
+        .transform-box.type-text .content:empty:before { content: "텍스트 입력..."; color: #aaa; }
         .transform-box.type-transform_box .content {
-            width: 100%;
-            height: 100%;
-            display: block;
-            object-fit: fill;
-            pointer-events: none;
+            width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none;
         }
 
         .handle {
-            position: absolute;
-            width: 12px;
-            height: 12px;
-            background: #fff;
-            border: 2px solid #007acc;
-            border-radius: 50%;
-            display: none;
-            z-index: 10;
+            position: absolute; width: 12px; height: 12px; background: #fff;
+            border: 2px solid #007acc; border-radius: 50%; display: none; z-index: 10;
         }
 
-        .transform-box.active .handle {
-            display: block;
-        }
-
+        .transform-box.active .handle { display: block; }
         .handle-nw { top: -6px; left: -6px; cursor: nwse-resize; }
         .handle-ne { top: -6px; right: -6px; cursor: nesw-resize; }
         .handle-sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
         .handle-se { bottom: -6px; right: -6px; cursor: nwse-resize; }
 
         .rotate-area {
-            position: absolute;
-            width: 24px;
-            height: 24px;
-            background: transparent;
-            display: none;
-            z-index: 5;
-            border-radius: 50%;
-            cursor: alias;
+            position: absolute; width: 24px; height: 24px; background: transparent;
+            display: none; z-index: 5; border-radius: 50%; cursor: alias;
         }
 
         .transform-box.active .rotate-area { display: block; }
@@ -587,88 +547,37 @@
         .rot-se { bottom: -20px; right: -20px; }
 
         #floating-toolbar {
-            position: fixed;
-            display: none;
-            background: #252526;
-            padding: 8px 12px;
-            border-radius: 8px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8);
-            z-index: 2000;
-            gap: 8px;
-            align-items: center;
-            border: 1px solid #444;
+            position: fixed; display: none; background: #252526; padding: 8px 12px;
+            border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8); z-index: 2000;
+            gap: 8px; align-items: center; border: 1px solid #444;
         }
 
         .toolbar-btn {
-            background: #333;
-            color: white;
-            border: 1px solid #555;
-            padding: 5px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: bold;
+            background: #333; color: white; border: 1px solid #555; padding: 5px 8px;
+            border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold;
         }
 
         #top-option-bar {
-            min-height: 30px;
-            padding: 4px 20px;
-            font-size: 11px;
-            background: #2d2d2d; 
-            border-bottom: 1px solid #444; 
-            display: flex; 
-            gap: 20px; 
-            align-items: center; 
-            flex-shrink: 0;
+            min-height: 30px; padding: 4px 20px; font-size: 11px; background: #2d2d2d; 
+            border-bottom: 1px solid #444; display: flex; gap: 20px; align-items: center; flex-shrink: 0;
         }
 
         #top-wrapper {
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            position: relative;
-            z-index: 150;
-            display: flex;
-            flex-direction: column;
-            background: #2d2d2d; 
+            position: relative; z-index: 150; display: flex; flex-direction: column; background: #2d2d2d; 
         }
 
-        #top-wrapper.collapsed {
-            margin-top: -100px; 
-        }
+        #top-wrapper.collapsed { margin-top: -100px; }
 
         .panel-toggle-h {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 15px;
-            background: #333;
-            color: #ccc;
-            border: 1px solid #555;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 200;
-            font-size: 10px;
-            font-weight: bold;
+            position: absolute; left: 50%; transform: translateX(-50%); width: 60px; height: 15px;
+            background: #333; color: #ccc; border: 1px solid #555; display: flex; align-items: center;
+            justify-content: center; cursor: pointer; z-index: 200; font-size: 10px; font-weight: bold;
         }
 
-        .panel-toggle-h:hover {
-            background: #555;
-            color: white;
-        }
-
-        .toggle-top {
-            bottom: -15px;
-            border-radius: 0 0 6px 6px;
-            border-top: none;
-        }
-
-        .toggle-bottom {
-            top: -15px;
-            border-radius: 6px 6px 0 0;
-            border-bottom: none;
-        }
+        .panel-toggle-h:hover { background: #555; color: white; }
+        .toggle-top { bottom: -15px; border-radius: 0 0 6px 6px; border-top: none; }
+        .toggle-bottom { top: -15px; border-radius: 6px 6px 0 0; border-bottom: none; }
     </style>
 </head>
 
@@ -858,7 +767,7 @@
                         style="font-size: 11px; font-weight: bold; width: 35px; text-align: center;">100%</span>
                     <button class="sys-btn" id="btn-zoom-in" style="width: 25px; padding: 2px;">+</button>
                     
-                    <!-- ✨ 이미지 로드 버튼 (기존 러프 대신 일반 레이어로 삽입됨) -->
+                    <!-- 이미지 로드 버튼 -->
                     <label class="sys-btn"
                         style="text-align: center; background: #2e7d32; border-color: #1b5e20; cursor: pointer; flex: 1; margin-left: 5px;">
                         📁 이미지 로드
@@ -869,6 +778,28 @@
 
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
                 <div class="panel-title">해당 프레임의 레이어</div>
+                
+                <!-- ✨ 새로 추가된 포토샵 스타일 레이어 전용 옵션 바 -->
+                <div id="layer-options-bar" style="display: flex; flex-direction: column; gap: 5px; margin-bottom: 5px; background: #2a2a2b; padding: 6px; border-radius: 4px; border: 1px solid #444;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 5px;">
+                        <select id="layer-blend-mode" style="flex: 1; background: #333; color: white; border: 1px solid #555; border-radius: 3px; font-size: 11px; padding: 2px;">
+                            <option value="normal">표준 (Normal)</option>
+                            <option value="multiply">곱하기 (Multiply)</option>
+                            <option value="screen">스크린 (Screen)</option>
+                            <option value="overlay">오버레이 (Overlay)</option>
+                            <option value="color-dodge">색상 다지 (Add)</option>
+                            <option value="color-burn">색상 번 (Color Burn)</option>
+                            <option value="hard-light">하드 라이트 (Hard Light)</option>
+                            <option value="soft-light">소프트 라이트 (Soft Light)</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <span style="font-size: 10px; color: #aaa;">투명도</span>
+                        <input type="range" id="layer-opacity" min="0" max="1" step="0.01" value="1" style="flex: 1; height: 8px; margin: 0;">
+                        <span id="layer-opacity-val" style="font-size: 10px; color: #fff; width: 25px; text-align: right;">100%</span>
+                    </div>
+                </div>
+
                 <button id="btn-add-layer" class="sys-btn"
                     style="background: #007acc; border-color: #007acc; margin-bottom: 5px;">+ 새 레이어</button>
                 <div id="layer-list"
@@ -1081,6 +1012,11 @@
                 
                 sortedLayers.forEach(l => {
                     ctx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                    // 블렌드 모드 병합 적용
+                    let mode = l.blendMode || 'normal';
+                    if (mode === 'normal') mode = 'source-over';
+                    ctx.globalCompositeOperation = mode;
+
                     if (l.type === 'canvas' && l.canvas) {
                         ctx.drawImage(l.canvas, 0, 0);
                     } else if (l.type === 'raster_image' || l.type === 'transform_box') {
@@ -1103,6 +1039,7 @@
                         }
                     }
                     ctx.globalAlpha = 1.0;
+                    ctx.globalCompositeOperation = 'source-over';
                 });
             }
 
@@ -1189,6 +1126,7 @@
                         if(l.canvas) {
                             cvs.style.zIndex = l.canvas.style.zIndex;
                             cvs.style.opacity = l.opacity !== undefined ? l.opacity : 1;
+                            cvs.style.mixBlendMode = l.blendMode || 'normal';
                             const ctx = cvs.getContext('2d');
                             ctx.lineCap = 'round'; ctx.lineJoin = 'round';
                             ctx.drawImage(l.canvas, 0, 0);
@@ -1202,6 +1140,7 @@
                         const box = l.element.cloneNode(true);
                         box.style.display = 'none';
                         box.style.opacity = l.opacity !== undefined ? l.opacity : 1;
+                        box.style.mixBlendMode = l.blendMode || 'normal';
                         box.id = l.id + '_c' + Date.now();
                         layerWrapper.appendChild(box);
                         newL.element = box; newL.id = box.id;
@@ -1329,8 +1268,7 @@
                 layerWrapper.appendChild(cvs);
                 const context = cvs.getContext('2d'); context.lineCap = 'round'; context.lineJoin = 'round';
                 
-                // ✨ 레이어 객체에 opacity 1 초기값 부여
-                layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, opacity: 1, type: 'canvas' });
+                layers.push({ id: lId, name: `레이어 ${layerCounter}`, canvas: cvs, ctx: context, visible: true, opacity: 1, blendMode: 'normal', type: 'canvas' });
 
                 updateLayersZIndex();
                 selectLayer(lId); renderLayerUI();
@@ -1361,7 +1299,7 @@
 
                 wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
 
-                layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true, opacity: 1 });
+                layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true, opacity: 1, blendMode: 'normal' });
                 updateLayersZIndex(); selectLayer(lId);
                 
                 if (type === 'text') content.focus();
@@ -1369,7 +1307,6 @@
                 return wrapper;
             }
 
-            // ✨ 이미지 로드 파일 인풋 이벤트 (일반 트랜스폼 레이어로 삽입)
             document.getElementById('image-load-file').addEventListener('change', (e) => {
                 const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
                 reader.onload = (event) => {
@@ -1422,6 +1359,7 @@
                         const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                         cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                         cvs.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
+                        cvs.style.mixBlendMode = layer.blendMode || 'normal';
 
                         const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                         ctx.drawImage(img, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
@@ -1443,6 +1381,7 @@
                     const cvs = document.createElement('canvas'); cvs.id = layer.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                     cvs.className = 'drawing-layer'; cvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                     cvs.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
+                    cvs.style.mixBlendMode = layer.blendMode || 'normal';
 
                     const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                     ctx.drawImage(contentCvs, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
@@ -1491,6 +1430,7 @@
                 wrapper.style.width = `${bbox.w}px`;
                 wrapper.style.height = `${bbox.h}px`;
                 wrapper.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
+                wrapper.style.mixBlendMode = layer.blendMode || 'normal';
 
                 tempCvs.className = 'content';
 
@@ -1515,7 +1455,52 @@
                 renderLayerUI();
             }
 
-            function selectLayer(id) { activeLayerId = id; renderLayerUI(); }
+            function selectLayer(id) { 
+                activeLayerId = id; 
+                renderLayerUI(); 
+                
+                // ✨ 레이어 옵션 바 연동 업데이트
+                const activeLayer = layers.find(l => l.id === activeLayerId);
+                const blendSelect = document.getElementById('layer-blend-mode');
+                const opacitySlider = document.getElementById('layer-opacity');
+                const opacityVal = document.getElementById('layer-opacity-val');
+                
+                if (activeLayer) {
+                    blendSelect.value = activeLayer.blendMode || 'normal';
+                    opacitySlider.value = activeLayer.opacity !== undefined ? activeLayer.opacity : 1;
+                    opacityVal.innerText = `${Math.round(opacitySlider.value * 100)}%`;
+                    blendSelect.disabled = false;
+                    opacitySlider.disabled = false;
+                } else {
+                    blendSelect.disabled = true;
+                    opacitySlider.disabled = true;
+                }
+            }
+
+            // ✨ 레이어 옵션 바 컨트롤 이벤트
+            document.getElementById('layer-blend-mode').addEventListener('change', (e) => {
+                if (!activeLayerId) return;
+                const activeLayer = layers.find(l => l.id === activeLayerId);
+                if (activeLayer) {
+                    activeLayer.blendMode = e.target.value;
+                    const targetEl = activeLayer.type === 'canvas' ? activeLayer.canvas : activeLayer.element;
+                    if (targetEl) targetEl.style.mixBlendMode = activeLayer.blendMode;
+                    updateOnionSkin();
+                }
+            });
+
+            document.getElementById('layer-opacity').addEventListener('input', (e) => {
+                if (!activeLayerId) return;
+                const activeLayer = layers.find(l => l.id === activeLayerId);
+                if (activeLayer) {
+                    activeLayer.opacity = parseFloat(e.target.value);
+                    document.getElementById('layer-opacity-val').innerText = `${Math.round(activeLayer.opacity * 100)}%`;
+                    const targetEl = activeLayer.type === 'canvas' ? activeLayer.canvas : activeLayer.element;
+                    if (targetEl) targetEl.style.opacity = activeLayer.opacity;
+                    updateOnionSkin();
+                }
+            });
+
             function toggleLayerVisibility(id) {
                 const l = layers.find(layer => layer.id === id);
                 if (l) { 
@@ -1535,11 +1520,13 @@
                         layers = layers.filter(layer => layer.id !== id);
                         if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
                         updateLayersZIndex(); renderLayerUI();
+                        
+                        // 지운 후 옵션 바 갱신
+                        selectLayer(activeLayerId);
                     }
                 }
             }
 
-            // ✨ 레이어 UI 개별 투명도 슬라이더 렌더링
             function renderLayerUI() {
                 layerListDiv.innerHTML = '';
                 layers.forEach(l => {
@@ -1555,9 +1542,6 @@
                         const draggedIndex = layers.findIndex(layer => layer.id === draggedId); const targetIndex = layers.findIndex(layer => layer.id === l.id);
                         if (draggedIndex > -1 && targetIndex > -1) { const [draggedLayer] = layers.splice(draggedIndex, 1); layers.splice(targetIndex, 0, draggedLayer); updateLayersZIndex(); renderLayerUI(); }
                     };
-
-                    const topRow = document.createElement('div');
-                    topRow.style.display = 'flex'; topRow.style.justifyContent = 'space-between'; topRow.style.alignItems = 'center';
 
                     const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '2px';
 
@@ -1577,38 +1561,7 @@
                     btnGroup.appendChild(delBtn);
 
                     const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
-                    topRow.appendChild(btnGroup); topRow.appendChild(nameSpan);
-
-                    const bottomRow = document.createElement('div');
-                    bottomRow.style.display = 'flex'; bottomRow.style.alignItems = 'center'; bottomRow.style.gap = '5px';
-                    
-                    const opLabel = document.createElement('span');
-                    opLabel.style.fontSize = '9px'; opLabel.style.color = '#aaa'; opLabel.innerText = '투명도';
-                    
-                    const opSlider = document.createElement('input');
-                    opSlider.type = 'range'; opSlider.min = '0'; opSlider.max = '1'; opSlider.step = '0.05';
-                    opSlider.value = l.opacity !== undefined ? l.opacity : 1;
-                    opSlider.style.flex = '1'; opSlider.style.height = '6px'; opSlider.style.margin = '0';
-                    
-                    const opVal = document.createElement('span');
-                    opVal.style.fontSize = '9px'; opVal.style.color = '#fff'; opVal.style.width = '24px'; opVal.style.textAlign = 'right';
-                    opVal.innerText = `${Math.round(opSlider.value * 100)}%`;
-
-                    opSlider.oninput = (e) => {
-                        l.opacity = parseFloat(e.target.value);
-                        opVal.innerText = `${Math.round(l.opacity * 100)}%`;
-                        if (l.type === 'canvas' && l.canvas) l.canvas.style.opacity = l.opacity;
-                        else if (l.element) l.element.style.opacity = l.opacity;
-                    };
-                    
-                    opSlider.onmousedown = (e) => e.stopPropagation();
-                    opSlider.ontouchstart = (e) => e.stopPropagation();
-                    opSlider.onclick = (e) => e.stopPropagation();
-
-                    bottomRow.appendChild(opLabel); bottomRow.appendChild(opSlider); bottomRow.appendChild(opVal);
-
-                    div.appendChild(topRow); div.appendChild(bottomRow);
-                    layerListDiv.appendChild(div);
+                    div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
                 });
             }
             document.getElementById('btn-add-layer').onclick = createLayer;
@@ -1810,6 +1763,8 @@
                         const draftLayer = getDraftLayer();
                         draftLayer.style.display = 'block'; 
                         draftLayer.style.opacity = currentOpacity;
+                        // ✨ 드래프트 레이어에도 현재 레이어의 블렌드 모드를 적용하여 자연스러운 미리보기 제공
+                        draftLayer.style.mixBlendMode = activeLayer.blendMode || 'normal';
                         draftLayer.getContext('2d').clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                     }
                 } else { shapeStartX = pos.x; shapeStartY = pos.y; canvasSnapshot = activeLayer.ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
@@ -2062,7 +2017,7 @@
                             const box = l.element;
                             let angle = 0; const transform = window.getComputedStyle(box).transform;
                             if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                            const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1 };
+                            const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' };
                             if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; }
                             else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
                             savedTransformObjects.push(obj);
@@ -2071,7 +2026,7 @@
 
                     return {
                         id: f.id, duration: f.duration, layerCounter: f.layerCounter, history: f.history,
-                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1 })),
+                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' })),
                         transformObjects: savedTransformObjects
                     };
                 });
@@ -2100,8 +2055,9 @@
                                     const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
                                     cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
                                     cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1;
+                                    cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
                                     layerWrapper.appendChild(cvs);
-                                    newF.layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, type: 'canvas' });
+                                    newF.layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, blendMode: lInfo.blendMode || 'normal', type: 'canvas' });
                                 });
 
                                 fData.transformObjects.forEach(obj => {
@@ -2116,6 +2072,7 @@
                                     wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
                                     wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none';
                                     wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1;
+                                    wrapper.style.mixBlendMode = obj.blendMode || 'normal';
 
                                     let content;
                                     if (customContent) { content = customContent; content.classList.add('content'); }
@@ -2126,7 +2083,7 @@
                                         const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
                                     });
                                     wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                                    newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1 });
+                                    newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
                                 });
 
                                 if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
@@ -2273,6 +2230,10 @@
 
                     sortedLayers.forEach(l => {
                         offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                        let mode = l.blendMode || 'normal';
+                        if (mode === 'normal') mode = 'source-over';
+                        offCtx.globalCompositeOperation = mode;
+
                         if (l.type === 'canvas' && l.canvas) {
                             offCtx.drawImage(l.canvas, 0, 0);
                         } else if (l.type === 'raster_image' || l.type === 'transform_box') {
@@ -2298,6 +2259,7 @@
                             }
                         }
                         offCtx.globalAlpha = 1.0;
+                        offCtx.globalCompositeOperation = 'source-over';
                     });
 
                     const link = document.createElement('a');
@@ -2457,6 +2419,10 @@
 
                         sortedLayers.forEach(l => {
                             offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                            let mode = l.blendMode || 'normal';
+                            if (mode === 'normal') mode = 'source-over';
+                            offCtx.globalCompositeOperation = mode;
+
                             if (l.type === 'canvas' && l.canvas) { 
                                 offCtx.drawImage(l.canvas, 0, 0); 
                             }
@@ -2471,6 +2437,7 @@
                                 offCtx.drawImage(contentCvs, -w / 2, -h / 2, w, h); offCtx.restore();
                             }
                             offCtx.globalAlpha = 1.0;
+                            offCtx.globalCompositeOperation = 'source-over';
                         });
 
                         animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
@@ -2489,6 +2456,9 @@
                             tempCvs.width = contentCvs.width; tempCvs.height = contentCvs.height;
                             const tempCtx = tempCvs.getContext('2d');
                             tempCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                            let mode = l.blendMode || 'normal';
+                            if (mode === 'normal') mode = 'source-over';
+                            tempCtx.globalCompositeOperation = mode;
                             tempCtx.drawImage(contentCvs, 0, 0);
 
                             const w = box.offsetWidth; const h = box.offsetHeight;
