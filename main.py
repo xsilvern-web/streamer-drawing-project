@@ -235,6 +235,12 @@ async def process_drawing_queue():
                                 try: await connection.send_json({"type": "draw_line", "point": point, "color": color})
                                 except: pass
                             if i % 5 == 0: await asyncio.sleep(0.01)
+                    elif item_type == "fill":
+                        payload = item.copy()
+                        for connection in active_connections:
+                            try: await connection.send_json(payload)
+                            except: pass
+                        await asyncio.sleep(0.3)
                     else:
                         payload = item.copy()
                         payload["type"] = "draw_shape"

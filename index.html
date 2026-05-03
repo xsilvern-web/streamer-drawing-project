@@ -38,7 +38,7 @@
         </div>
     </div>
 
-    <script>
+<script>
         const canvas = document.getElementById('canvas'); const ctx = canvas.getContext('2d');
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         const alertContainer = document.getElementById("alert-container");
@@ -63,6 +63,63 @@
             }
         }
 
+        // ✨ 채우기(Flood Fill) 알고리즘 추가
+        function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
+            const canvasW = canvas.width; 
+            const canvasH = canvas.height;
+            const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
+            const data = imgData.data;
+            const sx = Math.floor(startX); const sy = Math.floor(startY);
+            if(sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
+            
+            const startPos = (sy * canvasW + sx) * 4;
+            const targetR = data[startPos], targetG = data[startPos+1], targetB = data[startPos+2], targetA = data[startPos+3];
+            
+            const m = colorStr.match(/[\d.]+/g);
+            if(!m || m.length < 3) return;
+            const fillR = parseInt(m[0]), fillG = parseInt(m[1]), fillB = parseInt(m[2]), fillA = m[3] ? Math.round(parseFloat(m[3])*255) : 255;
+            
+            if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
+
+            const visited = new Uint8Array(canvasW * canvasH);
+            const pixelStack = [[sx, sy]];
+
+            function matchColor(x, y) {
+                if (x < 0 || x >= canvasW || y < 0 || y >= canvasH) return false;
+                const p = (y * canvasW + x) * 4;
+                if (data[p+3] === 0 && targetA === 0) return true;
+                return Math.abs(data[p]-targetR)<=tolerance && Math.abs(data[p+1]-targetG)<=tolerance && Math.abs(data[p+2]-targetB)<=tolerance && Math.abs(data[p+3]-targetA)<=tolerance;
+            }
+
+            while (pixelStack.length > 0) {
+                const [cx, cy] = pixelStack.pop();
+                let x = cx, y = cy;
+                
+                while (y >= 0 && matchColor(x, y)) y--;
+                y++;
+                
+                let reachLeft = false, reachRight = false;
+                while (y < canvasH && matchColor(x, y)) {
+                    const p = (y * canvasW + x) * 4;
+                    data[p] = fillR; data[p+1] = fillG; data[p+2] = fillB; data[p+3] = fillA;
+                    visited[y * canvasW + x] = 1;
+                    
+                    if (x > 0) {
+                        if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
+                            if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
+                        } else if (reachLeft) reachLeft = false;
+                    }
+                    if (x < canvasW - 1) {
+                        if (matchColor(x + 1, y) && !visited[y * canvasW + x + 1]) {
+                            if (!reachRight) { pixelStack.push([x + 1, y]); reachRight = true; }
+                        } else if (reachRight) reachRight = false;
+                    }
+                    y++;
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+        }
+
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
             ws.onopen = () => { console.log("🟢 웹소켓 연결 성공!"); };
@@ -85,17 +142,20 @@
                     canvas.style.opacity = '1'; ctx.clearRect(0, 0, canvas.width, canvas.height);
                 }
                 
-                // ✨ 애니메이션 모드에서 개별 프레임 이미지가 날아올 경우
                 else if (data.type === 'draw_frame') {
                     const img = new Image();
                     img.onload = () => {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); // 이전 프레임을 싹 지움
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height); // 새 프레임으로 덮어씀
+                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
                     };
                     img.src = data.src;
                 }
 
-                // 기존 그리기 모드 궤적
+                // ✨ 채우기(버킷) 웹소켓 수신 처리 추가
+                else if (data.type === 'fill') {
+                    doFloodFill(ctx, data.point.x, data.point.y, data.color, data.tolerance, data.gapSize || 0);
+                }
+
                 else if (data.type === 'start_path') { lastPoint = data.point; } 
                 else if (data.type === 'draw_line') {
                     if (!lastPoint) return;
@@ -129,7 +189,7 @@
                     }
                 }
                 else if (data.type === 'fade_out') { 
-                    canvas.style.opacity = '0'; // 모든 과정이 끝나고 opacity 조절
+                    canvas.style.opacity = '0'; 
                 }
             };
             ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
