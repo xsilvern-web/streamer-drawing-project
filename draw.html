@@ -863,7 +863,7 @@
             </div>
         </div>
 
-        <script>
+<script>
             const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
             const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1';
             const API_BASE = window.location.origin;
@@ -985,7 +985,7 @@
                     currentTool = e.currentTarget.getAttribute('data-tool');
 
                     layers.forEach(l => {
-                        if (l.type === 'canvas') l.canvas.style.pointerEvents = (currentTool === 'pen' || currentTool === 'eraser' || currentTool === 'line' || currentTool === 'rect' || currentTool === 'circle' || currentTool === 'fill') ? 'auto' : 'none';
+                        if (l.type === 'canvas' && l.canvas) l.canvas.style.pointerEvents = (currentTool === 'pen' || currentTool === 'eraser' || currentTool === 'line' || currentTool === 'rect' || currentTool === 'circle' || currentTool === 'fill') ? 'auto' : 'none';
                     });
 
                     if (currentTool !== 'cursor') document.querySelectorAll('.transform-box').forEach(box => box.classList.remove('active'));
@@ -1033,7 +1033,8 @@
                     const oldF = frames.find(f => f.id === currentFrameId);
                     if (oldF) {
                         oldF.layers.forEach(l => {
-                            if (l.type === 'canvas') l.canvas.style.display = 'none';
+                            // ✨ 존재 여부를 철저히 검사하여 TypeError 원천 차단
+                            if (l.type === 'canvas' && l.canvas) l.canvas.style.display = 'none';
                             else if (l.element) l.element.style.display = 'none';
                         });
                     }
@@ -1047,7 +1048,7 @@
 
                 layers.forEach(l => {
                     if (l.visible) {
-                        if (l.type === 'canvas') l.canvas.style.display = 'block';
+                        if (l.type === 'canvas' && l.canvas) l.canvas.style.display = 'block';
                         else if (l.element) l.element.style.display = 'flex';
                     }
                 });
@@ -1056,7 +1057,7 @@
                 renderFrameUI();
 
                 layers.forEach(l => {
-                    if (l.type === 'canvas') l.canvas.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                    if (l.type === 'canvas' && l.canvas) l.canvas.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                 });
             }
 
@@ -1091,14 +1092,17 @@
                         cvs.id = l.id + '_c' + Date.now();
                         cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                         cvs.className = 'drawing-layer';
-                        cvs.style.zIndex = l.canvas.style.zIndex;
+                        if(l.canvas) {
+                            cvs.style.zIndex = l.canvas.style.zIndex;
+                            const ctx = cvs.getContext('2d');
+                            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                            ctx.drawImage(l.canvas, 0, 0);
+                            newL.ctx = ctx;
+                        }
                         cvs.style.pointerEvents = 'none';
                         cvs.style.display = 'none';
                         layerWrapper.appendChild(cvs);
-                        const ctx = cvs.getContext('2d');
-                        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-                        ctx.drawImage(l.canvas, 0, 0);
-                        newL.canvas = cvs; newL.ctx = ctx; newL.id = cvs.id;
+                        newL.canvas = cvs; newL.id = cvs.id;
                     } else if (l.element) {
                         const box = l.element.cloneNode(true);
                         box.style.display = 'none';
@@ -1132,7 +1136,7 @@
 
                 const f = frames.find(f => f.id === fId);
                 f.layers.forEach(l => {
-                    if (l.type === 'canvas') l.canvas.remove();
+                    if (l.type === 'canvas' && l.canvas) l.canvas.remove();
                     else if (l.element) l.element.remove();
                 });
 
@@ -1197,7 +1201,7 @@
             function updateLayersZIndex() {
                 layers.forEach((l, index) => {
                     const z = index + 1;
-                    if (l.type === 'canvas') l.canvas.style.zIndex = z;
+                    if (l.type === 'canvas' && l.canvas) l.canvas.style.zIndex = z;
                     else if (l.element) l.element.style.zIndex = z;
                 });
             }
@@ -1352,6 +1356,7 @@
                 return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
             }
 
+            // ✨ 객체 변환 중 발생할 수 있는 레이어 꼬임 문제를 해결한 로직
             function activateTransform(layer) {
                 const bbox = getBoundingBox(layer.ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
                 if (!bbox) return alert('변형할 그림이 없습니다.');
@@ -1359,24 +1364,34 @@
                 const tempCvs = document.createElement('canvas'); tempCvs.width = bbox.w; tempCvs.height = bbox.h;
                 tempCvs.getContext('2d').putImageData(layer.ctx.getImageData(bbox.x, bbox.y, bbox.w, bbox.h), 0, 0);
 
-                layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); layer.canvas.remove();
-                delete layer.canvas; delete layer.ctx;
+                layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); 
+                if(layer.canvas) layer.canvas.remove();
+                delete layer.canvas; 
+                delete layer.ctx;
 
                 const box = createTransformObject('transform_box', bbox.x + bbox.w / 2, bbox.y + bbox.h / 2, bbox.w, bbox.h, tempCvs);
 
-                const l = layers.find(l => l.id === layerCounter);
-                layer.type = 'transform_box'; layer.element = box;
-                layers = layers.filter(ll => ll.id !== l.id);
+                // 방금 새로 생성된 임시 레이어는 배열에서 지우고, 원본 레이어 객체를 덮어씌웁니다.
+                const newLayerId = `layer_${layerCounter}`;
+                layers = layers.filter(ll => ll.id !== newLayerId);
+                
+                layer.type = 'transform_box'; 
+                layer.element = box;
                 layer.name = "변형 이미지";
 
                 document.querySelector('.tool-btn[data-tool="cursor"]').click();
-                updateLayersZIndex(); renderLayerUI();
+                updateLayersZIndex(); 
+                renderLayerUI();
             }
 
             function selectLayer(id) { activeLayerId = id; renderLayerUI(); }
             function toggleLayerVisibility(id) {
                 const l = layers.find(layer => layer.id === id);
-                if (l) { l.visible = !l.visible; if (l.type === 'canvas') l.canvas.style.display = l.visible ? 'block' : 'none'; else l.element.style.display = l.visible ? 'flex' : 'none'; }
+                if (l) { 
+                    l.visible = !l.visible; 
+                    if (l.type === 'canvas' && l.canvas) l.canvas.style.display = l.visible ? 'block' : 'none'; 
+                    else if (l.element) l.element.style.display = l.visible ? 'flex' : 'none'; 
+                }
                 renderLayerUI();
             }
 
@@ -1384,7 +1399,8 @@
                 if (confirm('이 레이어를 삭제하시겠습니까?')) {
                     const l = layers.find(layer => layer.id === id);
                     if (l) {
-                        if (l.type === 'canvas') l.canvas.remove(); else if (l.element) l.element.remove();
+                        if (l.type === 'canvas' && l.canvas) l.canvas.remove(); 
+                        else if (l.element) l.element.remove();
                         layers = layers.filter(layer => layer.id !== id);
                         if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
                         updateLayersZIndex(); renderLayerUI();
@@ -1527,7 +1543,7 @@
                     const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas.style.zIndex : a.element.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas.style.zIndex : b.element.style.zIndex) || 0));
                     offC.translate(-pos.x, -pos.y);
                     sortedLayers.forEach(l => {
-                        if (l.type === 'canvas') offC.drawImage(l.canvas, 0, 0);
+                        if (l.type === 'canvas' && l.canvas) offC.drawImage(l.canvas, 0, 0);
                         else if (l.type === 'raster_image' || l.type === 'transform_box') {
                             const box = l.element; const cvs = box.querySelector('canvas.content');
                             if (cvs) {
@@ -1731,9 +1747,9 @@
             });
 
             async function redrawCanvas() {
-                layers.forEach(l => { if (l.type === 'canvas') l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
+                layers.forEach(l => { if (l.type === 'canvas' && l.canvas && l.ctx) l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
                 for (let item of history) {
-                    const targetLayer = layers.find(l => l.id === item.layerId); if (!targetLayer || targetLayer.type !== 'canvas') continue;
+                    const targetLayer = layers.find(l => l.id === item.layerId); if (!targetLayer || targetLayer.type !== 'canvas' || !targetLayer.ctx) continue;
                     const ctx = targetLayer.ctx;
 
                     if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
@@ -1965,7 +1981,7 @@
             function clearMyCanvas() {
                 frames.forEach(f => {
                     f.layers.forEach(l => {
-                        if (l.type === 'canvas') l.canvas.remove();
+                        if (l.type === 'canvas' && l.canvas) l.canvas.remove();
                         else if (l.element) l.element.remove();
                     });
                 });
@@ -1998,13 +2014,13 @@
                     const offCtx = offCanvas.getContext('2d');
 
                     const sortedLayers = [...frameData.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
-                        const zA = a.type === 'canvas' ? parseInt(a.canvas.style.zIndex || 0) : parseInt(a.element.style.zIndex || 0);
-                        const zB = b.type === 'canvas' ? parseInt(b.canvas.style.zIndex || 0) : parseInt(b.element.style.zIndex || 0);
+                        const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
+                        const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
                         return zA - zB;
                     });
 
                     sortedLayers.forEach(l => {
-                        if (l.type === 'canvas') {
+                        if (l.type === 'canvas' && l.canvas) {
                             offCtx.drawImage(l.canvas, 0, 0);
                         } else if (l.type === 'raster_image' || l.type === 'transform_box') {
                             const box = l.element;
@@ -2181,13 +2197,13 @@
                         offCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
                         const sortedLayers = [...f.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
-                            const zA = a.type === 'canvas' ? parseInt(a.canvas.style.zIndex) : parseInt(a.element.style.zIndex);
-                            const zB = b.type === 'canvas' ? parseInt(b.canvas.style.zIndex) : parseInt(b.element.style.zIndex);
+                            const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
+                            const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
                             return zA - zB;
                         });
 
                         sortedLayers.forEach(l => {
-                            if (l.type === 'canvas') { offCtx.drawImage(l.canvas, 0, 0); }
+                            if (l.type === 'canvas' && l.canvas) { offCtx.drawImage(l.canvas, 0, 0); }
                             else if (l.type === 'raster_image') {
                                 const box = l.element; const contentCvs = box.querySelector('canvas.content');
                                 const w = box.offsetWidth; const h = box.offsetHeight;
