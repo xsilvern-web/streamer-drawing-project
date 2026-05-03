@@ -1051,12 +1051,9 @@
                 if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
             }, { passive: false });
 
-            // ✨ 어니언 스킨 업데이트 함수 (안전장치 완벽 추가)
             function updateOnionSkin() {
                 const prevCanvas = document.getElementById('onion-prev');
                 const nextCanvas = document.getElementById('onion-next');
-                
-                // 만약 캔버스가 DOM에 없다면 에러를 방지하고 종료합니다.
                 if (!prevCanvas || !nextCanvas) return;
 
                 const chkBox = document.getElementById('chk-onion-skin');
@@ -1869,6 +1866,7 @@
                             const activeLayer = layers.find(l => l.id === activeLayerId);
                             const draftLayer = getDraftLayer();
                             activeLayer.ctx.globalAlpha = currentOpacity;
+                            activeLayer.ctx.globalCompositeOperation = 'source-over';
                             activeLayer.ctx.drawImage(draftLayer, 0, 0);
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
@@ -1894,6 +1892,7 @@
                             const draftLayer = getDraftLayer();
 
                             activeLayer.ctx.globalAlpha = currentOpacity;
+                            activeLayer.ctx.globalCompositeOperation = 'source-over';
                             activeLayer.ctx.drawImage(draftLayer, 0, 0);
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
@@ -1913,11 +1912,46 @@
                 canvasSnapshot = null;
             });
 
+            // ✨ 지우개 컨텍스트 꼬임 및 병목 현상을 방지하는 최적화된 다시그리기(Redraw) 로직
+            let isRedrawing = false;
+            let needsRedraw = false;
+
             async function redrawCanvas() {
-                layers.forEach(l => { if (l.type === 'canvas' && l.canvas && l.ctx) l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); });
+                if (isRedrawing) {
+                    needsRedraw = true;
+                    return;
+                }
+                isRedrawing = true;
+
+                layers.forEach(l => { 
+                    if (l.type === 'canvas' && l.canvas && l.ctx) {
+                        l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); 
+                        // ✨ 이전 지우개 작업 때문에 남아있던 destination-out 속성을 무조건 복구
+                        l.ctx.globalCompositeOperation = 'source-over'; 
+                        l.ctx.globalAlpha = 1.0;
+                    }
+                });
+
+                // 메모리 누수를 방지하기 위한 전역 임시 캔버스 재사용
+                let tmpCvs = document.getElementById('redraw-tmp-layer');
+                if (!tmpCvs) {
+                    tmpCvs = document.createElement('canvas');
+                    tmpCvs.id = 'redraw-tmp-layer';
+                    tmpCvs.width = CANVAS_WIDTH;
+                    tmpCvs.height = CANVAS_HEIGHT;
+                    tmpCvs.style.display = 'none';
+                    document.body.appendChild(tmpCvs);
+                }
+                const tmpCtx = tmpCvs.getContext('2d');
+
                 for (let item of history) {
-                    const targetLayer = layers.find(l => l.id === item.layerId); if (!targetLayer || targetLayer.type !== 'canvas' || !targetLayer.ctx) continue;
+                    const targetLayer = layers.find(l => l.id === item.layerId); 
+                    if (!targetLayer || targetLayer.type !== 'canvas' || !targetLayer.ctx) continue;
                     const ctx = targetLayer.ctx;
+
+                    // ✨ 레이어를 그릴 때마다 안전하게 속성 초기화
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.globalAlpha = 1.0;
 
                     if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
                     else if (item.type === 'raster_image') {
@@ -1930,49 +1964,46 @@
                         doFloodFill(ctx, item.point.x, item.point.y, item.color, item.tolerance, item.gapSize);
                     }
                     else if (item.type === 'path' || !item.type) {
-                        // ✨ 단일 픽셀(점) 클릭 취소 문제 해결: length가 1인 경우에도 점을 그려주도록 예외 처리
-                        if (item.points.length < 2) {
+                        if (item.points.length === 0) continue;
+
+                        if (item.color === 'erase') {
                             if (item.points.length === 1) {
                                 const p = item.points[0];
-                                if (item.color === 'erase') {
-                                    renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true);
-                                } else {
-                                    const tmpCvs = document.createElement('canvas'); tmpCvs.width = CANVAS_WIDTH; tmpCvs.height = CANVAS_HEIGHT;
-                                    const tmpCtx = tmpCvs.getContext('2d');
-                                    const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
-                                    const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
-                                    renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false);
-                                    ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
-                                    ctx.drawImage(tmpCvs, 0, 0);
-                                    ctx.globalAlpha = 1;
+                                renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true);
+                            } else {
+                                for (let i = 1; i < item.points.length; i++) {
+                                    renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
                                 }
                             }
-                            continue;
-                        }
-                        
-                        if (item.color === 'erase') {
-                            for (let i = 1; i < item.points.length; i++) {
-                                renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
-                            }
                         } else {
-                            const tmpCvs = document.createElement('canvas'); tmpCvs.width = CANVAS_WIDTH; tmpCvs.height = CANVAS_HEIGHT;
-                            const tmpCtx = tmpCvs.getContext('2d');
+                            tmpCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                             const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
                             const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
 
-                            for (let i = 1; i < item.points.length; i++) {
-                                renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false);
+                            if (item.points.length === 1) {
+                                const p = item.points[0];
+                                renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false);
+                            } else {
+                                for (let i = 1; i < item.points.length; i++) {
+                                    renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false);
+                                }
                             }
                             ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
                             ctx.drawImage(tmpCvs, 0, 0);
                             ctx.globalAlpha = 1;
                         }
                     } else {
-                        ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = item.color;
+                        ctx.beginPath(); ctx.strokeStyle = item.color;
                         if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
                         else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
                         else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
                     }
+                }
+                
+                isRedrawing = false;
+                if (needsRedraw) {
+                    needsRedraw = false;
+                    redrawCanvas();
                 }
             }
 
@@ -2039,8 +2070,9 @@
                     try {
                         const data = JSON.parse(event.target.result);
                         
-                        // ✨ 잔상용, 임시그리기용 캔버스가 삭제되어 에러를 발생시키는 것을 방지
-                        Array.from(layerWrapper.querySelectorAll('.drawing-layer, .transform-box')).forEach(c => c.remove());
+                        // ✨ [수정됨] 잔상 캔버스나 시스템 캔버스를 지우지 않고 그림 레이어만 쏙 골라내서 삭제
+                        const elementsToRemove = Array.from(layerWrapper.querySelectorAll('.drawing-layer, .transform-box'));
+                        elementsToRemove.forEach(c => c.remove());
                         
                         frames = []; currentFrameId = null;
 
@@ -2445,4 +2477,3 @@
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
             };
         </script>
-    
