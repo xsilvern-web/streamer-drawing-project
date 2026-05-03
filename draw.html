@@ -49,7 +49,7 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
-            padding: 5px 15px; /* 컴팩트 축소 */
+            padding: 5px 15px; 
             flex-shrink: 0;
             gap: 8px;
         }
@@ -71,8 +71,8 @@
         .file-label {
             background: #444;
             color: white;
-            padding: 5px 10px; /* 컴팩트 축소 */
-            font-size: 12px; /* 컴팩트 축소 */
+            padding: 5px 10px; 
+            font-size: 12px; 
             font-weight: bold;
             border: 1px solid #555;
             border-radius: 4px;
@@ -125,7 +125,6 @@
             overflow: hidden;
         }
 
-        /* ✨ 사이드바 접기/펴기 애니메이션 및 컴팩트 크기 설정 */
         .sidebar-left,
         .sidebar-right {
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
@@ -133,7 +132,6 @@
             z-index: 150;
         }
 
-        /* 타블렛용 컴팩트 사이즈 */
         .sidebar-left {
             width: 60px;
             background: #252526;
@@ -167,7 +165,6 @@
             margin-right: -200px;
         }
 
-        /* 토글 버튼(◀, ▶) 디자인 */
         .panel-toggle {
             position: absolute;
             top: 50%;
@@ -237,7 +234,7 @@
         .shape-flyout {
             display: none;
             position: absolute;
-            left: 60px; /* 축소된 너비에 맞춤 */
+            left: 60px; 
             top: 0;
             background: #252526;
             border: 1px solid #555;
@@ -294,7 +291,6 @@
             background: transparent;
         }
 
-        /* ✨ 워크스페이스 레이아웃 (프레임 타임라인 포함) */
         .workspace {
             flex: 1;
             display: flex;
@@ -309,38 +305,50 @@
             position: relative;
         }
 
-        /* ✨ 하단 타임라인 슬림 반응형(가로 1줄 배치) 설정 */
+        /* ✨ 하단 타임라인 슬림 반응형(어니언스킨 포함) */
         #frame-panel { 
-            height: 45px; flex-direction: row; align-items: center; padding: 0; 
+            height: 40px; flex-direction: row; align-items: center; padding: 0; 
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             position: relative; z-index: 150;
             background: #252526;
             border-top: 1px solid #444;
-            display: flex; /* 가로 배치 필수 */
+            display: flex;
         }
-        #frame-panel.collapsed { margin-bottom: -45px; }
+        #frame-panel.collapsed { margin-bottom: -40px; }
         
         .frame-header { 
-            width: auto; height: 100%; display: flex; flex-direction: row; justify-content: center; align-items: center;
-            border-bottom: none; border-right: 1px solid #444; padding: 0 15px; gap: 5px; background: #333; 
+            width: auto; height: 100%; display: flex; flex-direction: row; align-items: center;
+            border-bottom: none; border-right: 1px solid #444; padding: 0 10px; gap: 6px; background: #333; 
         }
-        .frame-header span { display: none; }
         
         #frame-list { padding: 0 10px; display: flex; flex: 1; overflow-x: auto; height: 100%; gap: 5px; align-items: center; }
         
-        /* 프레임 아이템 가로형 변경 */
+        /* ✨ 프레임 아이템 심플 네모칸 변경 */
         .frame-item { 
-            width: auto; min-width: 150px; height: 32px; display: flex; flex-direction: row; 
-            padding: 0 8px; align-items: center; justify-content: space-between; border-radius: 4px; 
-            background: #444; border: 2px solid transparent; cursor: grab; flex-shrink: 0; box-sizing: border-box;
+            width: 32px; height: 32px; display: flex; flex-direction: row; 
+            padding: 0; align-items: center; justify-content: center; border-radius: 4px; 
+            background: #444; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; box-sizing: border-box;
+            font-size: 11px; font-weight: bold; color: #ccc;
         }
+        .frame-item:hover { background: #555; color: white; }
         .frame-item.active {
             background: #094771;
             border-color: #007acc;
+            color: white;
         }
 
-        .frame-item:active {
-            cursor: grabbing;
+        /* ✨ 커스텀 우클릭 메뉴 CSS */
+        .frame-context-menu {
+            position: absolute;
+            background: #252526;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 8px;
+            display: none;
+            z-index: 3000;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 2px 4px 15px rgba(0,0,0,0.8);
         }
 
         #layer-wrapper {
@@ -452,6 +460,7 @@
             border: 1px solid #555;
             font-weight: bold;
             cursor: pointer;
+            border-radius: 4px;
         }
 
         .sys-btn:hover {
@@ -482,7 +491,6 @@
         .del-btn { background: #d32f2f; }
         .del-btn:hover { background: #f44336; }
 
-        /* 만능 객체 트랜스폼 박스 */
         .transform-box {
             position: absolute;
             display: flex;
@@ -614,18 +622,17 @@
             flex-shrink: 0;
         }
 
-        /* ✨ 상하단 패널 접기/펴기 로직 및 가로형 토글 버튼 */
         #top-wrapper {
             transition: margin 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
             position: relative;
             z-index: 150;
             display: flex;
             flex-direction: column;
-            background: #2d2d2d; /* 배경색 통일 */
+            background: #2d2d2d; 
         }
 
         #top-wrapper.collapsed {
-            margin-top: -100px; /* 상단 패널 높이만큼 충분히 숨김 */
+            margin-top: -100px; 
         }
 
         .panel-toggle-h {
@@ -666,7 +673,6 @@
 </head>
 
 <body>
-    <!-- ✨ 상단 래퍼 (이 안에 헤더와 옵션바, 토글버튼이 모두 들어갑니다) -->
     <div id="top-wrapper">
         <div class="app-header">
             <div class="header-top">
@@ -678,7 +684,7 @@
                     <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
                     <button id="btn-clear-all" class="btn-header"
                         style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️
-                        프레임 전체 지우기</button>
+                        전체 지우기</button>
                 </div>
 
                 <div class="header-group" id="login-container">
@@ -691,8 +697,7 @@
                         <div id="profile-preview"></div>
                         <label
                             style="font-size: 10px; color: #aaa; cursor: pointer; display: flex; align-items: center; gap: 3px;">
-                            <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사
-                            전송
+                            <input type="checkbox" id="use-profile" checked style="margin:0; width:10px; height:10px;"> 프사 전송
                         </label>
                     </div>
                     <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
@@ -740,7 +745,6 @@
             </div>
         </div>
         
-        <!-- ✨ 상단 토글 버튼 (이 코드가 없어서 자바스크립트 에러가 났었습니다) -->
         <div class="panel-toggle-h toggle-top" id="btn-toggle-top" title="상단바 숨기기">▲</div>
     </div>
 
@@ -757,6 +761,16 @@
             title="글자 색상">
         <button class="toolbar-btn" id="tb-bold">B</button>
         <button class="toolbar-btn" id="tb-italic" style="font-style: italic;">I</button>
+    </div>
+
+    <!-- ✨ 우클릭 설정 메뉴 (프레임 시간/삭제/복사) -->
+    <div id="frame-context-menu" class="frame-context-menu">
+        <div style="font-size: 11px; color: #aaa; margin-bottom: 2px; text-align: center;">프레임 옵션</div>
+        <div style="display: flex; align-items: center; gap: 5px; font-size: 11px; color: white;">
+            노출(ms): <input type="number" id="ctx-duration" style="width: 55px; padding: 2px; font-size: 11px; text-align: center;">
+        </div>
+        <button id="ctx-btn-copy" class="sys-btn" style="background: #007acc; border-color: #005f9e; padding: 4px;">프레임 복사</button>
+        <button id="ctx-btn-del" class="sys-btn" style="background: #d32f2f; border-color: #b71c1c; padding: 4px;">삭제</button>
     </div>
 
     <div class="app-body">
@@ -805,17 +819,28 @@
                     <div id="offline-text">현재 방송 중 아님</div>
                     <iframe id="broadcast-bg" src="https://chzzk.naver.com/live/bc2dbff369307b5c446224cce192c8b1"
                         frameborder="0" allow="autoplay; fullscreen"></iframe>
-                    <canvas id="draft-layer" width="1920" height="1080"
-                        style="position: absolute; top: 0; left: 0; pointer-events: none; display: none; z-index: 1000;"></canvas>
+                    
+                    <!-- ✨ 어니언 스킨을 표시할 투명 캔버스 (앞뒤 잔상) -->
+                    <canvas id="onion-prev" width="1920" height="1080" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; display: none;"></canvas>
+                    <canvas id="onion-next" width="1920" height="1080" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; display: none;"></canvas>
                 </div>
             </div>
 
+            <!-- ✨ 개편된 하단 프레임 패널 -->
             <div id="frame-panel">
                 <div class="panel-toggle-h toggle-bottom" id="btn-toggle-bottom" title="타임라인 숨기기">▼</div>
                 
                 <div class="frame-header">
-                    <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 10px; font-weight: bold;">▶ 재생</button>
-                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 10px;">+ 새 프레임</button>
+                    <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 6px; font-weight: bold; font-size: 11px;">▶</button>
+                    <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 6px; font-size: 11px; margin-right: 5px;">+</button>
+                    
+                    <div style="width: 1px; height: 18px; background: #555; margin: 0 4px;"></div>
+                    
+                    <!-- 어니언 스킨 토글 및 투명도 컨트롤 -->
+                    <label style="font-size: 11px; color: #ccc; display: flex; align-items: center; gap: 3px; cursor: pointer; user-select: none;">
+                        <input type="checkbox" id="chk-onion-skin" style="margin: 0; width: 13px; height: 13px;"> 어니언 스킨
+                    </label>
+                    <input type="range" id="onion-opacity" min="0.1" max="1" step="0.1" value="0.3" style="width: 40px; height: 10px; margin-left: 2px;" title="잔상 투명도 조절">
                 </div>
                 <div id="frame-list"></div>
             </div>
@@ -863,7 +888,7 @@
             </div>
         </div>
 
-<script>
+        <script>
             const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
             const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1';
             const API_BASE = window.location.origin;
@@ -1026,6 +1051,70 @@
                 if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
             }, { passive: false });
 
+            // ✨ 어니언 스킨 업데이트 함수
+            function updateOnionSkin() {
+                const prevCanvas = document.getElementById('onion-prev');
+                const nextCanvas = document.getElementById('onion-next');
+                const isEnabled = document.getElementById('chk-onion-skin').checked;
+                const opacityVal = document.getElementById('onion-opacity').value;
+                
+                if (!isEnabled || !currentFrameId || isPlaying) {
+                    prevCanvas.style.display = 'none';
+                    nextCanvas.style.display = 'none';
+                    return;
+                }
+                
+                prevCanvas.style.display = 'block';
+                nextCanvas.style.display = 'block';
+                prevCanvas.style.opacity = opacityVal;
+                nextCanvas.style.opacity = opacityVal;
+                
+                const prevCtx = prevCanvas.getContext('2d');
+                const nextCtx = nextCanvas.getContext('2d');
+                prevCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                nextCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                const currentIndex = frames.findIndex(f => f.id === currentFrameId);
+                
+                if (currentIndex > 0) renderFrameToCtx(frames[currentIndex - 1], prevCtx);
+                if (currentIndex < frames.length - 1) renderFrameToCtx(frames[currentIndex + 1], nextCtx);
+            }
+            
+            function renderFrameToCtx(frameData, ctx) {
+                const sortedLayers = [...frameData.layers].filter(l => l.visible && l.type !== 'rough').sort((a, b) => {
+                    const zA = parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0;
+                    const zB = parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0;
+                    return zA - zB;
+                });
+                
+                sortedLayers.forEach(l => {
+                    if (l.type === 'canvas' && l.canvas) {
+                        ctx.drawImage(l.canvas, 0, 0);
+                    } else if (l.type === 'raster_image' || l.type === 'transform_box') {
+                        const box = l.element;
+                        const contentCvs = box.querySelector('canvas.content');
+                        if (contentCvs) {
+                            const w = box.offsetWidth, h = box.offsetHeight;
+                            const cx = parseFloat(box.style.left) + w / 2, cy = parseFloat(box.style.top) + h / 2;
+                            let angle = 0;
+                            const transform = window.getComputedStyle(box).transform;
+                            if (transform !== 'none') {
+                                const vals = transform.split('(')[1].split(')')[0].split(',');
+                                angle = Math.atan2(vals[1], vals[0]);
+                            }
+                            ctx.save();
+                            ctx.translate(cx, cy);
+                            ctx.rotate(angle);
+                            ctx.drawImage(contentCvs, -w / 2, -h / 2, w, h);
+                            ctx.restore();
+                        }
+                    }
+                });
+            }
+
+            document.getElementById('chk-onion-skin').addEventListener('change', updateOnionSkin);
+            document.getElementById('onion-opacity').addEventListener('input', updateOnionSkin);
+
             function syncToFrame() {
                 if (!currentFrameId) return;
                 const f = frames.find(f => f.id === currentFrameId);
@@ -1068,6 +1157,8 @@
                 layers.forEach(l => {
                     if (l.type === 'canvas' && l.canvas) l.canvas.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
                 });
+                
+                updateOnionSkin(); // 프레임 이동 시 어니언 스킨 갱신
             }
 
             function createNewFrame() {
@@ -1157,6 +1248,8 @@
                 }
             }
 
+            let contextMenuTargetId = null;
+
             function renderFrameUI() {
                 const list = document.getElementById('frame-list');
                 list.innerHTML = '';
@@ -1164,6 +1257,7 @@
                     const item = document.createElement('div');
                     item.className = `frame-item ${f.id === currentFrameId ? 'active' : ''}`;
                     item.draggable = true;
+                    item.innerText = `${idx + 1}`; // 프레임 번호만 간결하게 표시
 
                     item.ondragstart = (e) => { e.dataTransfer.setData('text/plain', f.id); item.style.opacity = '0.5'; };
                     item.ondragend = (e) => { item.style.opacity = '1'; };
@@ -1182,34 +1276,52 @@
                     };
 
                     item.onclick = (e) => {
-                        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') { selectFrame(f.id); }
+                        selectFrame(f.id);
                     };
 
-                    item.innerHTML = `
-                    <div style="font-weight:bold; font-size:11px; white-space:nowrap; color:#fff;">#${idx+1}</div>
-                    <div style="display:flex; align-items:center; gap:2px;">
-                        <input type="number" value="${f.duration}" title="노출 시간(ms)" style="width:40px; padding:2px; font-size:10px; text-align:center; height:14px;" onchange="updateFrameDuration('${f.id}', this.value)">
-                        <span style="font-size:9px; color:#aaa;">ms</span>
-                    </div>
-                    <div style="display:flex; gap:3px;">
-                        <button class="sys-btn" style="padding:2px 5px; font-size:10px; background:#007acc; border-color:#005f9e;" onclick="copyFrame('${f.id}')">복사</button>
-                        <button class="sys-btn" style="padding:2px 5px; font-size:10px; background:#d32f2f; border-color:#b71c1c;" onclick="deleteFrame('${f.id}')">삭제</button>
-                    </div>
-                `;
+                    // ✨ 우클릭 커스텀 메뉴 연결
+                    item.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        contextMenuTargetId = f.id;
+                        const menu = document.getElementById('frame-context-menu');
+                        menu.style.display = 'flex';
+                        menu.style.left = `${e.pageX}px`;
+                        menu.style.top = `${e.pageY - 120}px`; // 박스 위쪽으로 메뉴 띄우기
+                        document.getElementById('ctx-duration').value = f.duration || 500;
+                    };
+
                     list.appendChild(item);
                 });
+                
+                updateOnionSkin(); // UI 구조가 바뀔 때 어니언 스킨도 갱신
             }
 
-            window.updateFrameDuration = (fId, val) => {
-                const f = frames.find(frm => frm.id === fId);
-                if (f) f.duration = parseInt(val) || 500;
-            };
+            // ✨ 우클릭 메뉴의 기능 이벤트 리스너
+            document.getElementById('ctx-duration').addEventListener('change', (e) => {
+                if(contextMenuTargetId) {
+                    const f = frames.find(frm => frm.id === contextMenuTargetId);
+                    if(f) f.duration = parseInt(e.target.value) || 500;
+                }
+            });
+            document.getElementById('ctx-btn-copy').addEventListener('click', () => {
+                if(contextMenuTargetId) copyFrame(contextMenuTargetId);
+                document.getElementById('frame-context-menu').style.display = 'none';
+            });
+            document.getElementById('ctx-btn-del').addEventListener('click', () => {
+                if(contextMenuTargetId) deleteFrame(contextMenuTargetId);
+                document.getElementById('frame-context-menu').style.display = 'none';
+            });
+            document.addEventListener('click', (e) => {
+                if(!e.target.closest('#frame-context-menu') && !e.target.classList.contains('frame-item')) {
+                    document.getElementById('frame-context-menu').style.display = 'none';
+                }
+            });
 
             document.getElementById('btn-add-frame').onclick = createNewFrame;
 
             function updateLayersZIndex() {
                 layers.forEach((l, index) => {
-                    const z = index + 1;
+                    const z = index + 2; // 어니언 캔버스(1) 보다 위로 올라가도록 2부터 시작
                     if (l.type === 'canvas' && l.canvas) l.canvas.style.zIndex = z;
                     else if (l.element) l.element.style.zIndex = z;
                 });
@@ -1235,7 +1347,6 @@
                 wrapper.style.left = `${x - width / 2}px`; wrapper.style.top = `${y - height / 2}px`;
                 wrapper.style.width = `${width}px`; wrapper.style.height = `${height}px`;
 
-                // ✨ 참고(러프) 이미지가 가장 최상단에 오도록 z-index 900 적용
                 if (type === 'rough') wrapper.style.zIndex = 900;
 
                 let content;
@@ -1559,12 +1670,10 @@
 
             let transformState = null;
 
-            // ✨ 캔버스 영역에서 우클릭(컨텍스트 메뉴) 방지
             layerWrapper.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
             });
 
-            // ✨ 드래프트 레이어를 안전하게 가져오거나 생성하는 함수 추가
             function getDraftLayer() {
                 let draftLayer = document.getElementById('draft-layer');
                 if (!draftLayer) {
@@ -2162,7 +2271,7 @@
                 isPlaying = true;
 
                 const playBtn = document.getElementById('btn-play-anim');
-                playBtn.innerText = '⏹ 정지';
+                playBtn.innerText = '⏹';
                 playBtn.style.background = '#d32f2f';
                 playBtn.style.borderColor = '#b71c1c';
 
@@ -2181,7 +2290,7 @@
                 clearTimeout(playTimeout);
 
                 const playBtn = document.getElementById('btn-play-anim');
-                playBtn.innerText = '▶ 재생';
+                playBtn.innerText = '▶';
                 playBtn.style.background = '#4CAF50';
                 playBtn.style.borderColor = '#388E3C';
             }
@@ -2309,6 +2418,3 @@
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
             };
         </script>
-</body>
-
-</html>
