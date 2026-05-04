@@ -808,7 +808,7 @@
             </div>
         </div>
 
-        <script>
+<script>
             const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
             const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1';
             const API_BASE = window.location.origin;
@@ -1012,7 +1012,6 @@
                 
                 sortedLayers.forEach(l => {
                     ctx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
-                    // 블렌드 모드 병합 적용
                     let mode = l.blendMode || 'normal';
                     if (mode === 'normal') mode = 'source-over';
                     ctx.globalCompositeOperation = mode;
@@ -1459,7 +1458,6 @@
                 activeLayerId = id; 
                 renderLayerUI(); 
                 
-                // ✨ 레이어 옵션 바 연동 업데이트
                 const activeLayer = layers.find(l => l.id === activeLayerId);
                 const blendSelect = document.getElementById('layer-blend-mode');
                 const opacitySlider = document.getElementById('layer-opacity');
@@ -1477,7 +1475,6 @@
                 }
             }
 
-            // ✨ 레이어 옵션 바 컨트롤 이벤트
             document.getElementById('layer-blend-mode').addEventListener('change', (e) => {
                 if (!activeLayerId) return;
                 const activeLayer = layers.find(l => l.id === activeLayerId);
@@ -1521,7 +1518,6 @@
                         if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
                         updateLayersZIndex(); renderLayerUI();
                         
-                        // 지운 후 옵션 바 갱신
                         selectLayer(activeLayerId);
                     }
                 }
@@ -1763,7 +1759,6 @@
                         const draftLayer = getDraftLayer();
                         draftLayer.style.display = 'block'; 
                         draftLayer.style.opacity = currentOpacity;
-                        // ✨ 드래프트 레이어에도 현재 레이어의 블렌드 모드를 적용하여 자연스러운 미리보기 제공
                         draftLayer.style.mixBlendMode = activeLayer.blendMode || 'normal';
                         draftLayer.getContext('2d').clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                     }
@@ -1790,7 +1785,11 @@
                         if (transformState.action.includes('e')) dw = ldx; if (transformState.action.includes('w')) dw = -ldx;
                         if (transformState.action.includes('s')) dh = ldy; if (transformState.action.includes('n')) dh = -ldy;
 
-                        if (e.shiftKey) { const aspect = transformState.startW / transformState.startH; if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } else { dw = dh * aspect; } }
+                        // ✨ [수정됨] aspect 오류를 막기 위해 블록 밖으로 변수 선언을 꺼냄
+                        const aspect = transformState.startW / transformState.startH;
+                        if (e.shiftKey) { 
+                            if (Math.abs(dw) > Math.abs(dh)) { dh = dw / aspect; } else { dw = dh * aspect; } 
+                        }
 
                         let newW = transformState.startW + dw; let newH = transformState.startH + dh;
 
@@ -1896,7 +1895,7 @@
                 canvasSnapshot = null;
             });
 
-let isRedrawing = false;
+            let isRedrawing = false;
             let needsRedraw = false;
 
             async function redrawCanvas() {
@@ -1906,7 +1905,6 @@ let isRedrawing = false;
                 }
                 isRedrawing = true;
 
-                // 1. 현재 프레임의 캔버스 데이터들을 임시로 복제 (더블 버퍼)
                 const buffers = {};
                 layers.forEach(l => {
                     if (l.type === 'canvas' && l.canvas && l.ctx) {
@@ -1920,7 +1918,6 @@ let isRedrawing = false;
                     }
                 });
 
-                // 메모리 누수를 방지하기 위한 전역 임시 캔버스 재사용
                 let tmpCvs = document.getElementById('redraw-tmp-layer');
                 if (!tmpCvs) {
                     tmpCvs = document.createElement('canvas');
@@ -1932,7 +1929,6 @@ let isRedrawing = false;
                 }
                 const tmpCtx = tmpCvs.getContext('2d');
 
-                // 2. 보이지 않는 버퍼(bufferCtx)에 역사(history)를 순차적으로 다시 그림
                 for (let item of history) {
                     const targetLayer = layers.find(l => l.id === item.layerId); 
                     if (!targetLayer || targetLayer.type !== 'canvas' || !buffers[targetLayer.id]) continue;
@@ -1989,7 +1985,6 @@ let isRedrawing = false;
                     }
                 }
 
-                // 3. 백그라운드에서 그리기가 완료되면, 실제 캔버스에 한 번에 덮어씌움 (플리커링 방지)
                 layers.forEach(l => {
                     if (l.type === 'canvas' && l.canvas && l.ctx && buffers[l.id]) {
                         l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -2002,7 +1997,7 @@ let isRedrawing = false;
                 isRedrawing = false;
                 if (needsRedraw) {
                     needsRedraw = false;
-                    redrawCanvas();
+                    await redrawCanvas();
                 }
             }
 
@@ -2129,11 +2124,16 @@ let isRedrawing = false;
                             }
 
                             if (frames.length > 0) {
-                                selectFrame(frames[0].id);
-                                frames.forEach(f => {
-                                    currentFrameId = f.id; layers = f.layers; history = f.history; redrawCanvas();
-                                });
-                                selectFrame(frames[frames.length - 1].id);
+                                // ✨ [수정됨] 불러오기 완료 전까지 안전하게 순차 대기하도록 수정
+                                (async () => {
+                                    document.body.style.pointerEvents = 'none';
+                                    for (let f of frames) {
+                                        selectFrame(f.id);
+                                        await redrawCanvas();
+                                    }
+                                    selectFrame(frames[0].id);
+                                    document.body.style.pointerEvents = 'auto';
+                                })();
                             }
                         }
                         e.target.value = '';
@@ -2171,6 +2171,8 @@ let isRedrawing = false;
 
             let loggedInUser = null;
             let isDonationEnabled = true;
+            let isCooldown = false;
+            
             const btnSend = document.getElementById('btn-send');
             const profilePreview = document.getElementById('profile-preview');
             const useProfileCheckbox = document.getElementById('use-profile');
@@ -2196,14 +2198,11 @@ let isRedrawing = false;
 
             useProfileCheckbox.addEventListener('change', (e) => { profilePreview.style.opacity = e.target.checked ? "1" : "0.3"; });
 
-            let isCooldown = false; // ✨ 쿨타임 상태를 체크하는 변수 추가
-
             async function checkDonationStatus() {
                 try {
                     const response = await fetch(`${API_BASE}/api/settings`); const data = await response.json();
                     if (data.is_donation_enabled) { 
                         isDonationEnabled = true; 
-                        // ✨ 쿨타임 중이 아닐 때만 버튼을 활성화 상태로 변경
                         if (!isCooldown) {
                             btnSend.style.backgroundColor = '#ff9800'; 
                             btnSend.style.cursor = 'pointer'; 
@@ -2232,10 +2231,6 @@ let isRedrawing = false;
                 frames = [];
                 createNewFrame();
             }
-
-            document.getElementById('btn-clear-all').onclick = () => {
-                if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
-            };
 
             document.getElementById('btn-clear-all').onclick = () => {
                 if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
@@ -2429,7 +2424,7 @@ let isRedrawing = false;
             };
 
             btnSend.onclick = async () => {
-                if (isCooldown || !isDonationEnabled) return; // ✨ 쿨타임 중이거나 후원이 닫혀있으면 차단
+                if (isCooldown || !isDonationEnabled) return;
 
                 syncToFrame();
 
@@ -2485,11 +2480,9 @@ let isRedrawing = false;
                     });
 
                     finalPayload = { isAnimation: true, frames: animationPayload };
-                // (draw.html 의 btnSend.onclick 내부 if-else 문에서 else 블록만 아래 코드로 교체합니다)
                 } else {
                     if (layers.some(l => l.type === 'text' || l.type === 'transform_box')) return alert("확정되지 않은 텍스트/그림 객체가 있습니다.\n우측 패널에서 레이어 [확정] 버튼을 눌러주세요.");
 
-                    // ✨ 삭제되거나 숨겨진 레이어는 제외하고, 위아래 정렬 순서대로 묶어줍니다
                     const validLayers = layers.filter(l => l.visible).sort((a, b) => {
                         const zA = parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0;
                         const zB = parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0;
@@ -2498,7 +2491,6 @@ let isRedrawing = false;
 
                     let singleHistoryPayload = [];
 
-                    // 1. 수신측에 레이어 캔버스 생성 및 투명도/블렌드모드 설정 명령 삽입
                     singleHistoryPayload.push({
                         type: 'init_layers',
                         layers: validLayers.map(l => ({
@@ -2508,7 +2500,6 @@ let isRedrawing = false;
                         }))
                     });
 
-                    // 2. 각 레이어별로 속한 그림 내역(History)만 차례대로 발송
                     validLayers.forEach(l => {
                         if (l.type === 'canvas') {
                             const layerHistory = history.filter(item => item.layerId === l.id);
@@ -2537,7 +2528,6 @@ let isRedrawing = false;
                     if (res.ok) {
                         alert("전송 성공!"); clearMyCanvas(); document.getElementById('drawing-title').value = '';
                         
-                        // ✨ 전송 성공 시 30초 쿨타임 시작
                         isCooldown = true;
                         btnSend.disabled = true;
                         btnSend.style.backgroundColor = '#777';
@@ -2553,7 +2543,7 @@ let isRedrawing = false;
                             } else {
                                 clearInterval(cooldownTimer);
                                 isCooldown = false;
-                                checkDonationStatus(); // 쿨타임 종료 시 현재 서버 상태에 맞게 버튼 UI 원상복구
+                                checkDonationStatus();
                             }
                         }, 1000);
 
