@@ -4,3 +4,4 @@ httpx
 pydantic
 python-dotenv
 websockets
+psycopg2-binary==2.9.9

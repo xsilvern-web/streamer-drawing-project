@@ -1,7 +1,7 @@
 import os
 import asyncio
-import sqlite3
 import json
+import math
 from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +9,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
+import psycopg2
+from psycopg2.extras import DictCursor
+
+# 방송인용 관리자 비밀번호 (이 부분도 환경변수 처리를 권장합니다)
 CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD", "streamer777!")
+
+# ✨ 하드코딩된 기본값을 완전히 삭제하고 환경변수에서만 불러옵니다.
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 app = FastAPI()
 
@@ -20,22 +27,25 @@ app.add_middleware(
 active_connections = []
 drawing_queue = asyncio.Queue()
 
-DB_FILE = "donation_ledger_v4.db"
-
-# 상단 전역 변수 영역에 추가
 skip_current_drawing = False
 
+def get_db_connection():
+    # 환경변수가 없을 경우 서버가 에러를 띄워 명확하게 알려줍니다.
+    if not DATABASE_URL:
+        raise ValueError("🚨 DATABASE_URL 환경변수가 설정되지 않았습니다. 클라우드타입 대시보드에서 환경변수를 추가해 주세요!")
+    return psycopg2.connect(DATABASE_URL)
+
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ledger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             donor_email TEXT,
             donor_name TEXT NOT NULL,
             donor_profile_image TEXT,
             drawing_title TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             drawing_data TEXT,
             is_played BOOLEAN DEFAULT FALSE
         )
@@ -43,59 +53,67 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY DEFAULT 1,
-            is_donation_enabled BOOLEAN DEFAULT 1,
+            is_donation_enabled BOOLEAN DEFAULT TRUE,
             blocked_emails TEXT DEFAULT '[]',
             display_duration INTEGER DEFAULT 8,
             daily_limit INTEGER DEFAULT 0
         )
     ''')
-    cursor.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
+    cursor.execute("INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+    
     try:
         cursor.execute("ALTER TABLE settings ADD COLUMN display_duration INTEGER DEFAULT 8")
+    except psycopg2.Error:
+        conn.rollback() 
+    else:
+        conn.commit()
+
+    try:
         cursor.execute("ALTER TABLE settings ADD COLUMN daily_limit INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    except psycopg2.Error:
+        conn.rollback()
+    else:
+        conn.commit()
+        
     conn.commit()
     conn.close()
 
 init_db()
 
 def get_db_settings():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    row = conn.cursor().execute("SELECT * FROM settings WHERE id = 1").fetchone()
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT * FROM settings WHERE id = 1")
+    row = cursor.fetchone()
     conn.close()
-    row_dict = dict(row)
+    
+    row_dict = dict(row) if row else {}
     return {
-        "is_donation_enabled": bool(row_dict.get("is_donation_enabled", 1)),
+        "is_donation_enabled": bool(row_dict.get("is_donation_enabled", True)),
         "blocked_emails": json.loads(row_dict.get("blocked_emails", '[]')),
         "display_duration": row_dict.get("display_duration", 8),
         "daily_limit": row_dict.get("daily_limit", 0)
     }
 
 def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None):
-    conn = sqlite3.connect(DB_FILE)
+    conn = get_db_connection()
     cursor = conn.cursor()
     if is_enabled is not None:
-        cursor.execute("UPDATE settings SET is_donation_enabled = ? WHERE id = 1", (int(is_enabled),))
+        cursor.execute("UPDATE settings SET is_donation_enabled = %s WHERE id = 1", (bool(is_enabled),))
     if blocked_emails is not None:
-        cursor.execute("UPDATE settings SET blocked_emails = ? WHERE id = 1", (json.dumps(blocked_emails),))
+        cursor.execute("UPDATE settings SET blocked_emails = %s WHERE id = 1", (json.dumps(blocked_emails),))
     if display_duration is not None:
-        cursor.execute("UPDATE settings SET display_duration = ? WHERE id = 1", (display_duration,))
+        cursor.execute("UPDATE settings SET display_duration = %s WHERE id = 1", (display_duration,))
     if daily_limit is not None:
-        cursor.execute("UPDATE settings SET daily_limit = ? WHERE id = 1", (daily_limit,))
+        cursor.execute("UPDATE settings SET daily_limit = %s WHERE id = 1", (daily_limit,))
     conn.commit()
     conn.close()
 
-
-
-# API 라우터 영역에 추가
 @app.post("/api/skip")
 async def skip_drawing():
     global skip_current_drawing
-    skip_current_drawing = True  # 현재 진행 중인 그리기 루프 중단 신호
+    skip_current_drawing = True 
     
-    # 즉시 모든 방송 화면(클라이언트)을 지우는 신호 전송
     for connection in active_connections:
         try:
             await connection.send_json({"type": "clear"})
@@ -156,16 +174,20 @@ async def update_settings(data: SettingsUpdate):
 
 @app.get("/api/recent-donations")
 async def get_recent_donations():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    rows = conn.cursor().execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC LIMIT 10").fetchall()
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    # ✨ LIMIT 10을 삭제하여 상한선을 없앴습니다. (90일치 전체 데이터를 시간 역순으로 불러옴)
+    cursor.execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
+    rows = cursor.fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"], "title": r["drawing_title"], "time": r["timestamp"]} for r in rows]
+    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
 
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):
-    conn = sqlite3.connect(DB_FILE)
-    row = conn.cursor().execute("SELECT donor_name, donor_profile_image, drawing_title, drawing_data FROM ledger WHERE id = ?", (ledger_id,)).fetchone()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT donor_name, donor_profile_image, drawing_title, drawing_data FROM ledger WHERE id = %s", (ledger_id,))
+    row = cursor.fetchone()
     conn.close()
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
     await drawing_queue.put({"name": row[0], "profileImage": row[1], "title": row[2], "drawingData": json.loads(row[3])})
@@ -180,8 +202,10 @@ async def submit_drawing(request: Request):
         now = datetime.now()
         target_date = now - timedelta(days=1) if now.hour < 6 else now
         target_str = target_date.strftime('%Y-%m-%d 06:00:00')
-        conn = sqlite3.connect(DB_FILE)
-        count = conn.cursor().execute("SELECT COUNT(*) FROM ledger WHERE timestamp >= ?", (target_str,)).fetchone()[0]
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM ledger WHERE timestamp >= %s", (target_str,))
+        count = cursor.fetchone()[0]
         conn.close()
         if count >= settings["daily_limit"]: raise HTTPException(status_code=403, detail=f"오늘 한도({settings['daily_limit']}개)가 초과되었습니다.")
 
@@ -196,15 +220,21 @@ async def submit_drawing(request: Request):
         if not email: raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
-        conn = sqlite3.connect(DB_FILE)
-        conn.cursor().execute("INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (?, ?, ?, ?, ?)", (email, name, profile_image, title, json.dumps(drawing_history)))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (%s, %s, %s, %s, %s)", 
+            (email, name, profile_image, title, json.dumps(drawing_history))
+        )
         conn.commit()
         conn.close()
         
         await drawing_queue.put(data)
         return {"status": "success"}
     except HTTPException as he: raise he
-    except Exception as e: raise HTTPException(status_code=500, detail="서버 오류 발생")
+    except Exception as e: 
+        print(f"Submit Error: {e}")
+        raise HTTPException(status_code=500, detail="서버 오류 발생")
 
 async def process_drawing_queue():
     global skip_current_drawing 
@@ -213,16 +243,13 @@ async def process_drawing_queue():
         payload = await drawing_queue.get()
         skip_current_drawing = False 
         
-        # ✨ 1. DB에서 설정값(화면 유지 시간) 불러오기
         settings = get_db_settings()
         display_duration = settings.get("display_duration", 8)
         
-        # ✨ 2. 알림창 데이터 파싱
         name = payload.get("name", "익명")
         title = payload.get("title", "제목없음")
         profile_image = payload.get("profileImage", "")
         
-        # ✨ 3. 화면을 싹 비우고(clear) 알림창(alert) 띄우기
         for connection in active_connections:
             try: 
                 await connection.send_json({"type": "clear"})
@@ -234,14 +261,11 @@ async def process_drawing_queue():
                 })
             except: pass
         
-        # 4. 그리기 데이터 파싱
         drawing_data = payload.get("drawingData", [])
         is_animation = isinstance(drawing_data, dict) and drawing_data.get("isAnimation")
 
-        # 5. 애니메이션 처리
         if is_animation:
             frames = drawing_data.get("frames", [])
-            # ✨ 클라이언트에서 전송한 반복 횟수 추출 (서버단에서도 20회 상한선 이중 방어)
             repeat_count = drawing_data.get("repeatCount", 5)
             total_loops = min(20, max(1, int(repeat_count)))
 
@@ -255,10 +279,7 @@ async def process_drawing_queue():
                         for connection in active_connections:
                             try: await connection.send_json({"type": "draw_frame", "src": src})
                             except: pass
-                        # 애니메이션은 프레임별로 무조건 쉬어주어야 정상 작동합니다.
                         await asyncio.sleep(duration_sec)
-        
-        # 6. 일반 그림 처리
         else:
             if drawing_data and isinstance(drawing_data, list):
                 for item in drawing_data:
@@ -281,7 +302,6 @@ async def process_drawing_queue():
                             for connection in active_connections:
                                 try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
-                            # 서버가 뻗지 않도록 50픽셀마다 아주 미세한 휴식(10배속)을 부여합니다.
                             if i % 50 == 0: await asyncio.sleep(0.01)
                         
                         if not skip_current_drawing:
@@ -305,35 +325,33 @@ async def process_drawing_queue():
                             except: pass
                         await asyncio.sleep(0.02)
             
-        # ✨ 7. 그리기가 모두 끝난 뒤 DB 설정시간(display_duration) 만큼 대기
         if not skip_current_drawing:
             await asyncio.sleep(display_duration)
         
-        # ✨ 8. 대기가 끝나면 화면 서서히 지우기 (fade_out)
         for connection in active_connections:
             try: 
                 await connection.send_json({"type": "fade_out"})
             except: pass
             
-        await asyncio.sleep(1.5) # 서서히 사라질 시간을 줌
+        await asyncio.sleep(1.5) 
         
-        # ✨ 9. 완전히 사라지면 확실하게 내부 캔버스 데이터 클리어 (다음 그림과 섞임 방지)
         for connection in active_connections:
             try: 
                 await connection.send_json({"type": "clear"})
             except: pass
 
-        # 큐 작업 완료 보고
         drawing_queue.task_done()
 
 async def auto_delete_old_data():
     while True:
         try:
-            conn = sqlite3.connect(DB_FILE)
-            conn.cursor().execute("DELETE FROM ledger WHERE timestamp <= datetime('now', '-90 days')")
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '90 days'")
             conn.commit()
             conn.close()
-        except: pass
+        except Exception as e: 
+            print(f"Delete old data error: {e}")
         await asyncio.sleep(86400) 
 
 @app.websocket("/ws")

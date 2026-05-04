@@ -32,6 +32,18 @@
             border-radius: 3px; cursor: pointer; transition: 0.2s; border: 1px dashed #444;
         }
         .copyable-id:hover { color: #007acc; border-color: #007acc; background: #222; }
+        
+        /* 페이지네이션 스타일 추가 */
+        .pagination {
+            display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px;
+        }
+        .pagination button {
+            padding: 5px 15px; border: 1px solid #ccc; background-color: #fff; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold;
+        }
+        .pagination button:hover:not(:disabled) { background-color: #f0f0f0; }
+        .pagination button:disabled { background-color: #444; color: #777; cursor: not-allowed; border-color: #555; }
+        .page-info { font-size: 14px; font-weight: bold; color: #aaa; }
+        ul { list-style: none; padding: 0; margin: 0; }
     </style>
 </head>
 <body>
@@ -52,7 +64,6 @@
             <label>1. 그림 창구 상태 제어</label>
             <div style="display: flex; gap: 10px; align-items: stretch;">
                 <button id="btn-toggle" class="toggle-btn on" style="flex: 1; padding: 15px;">🟢 현재 상태: 열림 (클릭하여 닫기)</button>
-                <!-- ✨ 스킵 버튼 추가 -->
                 <button id="btn-skip-drawing" style="background-color: #f44336; color: white; border: none; padding: 15px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; flex: 1;">
                     ⏭️ 현재 그림 스킵
                 </button>
@@ -79,12 +90,26 @@
                 <input type="text" id="ban-email" placeholder="차단할 이메일 또는 고유ID 입력">
                 <button id="btn-ban" class="btn-general" style="width: 80px; background: #ff4757;">차단</button>
             </div>
-            <div id="ban-list-container" style="margin-top: 10px;"></div>
+            <div id="ban-list-container" style="margin-top: 15px;">
+                <ul id="blocked-list"></ul>
+                <div class="pagination" id="block-pagination" style="display: none;">
+                    <button id="btn-block-prev">이전</button>
+                    <span id="block-page-info" class="page-info">1 / 1</span>
+                    <button id="btn-block-next">다음</button>
+                </div>
+            </div>
         </div>
 
         <div class="setting-group">
-            <label>4. 📺 최근 받은 그림 (클릭 시 ID 복사)</label>
-            <div id="recent-donations-container">내역을 불러오는 중...</div>
+            <label>4. 📺 받은 그림 목록 (클릭 시 ID 복사)</label>
+            <div id="recent-donations-container">
+                <ul id="donation-list"></ul>
+                <div class="pagination" id="donation-pagination" style="display: none;">
+                    <button id="btn-donation-prev">이전</button>
+                    <span id="donation-page-info" class="page-info">1 / 1</span>
+                    <button id="btn-donation-next">다음</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -97,6 +122,13 @@
         const API_BASE = window.location.origin;
         const loginGate = document.getElementById('login-gate');
         const mainDashboard = document.getElementById('main-dashboard');
+
+        // 페이지네이션을 위한 전역 변수 설정
+        let allDonations = [];
+        let allBlockedEmails = [];
+        let currentDonationPage = 1;
+        let currentBlockPage = 1;
+        const ITEMS_PER_PAGE = 10;
 
         if (sessionStorage.getItem('creator_auth') === 'true') openDashboard();
 
@@ -117,7 +149,7 @@
             mainDashboard.style.display = 'block';
             fetchSettings();
             fetchRecentDonations();
-            setInterval(fetchRecentDonations, 10000);
+            setInterval(fetchRecentDonations, 10000); // 10초마다 그림 목록 갱신
         }
 
         function copyId(text) {
@@ -125,6 +157,40 @@
                 alert("ID가 복사되었습니다: " + text + "\n위의 차단 칸에 붙여넣기 하세요.");
             });
         }
+
+        // === 차단 목록 렌더링 (페이지네이션) ===
+        function renderBlockedEmails() {
+            const list = document.getElementById('blocked-list');
+            const paginationEl = document.getElementById('block-pagination');
+            list.innerHTML = '';
+
+            if (allBlockedEmails.length === 0) {
+                list.innerHTML = '<div style="font-size: 13px; color: #aaa; padding: 10px 0;">차단된 리스트가 없습니다.</div>';
+                paginationEl.style.display = 'none';
+                return;
+            }
+
+            paginationEl.style.display = 'flex';
+            const totalPages = Math.ceil(allBlockedEmails.length / ITEMS_PER_PAGE) || 1;
+            if (currentBlockPage > totalPages) currentBlockPage = totalPages;
+            
+            document.getElementById('block-page-info').innerText = `${currentBlockPage} / ${totalPages}`;
+            document.getElementById('btn-block-prev').disabled = currentBlockPage === 1;
+            document.getElementById('btn-block-next').disabled = currentBlockPage === totalPages;
+
+            const startIdx = (currentBlockPage - 1) * ITEMS_PER_PAGE;
+            const pageData = allBlockedEmails.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+            pageData.forEach(email => {
+                const li = document.createElement('li');
+                li.className = 'list-item';
+                li.innerHTML = `<span style="color: #ff6b81;">${email}</span><button class="action-btn unban-btn" onclick="unbanEmail('${email}')">차단 해제</button>`;
+                list.appendChild(li);
+            });
+        }
+
+        document.getElementById('btn-block-prev').onclick = () => { if (currentBlockPage > 1) { currentBlockPage--; renderBlockedEmails(); } };
+        document.getElementById('btn-block-next').onclick = () => { if (currentBlockPage < Math.ceil(allBlockedEmails.length / ITEMS_PER_PAGE)) { currentBlockPage++; renderBlockedEmails(); } };
 
         async function fetchSettings() {
             try {
@@ -138,49 +204,61 @@
                 document.getElementById('display-duration').value = data.display_duration || 8;
                 document.getElementById('daily-limit').value = data.daily_limit !== undefined ? data.daily_limit : 0;
 
-                const banContainer = document.getElementById('ban-list-container');
-                banContainer.innerHTML = '';
-                if(data.blocked_emails.length === 0) { banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 리스트가 없습니다.</div>'; } 
-                else {
-                    data.blocked_emails.forEach(email => {
-                        const item = document.createElement('div');
-                        item.className = 'list-item';
-                        item.innerHTML = `<span style="color: #ff6b81;">${email}</span><button class="action-btn unban-btn" onclick="unbanEmail('${email}')">차단 해제</button>`;
-                        banContainer.appendChild(item);
-                    });
-                }
+                allBlockedEmails = data.blocked_emails || [];
+                renderBlockedEmails();
             } catch (error) { console.error("설정 실패", error); }
         }
+
+        // === 그림 목록 렌더링 (페이지네이션) ===
+        function renderDonations() {
+            const list = document.getElementById('donation-list');
+            const paginationEl = document.getElementById('donation-pagination');
+            list.innerHTML = '';
+
+            if (allDonations.length === 0) {
+                list.innerHTML = '<div style="font-size: 13px; color: #aaa; padding: 10px 0;">받은 그림 내역이 없습니다.</div>';
+                paginationEl.style.display = 'none';
+                return;
+            }
+
+            paginationEl.style.display = 'flex';
+            const totalPages = Math.ceil(allDonations.length / ITEMS_PER_PAGE) || 1;
+            if (currentDonationPage > totalPages) currentDonationPage = totalPages;
+
+            document.getElementById('donation-page-info').innerText = `${currentDonationPage} / ${totalPages}`;
+            document.getElementById('btn-donation-prev').disabled = currentDonationPage === 1;
+            document.getElementById('btn-donation-next').disabled = currentDonationPage === totalPages;
+
+            const startIdx = (currentDonationPage - 1) * ITEMS_PER_PAGE;
+            const pageData = allDonations.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+            pageData.forEach(d => {
+                const item = document.createElement('li');
+                item.className = 'list-item';
+                const idHtml = d.email ? `<span class="copyable-id" onclick="copyId('${d.email}')" title="클릭하여 ID 복사">ID: ${d.email}</span>` : '';
+
+                item.innerHTML = `
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                            <strong style="font-size: 14px;">${d.name}</strong>
+                            ${idHtml}
+                        </div>
+                        <div style="color: #aaa; font-size: 12px;">제목: ${d.title} | ${d.time}</div>
+                    </div>
+                    <button class="action-btn replay-btn" onclick="replayDonation(${d.id})">다시보기</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        document.getElementById('btn-donation-prev').onclick = () => { if (currentDonationPage > 1) { currentDonationPage--; renderDonations(); } };
+        document.getElementById('btn-donation-next').onclick = () => { if (currentDonationPage < Math.ceil(allDonations.length / ITEMS_PER_PAGE)) { currentDonationPage++; renderDonations(); } };
 
         async function fetchRecentDonations() {
             try {
                 const res = await fetch(`${API_BASE}/api/recent-donations`);
-                const donations = await res.json();
-                const container = document.getElementById('recent-donations-container');
-                container.innerHTML = '';
-                
-                if(donations.length === 0) {
-                    container.innerHTML = '<div style="font-size: 13px; color: #aaa;">최근 내역이 없습니다.</div>';
-                    return;
-                }
-                
-                donations.forEach(d => {
-                    const item = document.createElement('div');
-                    item.className = 'list-item';
-                    const idHtml = d.email ? `<span class="copyable-id" onclick="copyId('${d.email}')" title="클릭하여 ID 복사">ID: ${d.email}</span>` : '';
-
-                    item.innerHTML = `
-                        <div style="flex: 1;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                                <strong style="font-size: 14px;">${d.name}</strong>
-                                ${idHtml}
-                            </div>
-                            <div style="color: #aaa; font-size: 12px;">제목: ${d.title}</div>
-                        </div>
-                        <button class="action-btn replay-btn" onclick="replayDonation(${d.id})">다시보기</button>
-                    `;
-                    container.appendChild(item);
-                });
+                allDonations = await res.json();
+                renderDonations();
             } catch (error) { console.error("내역 실패", error); }
         }
 
@@ -203,17 +281,13 @@
             fetchSettings();
         };
 
-        // ✨ 스킵 버튼 이벤트 리스너 추가
+        // 스킵 버튼 이벤트
         document.getElementById('btn-skip-drawing').onclick = async () => {
             if (!confirm("현재 방송 화면에 재생 중인 그림/애니메이션을 즉시 중단(스킵)하시겠습니까?")) return;
-            
             try {
                 const response = await fetch(`${API_BASE}/api/skip`, { method: 'POST' });
-                if (response.ok) {
-                    alert("재생 중인 그림이 스킵되었습니다.");
-                } else {
-                    alert("스킵 처리 중 오류가 발생했습니다.");
-                }
+                if (response.ok) alert("재생 중인 그림이 스킵되었습니다.");
+                else alert("스킵 처리 중 오류가 발생했습니다.");
             } catch (error) {
                 console.error("Skip Error:", error);
                 alert("서버 통신에 실패했습니다.");
