@@ -582,6 +582,20 @@
 </head>
 
 <body>
+    <div id="notice-popup" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center; font-family: 'Malgun Gothic', sans-serif;">
+        <div style="background: #2d2d2d; border: 2px solid #007acc; border-radius: 10px; padding: 30px; width: 450px; max-width: 90%; color: #eee; box-shadow: 0 4px 20px rgba(0,0,0,0.8);">
+            <h3 style="margin-top: 0; color: #ff9800; border-bottom: 1px solid #444; padding-bottom: 10px;">📢 시청자 공지사항</h3>
+            <div id="notice-content" style="margin: 20px 0; font-size: 15px; white-space: pre-wrap; line-height: 1.6; max-height: 400px; overflow-y: auto;"></div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px;">
+                <label style="font-size: 13px; color: #aaa; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <input type="checkbox" id="chk-hide-notice-today" style="width: 16px; height: 16px;">
+                    오늘 하루 보지 않기
+                </label>
+                <button id="btn-close-notice" style="background: #007acc; color: white; border: none; padding: 8px 20px; border-radius: 4px; cursor: pointer; font-weight: bold;">확인하였습니다</button>
+            </div>
+        </div>
+    </div>
     <div id="top-wrapper">
         <div class="app-header">
             <div class="header-top">
@@ -2706,4 +2720,35 @@
                     }
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
             };
+            
+            async function checkNoticePopup() {
+                try {
+                    const response = await fetch(`${API_BASE}/api/settings`);
+                    const data = await response.json();
+                    const noticeText = data.notice_text;
+                    
+                    if (noticeText && noticeText.trim() !== '') {
+                        // '오늘 하루 보지 않기' 쿠키(로컬 스토리지) 확인
+                        const hideUntil = localStorage.getItem('hide_notice_until');
+                        const now = new Date().getTime();
+                        
+                        if (!hideUntil || now > parseInt(hideUntil)) {
+                            document.getElementById('notice-content').innerText = noticeText;
+                            document.getElementById('notice-popup').style.display = 'flex';
+                        }
+                    }
+                } catch (error) { console.log("공지사항 로드 실패"); }
+            }
+
+            // 팝업 닫기 버튼 로직
+            document.getElementById('btn-close-notice').onclick = () => {
+                if (document.getElementById('chk-hide-notice-today').checked) {
+                    // 체크 시 현재 시간으로부터 24시간(86400000ms) 동안 숨김 처리
+                    localStorage.setItem('hide_notice_until', new Date().getTime() + 86400000);
+                }
+                document.getElementById('notice-popup').style.display = 'none';
+            };
+
+            // 스크립트가 로드되자마자 팝업 체크 함수 실행
+            checkNoticePopup();
         </script>

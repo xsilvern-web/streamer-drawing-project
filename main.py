@@ -74,7 +74,14 @@ def init_db():
         conn.rollback()
     else:
         conn.commit()
-        
+
+    try:
+        cursor.execute("ALTER TABLE settings ADD COLUMN notice_text TEXT DEFAULT ''")
+    except psycopg2.Error:
+        conn.rollback()
+    else:
+        conn.commit()
+
     conn.commit()
     conn.close()
 
@@ -92,10 +99,11 @@ def get_db_settings():
         "is_donation_enabled": bool(row_dict.get("is_donation_enabled", True)),
         "blocked_emails": json.loads(row_dict.get("blocked_emails", '[]')),
         "display_duration": row_dict.get("display_duration", 8),
-        "daily_limit": row_dict.get("daily_limit", 0)
+        "daily_limit": row_dict.get("daily_limit", 0),
+        "notice_text": row_dict.get("notice_text", "") # ✨ 추가
     }
 
-def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None):
+def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None, notice_text=None): # ✨ 파라미터 추가
     conn = get_db_connection()
     cursor = conn.cursor()
     if is_enabled is not None:
@@ -106,6 +114,8 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
         cursor.execute("UPDATE settings SET display_duration = %s WHERE id = 1", (display_duration,))
     if daily_limit is not None:
         cursor.execute("UPDATE settings SET daily_limit = %s WHERE id = 1", (daily_limit,))
+    if notice_text is not None: # ✨ DB에 공지사항 저장 로직 추가
+        cursor.execute("UPDATE settings SET notice_text = %s WHERE id = 1", (notice_text,))
     conn.commit()
     conn.close()
 
@@ -157,6 +167,7 @@ class SettingsUpdate(BaseModel):
     remove_blocked_email: str = None
     display_duration: int = None
     daily_limit: int = None
+    notice_text: str = None # ✨ 추가
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
@@ -169,7 +180,14 @@ async def update_settings(data: SettingsUpdate):
     if data.remove_blocked_email and data.remove_blocked_email in blocked:
         blocked.remove(data.remove_blocked_email)
         changed = True
-    update_db_settings(blocked_emails=blocked if changed else None, display_duration=data.display_duration, daily_limit=data.daily_limit)
+    
+    # ✨ notice_text 추가 전송
+    update_db_settings(
+        blocked_emails=blocked if changed else None, 
+        display_duration=data.display_duration, 
+        daily_limit=data.daily_limit,
+        notice_text=data.notice_text
+    )
     return {"message": "success"}
 
 @app.get("/api/recent-donations")
