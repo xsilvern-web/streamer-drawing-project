@@ -22,6 +22,9 @@ drawing_queue = asyncio.Queue()
 
 DB_FILE = "donation_ledger_v4.db"
 
+# 상단 전역 변수 영역에 추가
+skip_current_drawing = False
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -83,6 +86,23 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
         cursor.execute("UPDATE settings SET daily_limit = ? WHERE id = 1", (daily_limit,))
     conn.commit()
     conn.close()
+
+
+
+# API 라우터 영역에 추가
+@app.post("/api/skip")
+async def skip_drawing():
+    global skip_current_drawing
+    skip_current_drawing = True  # 현재 진행 중인 그리기 루프 중단 신호
+    
+    # 즉시 모든 방송 화면(클라이언트)을 지우는 신호 전송
+    for connection in active_connections:
+        try:
+            await connection.send_json({"type": "clear"})
+        except:
+            pass
+            
+    return {"status": "success", "message": "현재 그림이 스킵되었습니다."}
 
 @app.get("/draw")
 async def serve_draw_page(): return FileResponse("draw.html")
@@ -189,6 +209,7 @@ async def submit_drawing(request: Request):
 async def process_drawing_queue():
     while True:
         data = await drawing_queue.get()
+        skip_current_drawing = False
         settings = get_db_settings()
         display_duration = settings.get("display_duration", 8)
         
@@ -222,7 +243,9 @@ async def process_drawing_queue():
                     total_loops = max(5, required_loops)
 
                 for _ in range(total_loops):
+                    if skip_current_drawing: break
                     for frame in frames:
+                        if skip_current_drawing: break
                         src = frame.get("src")
                         duration_sec = frame.get("duration", 500) / 1000.0 # ms를 초로 변환
                         for connection in active_connections:
@@ -233,27 +256,33 @@ async def process_drawing_queue():
             # 기존 처리 방식: 한 획씩 그리기 과정 노출
             if drawing_data and isinstance(drawing_data, list):
                 for item in drawing_data:
+                    if skip_current_drawing: break
                     item_type = item.get("type", "path")
                     color = item.get("color")
                     if item_type == "path":
-                        points = item.get("points", [])
-                        if not points: continue
-                        for connection in active_connections:
-                            try: await connection.send_json({"type": "start_path", "point": points[0], "color": color})
-                            except: pass
-                        for i, point in enumerate(points[1:]):
+                            points = item.get("points", [])
+                            color = item.get("color")
+                            layer_id = item.get("layerId")  # ✨ 누락되었던 레이어 이름표 추출
+
+                            if not points: continue
                             for connection in active_connections:
-                                try: await connection.send_json({"type": "draw_line", "point": point, "color": color})
+                                # ✨ 전송 데이터에 "layerId": layer_id 를 추가해줍니다.
+                                try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id})
                                 except: pass
-                            # ✨ 10배속: 5개씩 묶어 보내던 것을 50개씩 묶어 보냅니다.
-                            if i % 50 == 0: await asyncio.sleep(0.01)
+                            for i, point in enumerate(points[1:]):
+                                if skip_current_drawing: break
+                                for connection in active_connections:
+                                    # ✨ 여기에도 "layerId": layer_id 를 추가해줍니다.
+                                    try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id})
+                                    except: pass
+                                if i % 50 == 0: await asyncio.sleep(0.004)
                     elif item_type == "fill":
                         payload = item.copy()
                         for connection in active_connections:
                             try: await connection.send_json(payload)
                             except: pass
                         # ✨ 채우기 대기 시간 10배 단축 (0.3 -> 0.03)
-                        await asyncio.sleep(0.03)
+                        await asyncio.sleep(0.015)
                     else:
                         payload = item.copy()
                         payload["type"] = "draw_shape"
@@ -262,7 +291,7 @@ async def process_drawing_queue():
                             try: await connection.send_json(payload)
                             except: pass
                         # ✨ 도형 그리기 대기 시간 10배 단축 (0.2 -> 0.02)
-                        await asyncio.sleep(0.02)
+                        await asyncio.sleep(0.01)
                 
                 # 다 그린 뒤 설정된 시간(초) 만큼 대기
                 await asyncio.sleep(display_duration)

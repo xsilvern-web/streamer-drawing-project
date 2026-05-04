@@ -49,11 +49,16 @@
         <h2>⚙️ 그림 받기 제어판</h2>
 
         <div class="setting-group">
-            <label>1. 그림 창구 On / Off</label>
-            <button id="btn-toggle" class="toggle-btn on">🟢 현재 상태: 열림 (클릭하여 닫기)</button>
+            <label>1. 그림 창구 상태 제어</label>
+            <div style="display: flex; gap: 10px; align-items: stretch;">
+                <button id="btn-toggle" class="toggle-btn on" style="flex: 1; padding: 15px;">🟢 현재 상태: 열림 (클릭하여 닫기)</button>
+                <!-- ✨ 스킵 버튼 추가 -->
+                <button id="btn-skip-drawing" style="background-color: #f44336; color: white; border: none; padding: 15px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; flex: 1;">
+                    ⏭️ 현재 그림 스킵
+                </button>
+            </div>
         </div>
 
-        <!-- ✨ 2. 방송 화면 표시 설정 추가 -->
         <div class="setting-group">
             <label>2. 방송 화면 표시 설정</label>
             <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
@@ -126,16 +131,13 @@
                 const res = await fetch(`${API_BASE}/api/settings`);
                 const data = await res.json();
                 
-                // On/Off 토글
                 const btnToggle = document.getElementById('btn-toggle');
                 if(data.is_donation_enabled) { btnToggle.className = 'toggle-btn on'; btnToggle.innerText = '🟢 현재 상태: 열림 (클릭하여 닫기)'; } 
                 else { btnToggle.className = 'toggle-btn'; btnToggle.innerText = '🔴 현재 상태: 닫힘 (클릭하여 열기)'; }
                 
-                // ✨ 방송 화면 표시 설정 반영
                 document.getElementById('display-duration').value = data.display_duration || 8;
                 document.getElementById('daily-limit').value = data.daily_limit !== undefined ? data.daily_limit : 0;
 
-                // 차단 리스트
                 const banContainer = document.getElementById('ban-list-container');
                 banContainer.innerHTML = '';
                 if(data.blocked_emails.length === 0) { banContainer.innerHTML = '<div style="font-size: 13px; color: #aaa;">차단된 리스트가 없습니다.</div>'; } 
@@ -201,7 +203,23 @@
             fetchSettings();
         };
 
-        // ✨ 노출 시간 및 개수 설정 저장 로직
+        // ✨ 스킵 버튼 이벤트 리스너 추가
+        document.getElementById('btn-skip-drawing').onclick = async () => {
+            if (!confirm("현재 방송 화면에 재생 중인 그림/애니메이션을 즉시 중단(스킵)하시겠습니까?")) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/skip`, { method: 'POST' });
+                if (response.ok) {
+                    alert("재생 중인 그림이 스킵되었습니다.");
+                } else {
+                    alert("스킵 처리 중 오류가 발생했습니다.");
+                }
+            } catch (error) {
+                console.error("Skip Error:", error);
+                alert("서버 통신에 실패했습니다.");
+            }
+        };
+
         document.getElementById('btn-save-display').onclick = async () => {
             const duration = parseInt(document.getElementById('display-duration').value) || 8;
             const limit = parseInt(document.getElementById('daily-limit').value) || 0;

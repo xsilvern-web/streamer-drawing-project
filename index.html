@@ -156,23 +156,27 @@
                     else { profileImgDiv.style.backgroundImage = 'none'; }
 
                     alertContainer.classList.add('show');
-                    setTimeout(() => { alertContainer.classList.remove('show'); }, 5000); 
+                    // ✨ 기존에 있던 5초 뒤 숨기기(setTimeout) 타이머를 완전히 삭제했습니다.
+                    
                     const audio = new Audio(`${API_BASE}/coin.mp3`);
                     audio.play().catch(e => console.log("오디오 재생 에러:", e));
                 } 
                 else if (data.type === 'clear') {
                     canvasContainer.style.opacity = '1'; 
                     Object.values(layerContexts).forEach(ctx => ctx.clearRect(0, 0, 1920, 1080));
+                    // ✨ 화면이 완전히 초기화(클리어)될 때 알림창도 함께 숨깁니다.
+                    alertContainer.classList.remove('show');
                 }
                 
                 else if (data.type === 'draw_frame') {
-                    let ctx = layerContexts['default'];
-                    if (!ctx) {
+                    // 애니메이션 재생 시, 화면에 남아있던 일반 그림의 다중 레이어들을 싹 정리하고 전용 캔버스로 리셋합니다.
+                    if (!layerContexts['default'] || Object.keys(layerContexts).length > 1) {
                         canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
-                        ctx = document.getElementById('default-canvas').getContext('2d');
-                        layerContexts['default'] = ctx;
+                        layerContexts = { 'default': document.getElementById('default-canvas').getContext('2d') };
                         canvasContainer.style.opacity = '1';
                     }
+                    
+                    let ctx = layerContexts['default'];
                     const img = new Image();
                     img.onload = () => {
                         ctx.clearRect(0, 0, 1920, 1080);
@@ -183,11 +187,12 @@
                 
                 else if (data.type === 'fade_out') { 
                     canvasContainer.style.opacity = '0';
+                    // ✨ 그림이 다 그려지고 서서히 사라질 때(페이드아웃) 알림창도 같이 숨깁니다.
+                    alertContainer.classList.remove('show');
                 }
                 
-                // ✨ 레이어 렌더링 및 개별 그리기 명령 처리
+                // 레이어 렌더링 및 개별 그리기 명령 처리
                 else {
-                    // 1. 송신측에서 보낸 레이어 초기화 명령(init_layers) 처리
                     if (data.type === 'draw_shape' && data.shape === 'init_layers') {
                         canvasContainer.innerHTML = '';
                         layerContexts = {};
@@ -196,9 +201,10 @@
                             cvs.width = 1920; cvs.height = 1080;
                             cvs.style.position = 'absolute';
                             cvs.style.top = '0'; cvs.style.left = '0';
-                            cvs.style.zIndex = index + 1; // Z-index 순서대로 겹치기
-                            cvs.style.opacity = lInfo.opacity; // 레이어 개별 투명도
-                            cvs.style.mixBlendMode = lInfo.blendMode === 'normal' ? 'source-over' : lInfo.blendMode; // 레이어 블렌드모드
+                            cvs.style.zIndex = index + 1; 
+                            cvs.style.opacity = lInfo.opacity; 
+                            // ✨ source-over 대신 올바른 CSS 속성인 normal을 적용합니다.
+                            cvs.style.mixBlendMode = lInfo.blendMode || 'normal'; 
                             canvasContainer.appendChild(cvs);
                             layerContexts[lInfo.id] = cvs.getContext('2d');
                         });
@@ -206,12 +212,10 @@
                         return;
                     }
 
-                    // 2. 그려야 할 레이어 타겟 찾기
                     let ctx;
                     if (data.layerId && layerContexts[data.layerId]) {
                         ctx = layerContexts[data.layerId];
                     } else {
-                        // 하위 호환성 및 오류 방지용 기본 캔버스 생성
                         ctx = layerContexts['default'];
                         if (!ctx) {
                             canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
