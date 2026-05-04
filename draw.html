@@ -717,6 +717,12 @@
                     id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
             <div class="control-group"><label>굵기 <span id="width-val">5</span></label><input type="range"
                     id="line-width" min="1" max="50" value="5"></div>
+            <div style="margin-top: 15px;">
+                <label style="font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; color: #eee;">
+                    <input type="checkbox" id="chk-use-pressure" checked style="width: 15px; height: 15px;">
+                    펜 필압 사용
+                </label>
+            </div>
             <div class="control-group"><label>떨림방지</label><input type="range" id="smoothing-level" min="0" max="20"
                     value="7"></div>
             <div style="width: 80%; height: 1px; background: #444; margin: 5px 0;"></div>
@@ -1653,9 +1659,33 @@
                         btnGroup.appendChild(rasterBtn);
                     }
 
-                    const delBtn = document.createElement('button'); delBtn.innerHTML = '🗑️'; delBtn.className = 'del-btn';
-                    delBtn.onclick = (e) => { e.stopPropagation(); deleteLayer(l.id); };
-                    btnGroup.appendChild(delBtn);
+                    // ✨ 펜 조작을 위한 레이어 상/하 이동 버튼 추가
+                    const upBtn = document.createElement('button');
+                    upBtn.innerText = '▲'; 
+                    upBtn.style.cssText = 'padding: 2px 6px; border-radius: 3px; border: none; cursor: pointer; font-size: 10px; background: #555; color: white;';
+                    upBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        const idx = layers.findIndex(layer => layer.id === l.id);
+                        if (idx > 0) {
+                            const temp = layers[idx - 1]; layers[idx - 1] = layers[idx]; layers[idx] = temp;
+                            updateLayersZIndex(); renderLayerUI();
+                        }
+                    };
+                    
+                    const downBtn = document.createElement('button');
+                    downBtn.innerText = '▼'; 
+                    downBtn.style.cssText = 'padding: 2px 6px; border-radius: 3px; border: none; cursor: pointer; font-size: 10px; background: #555; color: white;';
+                    downBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        const idx = layers.findIndex(layer => layer.id === l.id);
+                        if (idx < layers.length - 1) {
+                            const temp = layers[idx + 1]; layers[idx + 1] = layers[idx]; layers[idx] = temp;
+                            updateLayersZIndex(); renderLayerUI();
+                        }
+                    };
+                    
+                    btnGroup.appendChild(upBtn);
+                    btnGroup.appendChild(downBtn);
 
                     const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
                     div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
@@ -1843,8 +1873,8 @@
                 if (currentTool === 'fill') {
                     const tolInput = document.getElementById('fill-tolerance');
                     const gapInput = document.getElementById('fill-gap');
-                    const tol = tolInput ? parseInt(tolInput.value) : 32;
-                    const gap = gapInput ? parseInt(gapInput.value) : 0;
+                    const tol = tolInput ? parseInt(tolInput.value) : 50; 
+                    const gap = gapInput ? parseInt(gapInput.value) : 1; 
 
                     doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap);
 
@@ -1858,8 +1888,9 @@
 
                 isDrawing = true;
                 if (currentTool === 'pen' || currentTool === 'eraser') {
-                    let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
-                    let targetWidth = Math.max(currentWidth * pressure, 1);
+                    const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
+                    let pressure = (e.pointerType === 'pen' && usePressure) ? e.pressure : 1; 
+                    if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
                     smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{ x: smX, y: smY, w: smW }];
 
                     if (currentTool === 'pen') {
@@ -1922,7 +1953,9 @@
                 const activeLayer = layers.find(l => l.id === activeLayerId); const ctx = activeLayer.ctx;
 
                 if (currentTool === 'pen' || currentTool === 'eraser') {
-                    let pressure = e.pointerType === 'pen' ? e.pressure : 1; if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
+                    const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
+                    let pressure = (e.pointerType === 'pen' && usePressure) ? e.pressure : 1; 
+                    if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
                     let targetWidth = Math.max(currentWidth * pressure, 1);
                     const smoothingLevel = parseInt(document.getElementById('smoothing-level').value); const factor = 1 / (smoothingLevel + 1);
                     smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor;
