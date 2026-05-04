@@ -207,15 +207,31 @@ async def submit_drawing(request: Request):
     except Exception as e: raise HTTPException(status_code=500, detail="서버 오류 발생")
 
 async def process_drawing_queue():
+    global skip_current_drawing 
+    
     while True:
-        data = await drawing_queue.get()
-        skip_current_drawing = False
-        settings = get_db_settings()
-        display_duration = settings.get("display_duration", 8)
+        payload = await drawing_queue.get()
+        skip_current_drawing = False 
         
-        drawing_data = data.get("drawingData")
-        # ✨ 데이터 형태를 파악하여 애니메이션인지 단일 그림 궤적인지 판별
+        # ✨ [추가] 대기열(큐)에서 자기 차례가 되어 실제로 화면에 그려지기 직전에 알림을 보냅니다!
+        name = payload.get("name", "익명")
+        title = payload.get("title", "제목없음")
+        profile_image = payload.get("profileImage", "")
+        
+        for connection in active_connections:
+            try: 
+                await connection.send_json({
+                    "type": "alert", 
+                    "name": name, 
+                    "title": title, 
+                    "profileImage": profile_image
+                })
+            except: pass
+        
+        # 이후 기존 로직 유지
+        drawing_data = payload.get("drawingData", [])
         is_animation = isinstance(drawing_data, dict) and drawing_data.get("isAnimation")
+        # ... (이하 생략) ...
 
         # 방송 화면에 유저 정보 알림 표시
         for connection in active_connections:
