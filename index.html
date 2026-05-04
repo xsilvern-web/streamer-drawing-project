@@ -7,16 +7,17 @@
         body, html {
             margin: 0; padding: 0; width: 1920px; height: 1080px; background-color: transparent; overflow: hidden;
         }
-        /* ✨ 단일 캔버스 대신 캔버스들을 담을 컨테이너 사용 */
+        /* ✨ 그림 캔버스를 위로 올림 (z-index: 10) */
         #canvas-container {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            z-index: 10; /* ✨ 그림 캔버스를 위로 올림 */
+            z-index: 10; 
             transition: opacity 1.5s ease-in-out; opacity: 1;
         }
+        /* ✨ 알림창을 캔버스 아래(최하위 레이어)로 강등 (z-index: 1) */
         #alert-container {
             position: absolute; top: 50px; left: 50px; background: rgba(0, 0, 0, 0.8);
             color: white; padding: 20px 30px; border-radius: 10px; font-family: 'Malgun Gothic', sans-serif;
-            z-index: 1; /* ✨ 제안하신 대로 알림창을 최하위 레이어로 강등 */
+            z-index: 1; 
             opacity: 0; transition: opacity 0.5s ease-in-out; border: 2px solid #007acc;
         }
         #alert-container.show { opacity: 1; }
@@ -43,7 +44,7 @@
         </div>
     </div>
 
-<script>
+    <script>
         const canvasContainer = document.getElementById('canvas-container');
         const alertContainer = document.getElementById("alert-container");
         const profileImgDiv = document.getElementById("alert-profile-img");
@@ -59,7 +60,6 @@
         let draftContext = null;
         let draftCanvas = null;
 
-        // 임시 더블 버퍼 레이어
         function getDraftLayer() {
             if (!draftCanvas) {
                 draftCanvas = document.createElement('canvas');
@@ -78,7 +78,6 @@
             return draftContext;
         }
 
-        // 선 긋기 렌더링
         function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser) {
             ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
             ctx.fillStyle = isEraser ? "rgba(0,0,0,1)" : color;
@@ -92,7 +91,6 @@
             }
         }
 
-        // 버킷 채우기
         function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
             const canvasW = 1920; const canvasH = 1080;
             const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
@@ -169,7 +167,7 @@
             } else { ctx.drawImage(fillCvs, 0, 0); }
         }
 
-        // ✨ 페인트 누수를 막기 위한 메세지 대기열(Queue) 시스템 도입
+        // ✨ 캔버스 타이밍 오류를 막기 위한 메시지 대기열(Queue) 복구
         let messageQueue = [];
         let isProcessingQueue = false;
 
@@ -272,7 +270,6 @@
                 }
 
                 if (data.type === 'fill') {
-                    // 이제 이미지가 모두 그려진 뒤에 페인트가 부어지므로 누수되지 않습니다.
                     doFloodFill(ctx, data.point.x, data.point.y, data.color, data.tolerance, data.gapSize || 0);
                 }
                 else if (data.type === 'start_path') { 
@@ -284,12 +281,10 @@
                         draftCanvas.style.opacity = data.opacity !== undefined ? data.opacity : 1;
                         draftCanvas.style.display = 'block';
                         
-                        // ✨ 단일 점(콕 찍기)도 놓치지 않고 렌더링하도록 즉시 그려줍니다.
                         let rgbColor = data.color.startsWith('#') ? data.color : '#ffffff';
                         let drawColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
                         renderBrushStroke(dCtx, lastPoint.x, lastPoint.y, lastPoint.w, lastPoint.x, lastPoint.y, lastPoint.w, drawColor, false);
                     } else {
-                        // 지우개 단일 점
                         renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, lastPoint.x, lastPoint.y, lastPoint.w, data.color, true);
                     }
                 } 
@@ -317,7 +312,6 @@
                         draftContext.clearRect(0, 0, 1920, 1080);
                     }
                     lastPoint = null;
-                    // ✨ 지우개 사용 후 '지우기 모드'로 굳어버린 캔버스를 원래대로 리셋시킵니다.
                     ctx.globalCompositeOperation = 'source-over'; 
                 }
                 else if (data.type === 'draw_shape') {
@@ -327,7 +321,7 @@
                     }
 
                     if (data.shape === 'raster_image') {
-                        // 변형 이미지도 완전히 로딩이 끝날 때까지 기다립니다(await).
+                        // ✨ 이미지가 완전히 렌더링될 때까지 대기(await)하여 타이밍 꼬임을 방지합니다.
                         await new Promise(resolve => {
                             const img = new Image();
                             img.onload = () => {
@@ -362,5 +356,3 @@
         
         connectWebSocket();
     </script>
-</body>
-</html>
