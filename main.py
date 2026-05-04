@@ -240,16 +240,12 @@ async def process_drawing_queue():
 
         # 5. 애니메이션 처리
         if is_animation:
-            import math
             frames = drawing_data.get("frames", [])
-            if frames:
-                one_loop_duration = sum(frame.get("duration", 500) / 1000.0 for frame in frames)
-                
-                total_loops = 5
-                if one_loop_duration > 0:
-                    required_loops = math.ceil(display_duration / one_loop_duration)
-                    total_loops = max(5, required_loops)
+            # ✨ 클라이언트에서 전송한 반복 횟수 추출 (서버단에서도 20회 상한선 이중 방어)
+            repeat_count = drawing_data.get("repeatCount", 5)
+            total_loops = min(20, max(1, int(repeat_count)))
 
+            if frames:
                 for _ in range(total_loops):
                     if skip_current_drawing: break
                     for frame in frames:

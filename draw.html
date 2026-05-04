@@ -614,11 +614,14 @@
                     <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
                     <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
 
-                    <label
-                        style="color: #ff9800; font-weight: bold; margin-right: 5px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                        <input type="checkbox" id="chk-animation-mode" style="width: 15px; height: 15px;">
-                        🎬 다중 프레임 전송
-                    </label>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <label style="color: #ff9800; font-weight: bold; margin-right: 5px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="chk-animation-mode" style="width: 15px; height: 15px;">
+                            🎬 다중 프레임 전송
+                        </label>
+                        <input type="number" id="anim-repeat-count" value="5" min="1" max="20" style="width: 35px; height: 14px; font-size: 11px; text-align: center; display: none;" title="반복 횟수 (최대 20회)">
+                        <span id="anim-repeat-text" style="font-size: 11px; color: #ff9800; font-weight: bold; display: none;">회 반복</span>
+                    </div>
 
                     <button id="btn-send">화면에 띄우기</button>
                 </div>
@@ -2540,6 +2543,12 @@
                 originalCopyFrame(sourceId);
             };
 
+            // ✨ 다중 프레임 체크박스 클릭 시 반복 횟수 입력창 보이기/숨기기
+            document.getElementById('chk-animation-mode').addEventListener('change', (e) => {
+                document.getElementById('anim-repeat-count').style.display = e.target.checked ? 'block' : 'none';
+                document.getElementById('anim-repeat-text').style.display = e.target.checked ? 'block' : 'none';
+            });
+
             btnSend.onclick = async () => {
                 if (isCooldown || !isDonationEnabled) return;
 
@@ -2593,10 +2602,12 @@
                             offCtx.globalCompositeOperation = 'source-over';
                         });
 
-                        animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
+                       animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
                     });
 
-                    finalPayload = { isAnimation: true, frames: animationPayload };
+                    // ✨ 입력된 반복 횟수를 가져오며, 1~20회 사이로 강제 조정하여 서버에 함께 전송합니다.
+                    const repeatCount = Math.min(20, Math.max(1, parseInt(document.getElementById('anim-repeat-count').value) || 5));
+                    finalPayload = { isAnimation: true, frames: animationPayload, repeatCount: repeatCount };
                 } else {
                     if (layers.some(l => l.type === 'text' || l.type === 'transform_box')) return alert("확정되지 않은 텍스트/그림 객체가 있습니다.\n우측 패널에서 레이어 [확정] 버튼을 눌러주세요.");
 
