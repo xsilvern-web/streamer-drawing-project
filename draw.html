@@ -621,6 +621,12 @@
                         </label>
                         <input type="number" id="anim-repeat-count" value="5" min="1" max="20" style="width: 35px; height: 14px; font-size: 11px; text-align: center; display: none;" title="반복 횟수 (최대 20회)">
                         <span id="anim-repeat-text" style="font-size: 11px; color: #ff9800; font-weight: bold; display: none;">회 반복</span>
+                        
+                        <!-- ✨ 과정 생략 체크박스 추가 -->
+                        <label id="label-skip-process" style="color: #4CAF50; font-weight: bold; margin-left: 10px; font-size: 12px; display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                            <input type="checkbox" id="chk-skip-process" style="width: 15px; height: 15px;">
+                            ⚡ 과정 생략 (결과만)
+                        </label>
                     </div>
 
                     <button id="btn-send">화면에 띄우기</button>
@@ -2547,6 +2553,8 @@
             document.getElementById('chk-animation-mode').addEventListener('change', (e) => {
                 document.getElementById('anim-repeat-count').style.display = e.target.checked ? 'block' : 'none';
                 document.getElementById('anim-repeat-text').style.display = e.target.checked ? 'block' : 'none';
+                // ✨ 애니메이션 모드일 때는 과정 생략 체크박스를 숨깁니다.
+                document.getElementById('label-skip-process').style.display = e.target.checked ? 'none' : 'flex'; 
             });
 
             btnSend.onclick = async () => {
@@ -2628,10 +2636,28 @@
                         }))
                     });
 
+                    // ✨ 과정 생략 체크박스 값 확인
+                    const skipProcess = document.getElementById('chk-skip-process').checked;
+
                     validLayers.forEach(l => {
                         if (l.type === 'canvas') {
-                            const layerHistory = history.filter(item => item.layerId === l.id);
-                            singleHistoryPayload.push(...layerHistory);
+                            if (skipProcess) {
+                                // ✨ 과정 생략이 체크되어 있다면 캔버스를 즉시 이미지로 구워서 보냅니다.
+                                singleHistoryPayload.push({ 
+                                    type: 'raster_image', 
+                                    layerId: l.id, 
+                                    src: l.canvas.toDataURL('image/png'), 
+                                    cx: CANVAS_WIDTH / 2, 
+                                    cy: CANVAS_HEIGHT / 2, 
+                                    width: CANVAS_WIDTH, 
+                                    height: CANVAS_HEIGHT, 
+                                    angle: 0 
+                                });
+                            } else {
+                                // 기존: 수많은 붓 터치 과정을 하나하나 전송
+                                const layerHistory = history.filter(item => item.layerId === l.id);
+                                singleHistoryPayload.push(...layerHistory);
+                            }
                         } else if (l.type === 'raster_image' || l.type === 'transform_box') {
                             const box = l.element; const contentCvs = box.querySelector('canvas.content');
                             if (contentCvs) {
