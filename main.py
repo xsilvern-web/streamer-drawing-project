@@ -38,6 +38,8 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # 1. 기본 테이블 생성
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ledger (
             id SERIAL PRIMARY KEY,
@@ -56,33 +58,34 @@ def init_db():
             is_donation_enabled BOOLEAN DEFAULT TRUE,
             blocked_emails TEXT DEFAULT '[]',
             display_duration INTEGER DEFAULT 8,
-            daily_limit INTEGER DEFAULT 0
+            daily_limit INTEGER DEFAULT 0,
+            notice_text TEXT DEFAULT ''
         )
     ''')
     cursor.execute("INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
     
+    # ✨ 핵심 수정: 테이블을 만들자마자 '확정(commit)'을 지어주어, 이후 작업이 실패해도 테이블이 날아가지 않게 보호합니다.
+    conn.commit()
+    
+    # 2. 업데이트 시 누락된 컬럼을 안전하게 추가하는 로직
     try:
         cursor.execute("ALTER TABLE settings ADD COLUMN display_duration INTEGER DEFAULT 8")
+        conn.commit()
     except psycopg2.Error:
         conn.rollback() 
-    else:
-        conn.commit()
 
     try:
         cursor.execute("ALTER TABLE settings ADD COLUMN daily_limit INTEGER DEFAULT 0")
+        conn.commit()
     except psycopg2.Error:
         conn.rollback()
-    else:
-        conn.commit()
 
     try:
         cursor.execute("ALTER TABLE settings ADD COLUMN notice_text TEXT DEFAULT ''")
+        conn.commit()
     except psycopg2.Error:
         conn.rollback()
-    else:
-        conn.commit()
-
-    conn.commit()
+        
     conn.close()
 
 init_db()
