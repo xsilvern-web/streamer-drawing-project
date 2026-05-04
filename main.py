@@ -207,10 +207,21 @@ async def process_drawing_queue():
             except: pass
 
         if is_animation:
-            # ✨ 다중 프레임 애니메이션 처리 (5회 반복)
+            import math
+            # ✨ 다중 프레임 애니메이션 처리 (최소 5회 vs 설정된 유지 시간 중 긴 쪽)
             frames = drawing_data.get("frames", [])
             if frames:
-                for _ in range(5):
+                # 1루프(모든 프레임 1회 재생)에 걸리는 총 시간(초) 계산
+                one_loop_duration = sum(frame.get("duration", 500) / 1000.0 for frame in frames)
+                
+                total_loops = 5
+                if one_loop_duration > 0:
+                    # 설정된 화면 유지 시간(display_duration)을 채우기 위해 필요한 루프 횟수 (올림 처리)
+                    required_loops = math.ceil(display_duration / one_loop_duration)
+                    # 5회와 비교하여 더 큰 값을 최종 반복 횟수로 결정
+                    total_loops = max(5, required_loops)
+
+                for _ in range(total_loops):
                     for frame in frames:
                         src = frame.get("src")
                         duration_sec = frame.get("duration", 500) / 1000.0 # ms를 초로 변환
@@ -234,13 +245,15 @@ async def process_drawing_queue():
                             for connection in active_connections:
                                 try: await connection.send_json({"type": "draw_line", "point": point, "color": color})
                                 except: pass
-                            if i % 5 == 0: await asyncio.sleep(0.01)
+                            # ✨ 10배속: 5개씩 묶어 보내던 것을 50개씩 묶어 보냅니다.
+                            if i % 50 == 0: await asyncio.sleep(0.01)
                     elif item_type == "fill":
                         payload = item.copy()
                         for connection in active_connections:
                             try: await connection.send_json(payload)
                             except: pass
-                        await asyncio.sleep(0.3)
+                        # ✨ 채우기 대기 시간 10배 단축 (0.3 -> 0.03)
+                        await asyncio.sleep(0.03)
                     else:
                         payload = item.copy()
                         payload["type"] = "draw_shape"
@@ -248,7 +261,8 @@ async def process_drawing_queue():
                         for connection in active_connections:
                             try: await connection.send_json(payload)
                             except: pass
-                        await asyncio.sleep(0.2)
+                        # ✨ 도형 그리기 대기 시간 10배 단축 (0.2 -> 0.02)
+                        await asyncio.sleep(0.02)
                 
                 # 다 그린 뒤 설정된 시간(초) 만큼 대기
                 await asyncio.sleep(display_duration)

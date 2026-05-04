@@ -1896,7 +1896,7 @@
                 canvasSnapshot = null;
             });
 
-            let isRedrawing = false;
+let isRedrawing = false;
             let needsRedraw = false;
 
             async function redrawCanvas() {
@@ -1906,14 +1906,21 @@
                 }
                 isRedrawing = true;
 
-                layers.forEach(l => { 
+                // 1. 현재 프레임의 캔버스 데이터들을 임시로 복제 (더블 버퍼)
+                const buffers = {};
+                layers.forEach(l => {
                     if (l.type === 'canvas' && l.canvas && l.ctx) {
-                        l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height); 
-                        l.ctx.globalCompositeOperation = 'source-over'; 
-                        l.ctx.globalAlpha = 1.0;
+                        const bufferCvs = document.createElement('canvas');
+                        bufferCvs.width = CANVAS_WIDTH;
+                        bufferCvs.height = CANVAS_HEIGHT;
+                        const bufferCtx = bufferCvs.getContext('2d');
+                        bufferCtx.lineCap = 'round';
+                        bufferCtx.lineJoin = 'round';
+                        buffers[l.id] = { cvs: bufferCvs, ctx: bufferCtx };
                     }
                 });
 
+                // 메모리 누수를 방지하기 위한 전역 임시 캔버스 재사용
                 let tmpCvs = document.getElementById('redraw-tmp-layer');
                 if (!tmpCvs) {
                     tmpCvs = document.createElement('canvas');
@@ -1925,10 +1932,12 @@
                 }
                 const tmpCtx = tmpCvs.getContext('2d');
 
+                // 2. 보이지 않는 버퍼(bufferCtx)에 역사(history)를 순차적으로 다시 그림
                 for (let item of history) {
                     const targetLayer = layers.find(l => l.id === item.layerId); 
-                    if (!targetLayer || targetLayer.type !== 'canvas' || !targetLayer.ctx) continue;
-                    const ctx = targetLayer.ctx;
+                    if (!targetLayer || targetLayer.type !== 'canvas' || !buffers[targetLayer.id]) continue;
+                    
+                    const ctx = buffers[targetLayer.id].ctx;
 
                     ctx.globalCompositeOperation = 'source-over';
                     ctx.globalAlpha = 1.0;
@@ -1979,6 +1988,16 @@
                         else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
                     }
                 }
+
+                // 3. 백그라운드에서 그리기가 완료되면, 실제 캔버스에 한 번에 덮어씌움 (플리커링 방지)
+                layers.forEach(l => {
+                    if (l.type === 'canvas' && l.canvas && l.ctx && buffers[l.id]) {
+                        l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                        l.ctx.globalCompositeOperation = 'source-over';
+                        l.ctx.globalAlpha = 1.0;
+                        l.ctx.drawImage(buffers[l.id].cvs, 0, 0);
+                    }
+                });
                 
                 isRedrawing = false;
                 if (needsRedraw) {
@@ -2177,11 +2196,27 @@
 
             useProfileCheckbox.addEventListener('change', (e) => { profilePreview.style.opacity = e.target.checked ? "1" : "0.3"; });
 
+            let isCooldown = false; // ✨ 쿨타임 상태를 체크하는 변수 추가
+
             async function checkDonationStatus() {
                 try {
                     const response = await fetch(`${API_BASE}/api/settings`); const data = await response.json();
-                    if (data.is_donation_enabled) { isDonationEnabled = true; btnSend.style.backgroundColor = '#ff9800'; btnSend.style.cursor = 'pointer'; btnSend.innerText = '화면에 띄우기 (전송)'; }
-                    else { isDonationEnabled = false; btnSend.style.backgroundColor = '#777'; btnSend.style.cursor = 'not-allowed'; btnSend.innerText = '현재 그림 받기가 닫혀있습니다'; }
+                    if (data.is_donation_enabled) { 
+                        isDonationEnabled = true; 
+                        // ✨ 쿨타임 중이 아닐 때만 버튼을 활성화 상태로 변경
+                        if (!isCooldown) {
+                            btnSend.style.backgroundColor = '#ff9800'; 
+                            btnSend.style.cursor = 'pointer'; 
+                            btnSend.innerText = '화면에 띄우기'; 
+                            btnSend.disabled = false;
+                        }
+                    } else { 
+                        isDonationEnabled = false; 
+                        btnSend.style.backgroundColor = '#777'; 
+                        btnSend.style.cursor = 'not-allowed'; 
+                        btnSend.innerText = '현재 그림 받기가 닫혀있습니다'; 
+                        btnSend.disabled = true;
+                    }
                 } catch (error) { console.log("서버 상태 확인 불가"); }
             }
 
@@ -2197,6 +2232,10 @@
                 frames = [];
                 createNewFrame();
             }
+
+            document.getElementById('btn-clear-all').onclick = () => {
+                if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
+            };
 
             document.getElementById('btn-clear-all').onclick = () => {
                 if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
@@ -2390,6 +2429,8 @@
             };
 
             btnSend.onclick = async () => {
+                if (isCooldown || !isDonationEnabled) return; // ✨ 쿨타임 중이거나 후원이 닫혀있으면 차단
+
                 syncToFrame();
 
                 const title = document.getElementById('drawing-title').value || "제목없음";
@@ -2447,7 +2488,10 @@
                 } else {
                     if (layers.some(l => l.type === 'text' || l.type === 'transform_box')) return alert("확정되지 않은 텍스트/그림 객체가 있습니다.\n우측 패널에서 레이어 [확정] 버튼을 눌러주세요.");
 
-                    let singleHistoryPayload = [...history];
+                    // ✨ 삭제되거나 숨겨진 레이어는 제외하고 전송
+                    const validLayerIds = layers.filter(l => l.visible).map(l => l.id);
+                    let singleHistoryPayload = history.filter(item => validLayerIds.includes(item.layerId));
+
                     layers.forEach(l => {
                         if (l.type === 'raster_image') {
                             const box = l.element; const contentCvs = box.querySelector('canvas.content');
@@ -2481,6 +2525,27 @@
                     const res = await fetch(`${API_BASE}/api/submit-drawing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (res.ok) {
                         alert("전송 성공!"); clearMyCanvas(); document.getElementById('drawing-title').value = '';
+                        
+                        // ✨ 전송 성공 시 30초 쿨타임 시작
+                        isCooldown = true;
+                        btnSend.disabled = true;
+                        btnSend.style.backgroundColor = '#777';
+                        btnSend.style.cursor = 'not-allowed';
+                        
+                        let timeLeft = 30;
+                        btnSend.innerText = `전송 완료 (${timeLeft}초)`;
+                        
+                        const cooldownTimer = setInterval(() => {
+                            timeLeft--;
+                            if (timeLeft > 0) {
+                                btnSend.innerText = `전송 완료 (${timeLeft}초)`;
+                            } else {
+                                clearInterval(cooldownTimer);
+                                isCooldown = false;
+                                checkDonationStatus(); // 쿨타임 종료 시 현재 서버 상태에 맞게 버튼 UI 원상복구
+                            }
+                        }, 1000);
+
                     } else {
                         const data = await res.json(); alert("전송 실패: " + (data.detail || "서버 오류"));
                     }
