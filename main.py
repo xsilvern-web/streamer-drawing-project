@@ -262,27 +262,30 @@ async def process_drawing_queue():
                     if item_type == "path":
                             points = item.get("points", [])
                             color = item.get("color")
-                            layer_id = item.get("layerId")  # ✨ 누락되었던 레이어 이름표 추출
+                            layer_id = item.get("layerId")
+                            opacity = item.get("opacity", 1.0) # ✨ 누락되었던 브러시 투명도 데이터 추출
 
                             if not points: continue
                             for connection in active_connections:
-                                # ✨ 전송 데이터에 "layerId": layer_id 를 추가해줍니다.
-                                try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id})
+                                try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
+                            
                             for i, point in enumerate(points[1:]):
-                                if skip_current_drawing: break
+                                if skip_current_drawing: break # 스킵 방어 로직 유지
                                 for connection in active_connections:
-                                    # ✨ 여기에도 "layerId": layer_id 를 추가해줍니다.
-                                    try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id})
+                                    try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id, "opacity": opacity})
                                     except: pass
-                                if i % 50 == 0: await asyncio.sleep(0.004)
+                            
+                            # ✨ 선 긋기가 끝났음을 알리고 임시 캔버스를 병합하라는 신호 전송
+                            if not skip_current_drawing:
+                                for connection in active_connections:
+                                    try: await connection.send_json({"type": "end_path", "layerId": layer_id, "opacity": opacity})
+                                    except: pass
                     elif item_type == "fill":
                         payload = item.copy()
                         for connection in active_connections:
                             try: await connection.send_json(payload)
                             except: pass
-                        # ✨ 채우기 대기 시간 10배 단축 (0.3 -> 0.03)
-                        await asyncio.sleep(0.015)
                     else:
                         payload = item.copy()
                         payload["type"] = "draw_shape"
@@ -290,8 +293,6 @@ async def process_drawing_queue():
                         for connection in active_connections:
                             try: await connection.send_json(payload)
                             except: pass
-                        # ✨ 도형 그리기 대기 시간 10배 단축 (0.2 -> 0.02)
-                        await asyncio.sleep(0.01)
                 
                 # 다 그린 뒤 설정된 시간(초) 만큼 대기
                 await asyncio.sleep(display_duration)
