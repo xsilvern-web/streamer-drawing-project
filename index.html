@@ -7,12 +7,14 @@
         body, html {
             margin: 0; padding: 0; width: 1920px; height: 1080px; background-color: transparent; overflow: hidden;
         }
-        /* ✨ 1.5초에 걸쳐 서서히 사라짐 */
-        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; transition: opacity 1.5s ease-in-out; opacity: 1; }
+        /* ✨ 단일 캔버스 대신 캔버스들을 담을 컨테이너 사용 */
+        #canvas-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; transition: opacity 1.5s ease-in-out; opacity: 1;
+        }
         #alert-container {
             position: absolute; top: 50px; left: 50px; background: rgba(0, 0, 0, 0.8);
             color: white; padding: 20px 30px; border-radius: 10px; font-family: 'Malgun Gothic', sans-serif;
-            z-index: 10; opacity: 0; transition: opacity 0.5s ease-in-out; border: 2px solid #007acc;
+            z-index: 100; opacity: 0; transition: opacity 0.5s ease-in-out; border: 2px solid #007acc;
         }
         #alert-container.show { opacity: 1; }
         .highlight { color: #ff9800; font-weight: bold; font-size: 24px; }
@@ -26,7 +28,7 @@
     </style>
 </head>
 <body>
-    <canvas id="canvas" width="1920" height="1080"></canvas>
+    <div id="canvas-container"></div>
     
     <div id="alert-container">
         <div style="display: flex; align-items: center; gap: 15px;">
@@ -38,9 +40,8 @@
         </div>
     </div>
 
-<script>
-        const canvas = document.getElementById('canvas'); const ctx = canvas.getContext('2d');
-        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    <script>
+        const canvasContainer = document.getElementById('canvas-container');
         const alertContainer = document.getElementById("alert-container");
         const profileImgDiv = document.getElementById("alert-profile-img");
 
@@ -48,7 +49,9 @@
         const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
         const wsUrl = `${protocol}${window.location.host}/ws`;
 
-        let ws; let lastPoint = null;
+        let ws; 
+        let lastPoint = null;
+        let layerContexts = {}; // ✨ 동적 레이어 컨텍스트 관리
 
         function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser) {
             ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
@@ -63,10 +66,8 @@
             }
         }
 
-        // ✨ 채우기(Flood Fill) 알고리즘 추가
         function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
-            const canvasW = canvas.width; 
-            const canvasH = canvas.height;
+            const canvasW = 1920; const canvasH = 1080;
             const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
             const data = imgData.data;
             const sx = Math.floor(startX); const sy = Math.floor(startY);
@@ -81,14 +82,24 @@
             
             if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
 
+            let checkData = data;
+            if (gap > 0) {
+                const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+                const offCtx = offCvs.getContext('2d');
+                offCtx.drawImage(ctx.canvas, 0, 0);
+                offCtx.globalAlpha = 1.0; offCtx.globalCompositeOperation = 'source-over';
+                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { offCtx.drawImage(ctx.canvas, Math.cos(a)*gap, Math.sin(a)*gap); }
+                checkData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+            }
+
             const visited = new Uint8Array(canvasW * canvasH);
             const pixelStack = [[sx, sy]];
 
             function matchColor(x, y) {
                 if (x < 0 || x >= canvasW || y < 0 || y >= canvasH) return false;
                 const p = (y * canvasW + x) * 4;
-                if (data[p+3] === 0 && targetA === 0) return true;
-                return Math.abs(data[p]-targetR)<=tolerance && Math.abs(data[p+1]-targetG)<=tolerance && Math.abs(data[p+2]-targetB)<=tolerance && Math.abs(data[p+3]-targetA)<=tolerance;
+                if (checkData[p+3] === 0 && targetA === 0) return true;
+                return Math.abs(checkData[p]-targetR)<=tolerance && Math.abs(checkData[p+1]-targetG)<=tolerance && Math.abs(checkData[p+2]-targetB)<=tolerance && Math.abs(checkData[p+3]-targetA)<=tolerance;
             }
 
             while (pixelStack.length > 0) {
@@ -100,8 +111,6 @@
                 
                 let reachLeft = false, reachRight = false;
                 while (y < canvasH && matchColor(x, y)) {
-                    const p = (y * canvasW + x) * 4;
-                    data[p] = fillR; data[p+1] = fillG; data[p+2] = fillB; data[p+3] = fillA;
                     visited[y * canvasW + x] = 1;
                     
                     if (x > 0) {
@@ -117,7 +126,20 @@
                     y++;
                 }
             }
-            ctx.putImageData(imgData, 0, 0);
+
+            const fillCvs = document.createElement('canvas'); fillCvs.width = canvasW; fillCvs.height = canvasH;
+            const fillCtx = fillCvs.getContext('2d');
+            const fillImgData = fillCtx.createImageData(canvasW, canvasH);
+            const fd = fillImgData.data;
+            for(let i=0; i<canvasW*canvasH; i++) {
+                if(visited[i]) { fd[i*4] = fillR; fd[i*4+1] = fillG; fd[i*4+2] = fillB; fd[i*4+3] = fillA; }
+            }
+            fillCtx.putImageData(fillImgData, 0, 0);
+
+            ctx.globalCompositeOperation = 'source-over';
+            if (gap > 0) {
+                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { ctx.drawImage(fillCvs, Math.cos(a)*gap, Math.sin(a)*gap); }
+            } else { ctx.drawImage(fillCvs, 0, 0); }
         }
 
         function connectWebSocket() {
@@ -139,57 +161,104 @@
                     audio.play().catch(e => console.log("오디오 재생 에러:", e));
                 } 
                 else if (data.type === 'clear') {
-                    canvas.style.opacity = '1'; ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    canvasContainer.style.opacity = '1'; 
+                    Object.values(layerContexts).forEach(ctx => ctx.clearRect(0, 0, 1920, 1080));
                 }
                 
                 else if (data.type === 'draw_frame') {
+                    let ctx = layerContexts['default'];
+                    if (!ctx) {
+                        canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
+                        ctx = document.getElementById('default-canvas').getContext('2d');
+                        layerContexts['default'] = ctx;
+                        canvasContainer.style.opacity = '1';
+                    }
                     const img = new Image();
                     img.onload = () => {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height); 
-                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+                        ctx.clearRect(0, 0, 1920, 1080);
+                        ctx.drawImage(img, 0, 0, 1920, 1080);
                     };
                     img.src = data.src;
                 }
-
-                // ✨ 채우기(버킷) 웹소켓 수신 처리 추가
-                else if (data.type === 'fill') {
-                    doFloodFill(ctx, data.point.x, data.point.y, data.color, data.tolerance, data.gapSize || 0);
-                }
-
-                else if (data.type === 'start_path') { lastPoint = data.point; } 
-                else if (data.type === 'draw_line') {
-                    if (!lastPoint) return;
-                    renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, data.point.x, data.point.y, data.point.w, data.color, data.color === 'erase');
-                    lastPoint = data.point;
-                } 
-                else if (data.type === 'draw_shape') {
-                    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
-                    ctx.strokeStyle = data.color; ctx.lineWidth = data.width; ctx.globalCompositeOperation = 'source-over';
-                    
-                    if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); ctx.stroke(); } 
-                    else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
-                    else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
-                    
-                    else if (data.shape === 'text') {
-                        ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
-                        ctx.fillStyle = data.color; ctx.textBaseline = 'top';
-                        const lines = data.end.text.split('\n'); let curY = data.start.y;
-                        for(let line of lines) { ctx.fillText(line, data.start.x, curY); curY += data.width * 1.2; }
-                    }
-                    
-                    else if (data.shape === 'raster_image') {
-                        const img = new Image();
-                        img.onload = () => {
-                            ctx.save();
-                            ctx.translate(data.cx, data.cy); ctx.rotate(data.angle);
-                            ctx.drawImage(img, -data.width/2, -data.height/2, data.width, data.height);
-                            ctx.restore();
-                        };
-                        img.src = data.src;
-                    }
-                }
+                
                 else if (data.type === 'fade_out') { 
-                    canvas.style.opacity = '0'; 
+                    canvasContainer.style.opacity = '0';
+                }
+                
+                // ✨ 레이어 렌더링 및 개별 그리기 명령 처리
+                else {
+                    // 1. 송신측에서 보낸 레이어 초기화 명령(init_layers) 처리
+                    if (data.type === 'draw_shape' && data.shape === 'init_layers') {
+                        canvasContainer.innerHTML = '';
+                        layerContexts = {};
+                        data.layers.forEach((lInfo, index) => {
+                            const cvs = document.createElement('canvas');
+                            cvs.width = 1920; cvs.height = 1080;
+                            cvs.style.position = 'absolute';
+                            cvs.style.top = '0'; cvs.style.left = '0';
+                            cvs.style.zIndex = index + 1; // Z-index 순서대로 겹치기
+                            cvs.style.opacity = lInfo.opacity; // 레이어 개별 투명도
+                            cvs.style.mixBlendMode = lInfo.blendMode === 'normal' ? 'source-over' : lInfo.blendMode; // 레이어 블렌드모드
+                            canvasContainer.appendChild(cvs);
+                            layerContexts[lInfo.id] = cvs.getContext('2d');
+                        });
+                        canvasContainer.style.opacity = '1';
+                        return;
+                    }
+
+                    // 2. 그려야 할 레이어 타겟 찾기
+                    let ctx;
+                    if (data.layerId && layerContexts[data.layerId]) {
+                        ctx = layerContexts[data.layerId];
+                    } else {
+                        // 하위 호환성 및 오류 방지용 기본 캔버스 생성
+                        ctx = layerContexts['default'];
+                        if (!ctx) {
+                            canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
+                            ctx = document.getElementById('default-canvas').getContext('2d');
+                            layerContexts['default'] = ctx;
+                            canvasContainer.style.opacity = '1';
+                        }
+                    }
+
+                    if (data.type === 'fill') {
+                        doFloodFill(ctx, data.point.x, data.point.y, data.color, data.tolerance, data.gapSize || 0);
+                    }
+                    else if (data.type === 'start_path') { lastPoint = data.point; } 
+                    else if (data.type === 'draw_line') {
+                        if (!lastPoint) return;
+                        renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, data.point.x, data.point.y, data.point.w, data.color, data.color === 'erase');
+                        lastPoint = data.point;
+                    } 
+                    else if (data.type === 'draw_shape') {
+                        if (data.shape === 'clear') {
+                            ctx.clearRect(0, 0, 1920, 1080);
+                            return;
+                        }
+
+                        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+                        ctx.strokeStyle = data.color; ctx.lineWidth = data.width; ctx.globalCompositeOperation = 'source-over';
+                        
+                        if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); ctx.stroke(); } 
+                        else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); } 
+                        else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                        else if (data.shape === 'text') {
+                            ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
+                            ctx.fillStyle = data.color; ctx.textBaseline = 'top';
+                            const lines = data.end.text.split('\n'); let curY = data.start.y;
+                            for(let line of lines) { ctx.fillText(line, data.start.x, curY); curY += data.width * 1.2; }
+                        }
+                        else if (data.shape === 'raster_image') {
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.save();
+                                ctx.translate(data.cx, data.cy); ctx.rotate(data.angle);
+                                ctx.drawImage(img, -data.width/2, -data.height/2, data.width, data.height);
+                                ctx.restore();
+                            };
+                            img.src = data.src;
+                        }
+                    }
                 }
             };
             ws.onclose = () => { setTimeout(connectWebSocket, 3000); };
