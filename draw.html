@@ -1331,8 +1331,85 @@
                 return wrapper;
             }
 
-            document.getElementById('image-load-file').addEventListener('change', (e) => {
-                const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
+            // ✨ 이미지 및 GIF 파일 불러오기 로직
+            document.getElementById('image-load-file').addEventListener('change', async (e) => {
+                const file = e.target.files[0]; 
+                if (!file) return; 
+
+                // 🌟 GIF 파일인 경우 (다중 프레임 분할 처리)
+                if (file.type === 'image/gif') {
+                    if (!('ImageDecoder' in window)) {
+                        alert('현재 브라우저는 GIF 분할 기능을 지원하지 않습니다. 최신 크롬(Chrome)이나 엣지(Edge)를 사용해 주세요.');
+                        e.target.value = '';
+                        return;
+                    }
+
+                    try {
+                        // 사용자의 편의를 위해 '다중 프레임 전송' 모드를 자동으로 켭니다.
+                        const chkAnim = document.getElementById('chk-animation-mode');
+                        if (chkAnim && !chkAnim.checked) {
+                            chkAnim.checked = true;
+                            chkAnim.dispatchEvent(new Event('change')); // 연관된 UI(반복 횟수 등) 표시 이벤트 발생
+                        }
+
+                        // 브라우저 내장 디코더로 GIF 해독
+                        const decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
+                        await decoder.tracks.ready;
+                        const track = decoder.tracks.selectedTrack;
+                        const frameCount = track.frameCount;
+
+                        for (let i = 0; i < frameCount; i++) {
+                            const result = await decoder.decode({ frameIndex: i });
+                            const imageFrame = result.image;
+                            
+                            // 프레임 지속 시간 추출 (마이크로초 -> 밀리초 변환)
+                            const delayMs = imageFrame.duration ? imageFrame.duration / 1000 : 100; 
+
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = imageFrame.displayWidth;
+                            tempCanvas.height = imageFrame.displayHeight;
+                            tempCanvas.getContext('2d').drawImage(imageFrame, 0, 0);
+                            imageFrame.close();
+
+                            // 첫 프레임은 현재 화면에 넣고, 두 번째 프레임부터는 자동으로 새 프레임을 생성하여 붙입니다.
+                            if (i > 0) {
+                                createNewFrame(); 
+                            }
+
+                            // 추출한 딜레이를 현재 프레임의 재생 시간에 자동 적용
+                            const currentF = frames.find(f => f.id === currentFrameId);
+                            if (currentF) {
+                                currentF.duration = delayMs;
+                            }
+
+                            // 추출한 프레임을 캔버스에 조작 박스(transform_box) 형태로 배치
+                            const scale = Math.min(800 / tempCanvas.width, 800 / tempCanvas.height, 1);
+                            const customCvs = document.createElement('canvas');
+                            customCvs.width = tempCanvas.width; 
+                            customCvs.height = tempCanvas.height;
+                            customCvs.getContext('2d').drawImage(tempCanvas, 0, 0);
+
+                            const wrapper = createTransformObject('transform_box', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, tempCanvas.width * scale, tempCanvas.height * scale, customCvs);
+                            const newLayer = layers.find(l => l.element === wrapper);
+                            if (newLayer) { 
+                                newLayer.name = `GIF 프레임 ${i + 1}`; 
+                                renderLayerUI(); 
+                            }
+                        }
+                        
+                        renderFrameUI(); // 하단 프레임 목록 UI 새로고침
+                        alert(`GIF 애니메이션 (${frameCount}프레임) 불러오기 완료!`);
+                    } catch (err) {
+                        console.error("GIF Parsing Error:", err);
+                        alert("GIF 파일을 불러오는 중 오류가 발생했습니다.");
+                    }
+                    
+                    e.target.value = '';
+                    return; // GIF 처리가 끝났으므로 여기서 함수 종료
+                }
+
+                // 🌟 기존 일반 이미지(PNG/JPG 등) 처리 로직
+                const reader = new FileReader();
                 reader.onload = (event) => {
                     const img = new Image(); img.src = event.target.result;
                     img.onload = () => {
@@ -2720,7 +2797,7 @@
                     }
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
             };
-            
+
             async function checkNoticePopup() {
                 try {
                     const response = await fetch(`${API_BASE}/api/settings`);
