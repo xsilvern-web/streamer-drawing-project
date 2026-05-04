@@ -213,13 +213,19 @@ async def process_drawing_queue():
         payload = await drawing_queue.get()
         skip_current_drawing = False 
         
-        # ✨ [추가] 대기열(큐)에서 자기 차례가 되어 실제로 화면에 그려지기 직전에 알림을 보냅니다!
+        # ✨ 1. DB에서 설정값(화면 유지 시간) 불러오기
+        settings = get_db_settings()
+        display_duration = settings.get("display_duration", 8)
+        
+        # ✨ 2. 알림창 데이터 파싱
         name = payload.get("name", "익명")
         title = payload.get("title", "제목없음")
         profile_image = payload.get("profileImage", "")
         
+        # ✨ 3. 화면을 싹 비우고(clear) 알림창(alert) 띄우기
         for connection in active_connections:
             try: 
+                await connection.send_json({"type": "clear"})
                 await connection.send_json({
                     "type": "alert", 
                     "name": name, 
@@ -228,34 +234,20 @@ async def process_drawing_queue():
                 })
             except: pass
         
-        # 이후 기존 로직 유지
+        # 4. 그리기 데이터 파싱
         drawing_data = payload.get("drawingData", [])
         is_animation = isinstance(drawing_data, dict) and drawing_data.get("isAnimation")
-        # ... (이하 생략) ...
 
-        # 방송 화면에 유저 정보 알림 표시
-        for connection in active_connections:
-            try:
-                await connection.send_json({
-                    "type": "alert", "name": data.get("name"), 
-                    "profileImage": data.get("profileImage", ""), "title": data.get("title", "")
-                })
-                await connection.send_json({"type": "clear"})
-            except: pass
-
+        # 5. 애니메이션 처리
         if is_animation:
             import math
-            # ✨ 다중 프레임 애니메이션 처리 (최소 5회 vs 설정된 유지 시간 중 긴 쪽)
             frames = drawing_data.get("frames", [])
             if frames:
-                # 1루프(모든 프레임 1회 재생)에 걸리는 총 시간(초) 계산
                 one_loop_duration = sum(frame.get("duration", 500) / 1000.0 for frame in frames)
                 
                 total_loops = 5
                 if one_loop_duration > 0:
-                    # 설정된 화면 유지 시간(display_duration)을 채우기 위해 필요한 루프 횟수 (올림 처리)
                     required_loops = math.ceil(display_duration / one_loop_duration)
-                    # 5회와 비교하여 더 큰 값을 최종 반복 횟수로 결정
                     total_loops = max(5, required_loops)
 
                 for _ in range(total_loops):
@@ -263,64 +255,79 @@ async def process_drawing_queue():
                     for frame in frames:
                         if skip_current_drawing: break
                         src = frame.get("src")
-                        duration_sec = frame.get("duration", 500) / 1000.0 # ms를 초로 변환
+                        duration_sec = frame.get("duration", 500) / 1000.0 
                         for connection in active_connections:
                             try: await connection.send_json({"type": "draw_frame", "src": src})
                             except: pass
+                        # 애니메이션은 프레임별로 무조건 쉬어주어야 정상 작동합니다.
                         await asyncio.sleep(duration_sec)
+        
+        # 6. 일반 그림 처리
         else:
-            # 기존 처리 방식: 한 획씩 그리기 과정 노출
             if drawing_data and isinstance(drawing_data, list):
                 for item in drawing_data:
                     if skip_current_drawing: break
                     item_type = item.get("type", "path")
                     color = item.get("color")
+                    
                     if item_type == "path":
-                            points = item.get("points", [])
-                            color = item.get("color")
-                            layer_id = item.get("layerId")
-                            opacity = item.get("opacity", 1.0) # ✨ 누락되었던 브러시 투명도 데이터 추출
+                        points = item.get("points", [])
+                        layer_id = item.get("layerId")
+                        opacity = item.get("opacity", 1.0) 
 
-                            if not points: continue
+                        if not points: continue
+                        for connection in active_connections:
+                            try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
+                            except: pass
+                        
+                        for i, point in enumerate(points[1:]):
+                            if skip_current_drawing: break 
                             for connection in active_connections:
-                                try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
+                                try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
-                            
-                            for i, point in enumerate(points[1:]):
-                                if skip_current_drawing: break # 스킵 방어 로직 유지
-                                for connection in active_connections:
-                                    try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id, "opacity": opacity})
-                                    except: pass
-                            
-                            # ✨ 선 긋기가 끝났음을 알리고 임시 캔버스를 병합하라는 신호 전송
-                            if not skip_current_drawing:
-                                for connection in active_connections:
-                                    try: await connection.send_json({"type": "end_path", "layerId": layer_id, "opacity": opacity})
-                                    except: pass
+                            # 서버가 뻗지 않도록 50픽셀마다 아주 미세한 휴식(10배속)을 부여합니다.
+                            if i % 50 == 0: await asyncio.sleep(0.01)
+                        
+                        if not skip_current_drawing:
+                            for connection in active_connections:
+                                try: await connection.send_json({"type": "end_path", "layerId": layer_id, "opacity": opacity})
+                                except: pass
+                    
                     elif item_type == "fill":
-                        payload = item.copy()
+                        payload_msg = item.copy()
                         for connection in active_connections:
-                            try: await connection.send_json(payload)
+                            try: await connection.send_json(payload_msg)
                             except: pass
+                        await asyncio.sleep(0.03)
+                    
                     else:
-                        payload = item.copy()
-                        payload["type"] = "draw_shape"
-                        payload["shape"] = item_type
+                        payload_msg = item.copy()
+                        payload_msg["type"] = "draw_shape"
+                        payload_msg["shape"] = item_type
                         for connection in active_connections:
-                            try: await connection.send_json(payload)
+                            try: await connection.send_json(payload_msg)
                             except: pass
-                
-                # 다 그린 뒤 설정된 시간(초) 만큼 대기
-                await asyncio.sleep(display_duration)
+                        await asyncio.sleep(0.02)
             
-        # 모든 과정 및 대기가 끝나면 페이드아웃
+        # ✨ 7. 그리기가 모두 끝난 뒤 DB 설정시간(display_duration) 만큼 대기
+        if not skip_current_drawing:
+            await asyncio.sleep(display_duration)
+        
+        # ✨ 8. 대기가 끝나면 화면 서서히 지우기 (fade_out)
         for connection in active_connections:
             try: 
-                await connection.send_json({"type": "done"})
                 await connection.send_json({"type": "fade_out"})
             except: pass
             
-        await asyncio.sleep(1.5)
+        await asyncio.sleep(1.5) # 서서히 사라질 시간을 줌
+        
+        # ✨ 9. 완전히 사라지면 확실하게 내부 캔버스 데이터 클리어 (다음 그림과 섞임 방지)
+        for connection in active_connections:
+            try: 
+                await connection.send_json({"type": "clear"})
+            except: pass
+
+        # 큐 작업 완료 보고
         drawing_queue.task_done()
 
 async def auto_delete_old_data():
