@@ -1368,7 +1368,6 @@
                             const result = await decoder.decode({ frameIndex: i });
                             const imageFrame = result.image;
                             
-                            // 프레임 지속 시간 추출 (마이크로초 -> 밀리초 변환)
                             const delayMs = imageFrame.duration ? imageFrame.duration / 1000 : 100; 
 
                             const tempCanvas = document.createElement('canvas');
@@ -1377,8 +1376,9 @@
                             tempCanvas.getContext('2d').drawImage(imageFrame, 0, 0);
                             imageFrame.close();
 
-                            // 첫 프레임은 현재 화면에 넣고, 두 번째 프레임부터는 자동으로 새 프레임을 생성하여 붙입니다.
                             if (i > 0) {
+                                // ✨ 핵심 수정: ID 중복 생성을 막기 위해 프레임 생성 전 2ms(0.002초) 대기합니다.
+                                await new Promise(resolve => setTimeout(resolve, 2));
                                 createNewFrame(); 
                             }
 
@@ -1658,31 +1658,34 @@
                         rasterBtn.onclick = (e) => { e.stopPropagation(); applyTransform(l.id); };
                         btnGroup.appendChild(rasterBtn);
                     }
-
-                    // ✨ 펜 조작을 위한 레이어 상/하 이동 버튼 추가
+                    // ✨ 위로 올리기 (화면의 앞으로 가져오기 -> 인덱스 증가)
                     const upBtn = document.createElement('button');
                     upBtn.innerText = '▲'; 
                     upBtn.style.cssText = 'padding: 2px 6px; border-radius: 3px; border: none; cursor: pointer; font-size: 10px; background: #555; color: white;';
                     upBtn.onclick = (e) => {
                         e.stopPropagation();
                         const idx = layers.findIndex(layer => layer.id === l.id);
-                        if (idx > 0) {
-                            const temp = layers[idx - 1]; layers[idx - 1] = layers[idx]; layers[idx] = temp;
+                        if (idx < layers.length - 1) { // 배열의 뒤쪽(위층)으로 이동
+                            const temp = layers[idx + 1]; layers[idx + 1] = layers[idx]; layers[idx] = temp;
                             updateLayersZIndex(); renderLayerUI();
                         }
                     };
                     
+                    // ✨ 아래로 내리기 (화면의 뒤로 보내기 -> 인덱스 감소)
                     const downBtn = document.createElement('button');
                     downBtn.innerText = '▼'; 
                     downBtn.style.cssText = 'padding: 2px 6px; border-radius: 3px; border: none; cursor: pointer; font-size: 10px; background: #555; color: white;';
                     downBtn.onclick = (e) => {
                         e.stopPropagation();
                         const idx = layers.findIndex(layer => layer.id === l.id);
-                        if (idx < layers.length - 1) {
-                            const temp = layers[idx + 1]; layers[idx + 1] = layers[idx]; layers[idx] = temp;
+                        if (idx > 0) { // 배열의 앞쪽(아래층)으로 이동
+                            const temp = layers[idx - 1]; layers[idx - 1] = layers[idx]; layers[idx] = temp;
                             updateLayersZIndex(); renderLayerUI();
                         }
                     };
+                    
+                    btnGroup.appendChild(upBtn);
+                    btnGroup.appendChild(downBtn);
                     
                     btnGroup.appendChild(upBtn);
                     btnGroup.appendChild(downBtn);
@@ -1876,11 +1879,16 @@
                     const tol = tolInput ? parseInt(tolInput.value) : 50; 
                     const gap = gapInput ? parseInt(gapInput.value) : 1; 
 
+                    // ✨ 틈새를 더 꽉 채우기 위해 기본 확장(gap)을 1.5나 2 정도로 늘려주는 것도 팁입니다.
                     doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap);
-
                     history.push({
-                        layerId: activeLayerId, type: 'fill', color: currentColor,
-                        point: { x: pos.x, y: pos.y }, tolerance: tol, gapSize: gap
+                        type: 'fill',
+                        layerId: activeLayer.id,
+                        x: pos.x,
+                        y: pos.y,
+                        color: currentColor,
+                        tolerance: tol, // ✨ 추가: 오차 범위 전송
+                        gap: gap        // ✨ 추가: 확장 픽셀 전송
                     });
                     redoStack = [];
                     return;

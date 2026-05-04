@@ -272,7 +272,9 @@
                 }
 
                 if (data.type === 'fill') {
-                    doFloodFill(ctx, data.point.x, data.point.y, data.color, data.tolerance, data.gapSize || 0);
+                    const tol = data.tolerance !== undefined ? data.tolerance : 50;
+                    const gap = data.gap !== undefined ? data.gap : 1;
+                    doFloodFill(ctx, data.point.x, data.point.y, data.color, tol, gap);
                 }
                 else if (data.type === 'start_path') { 
                     lastPoint = data.point; 
