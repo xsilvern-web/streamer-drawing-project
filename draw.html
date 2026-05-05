@@ -6,6 +6,7 @@
     <title>시청자용 그리기 (애니메이션 지원 프로페셔널 에디터)</title>
     <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js"
         charset="utf-8"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.4.5/gifshot.min.js"></script>
     <style>
         body,
         html {
@@ -610,6 +611,7 @@
                     <button id="btn-export-png" class="btn-header"
                         style="background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 5px 10px; font-weight: bold;">PNG
                         내보내기</button>
+                    <button id="btn-export-gif" class="btn-header" style="background-color: #9c27b0; color: white; border: none; margin-left: 5px;">GIF 내보내기</button>
                     <label class="file-label">파일 불러오기<input type="file" id="file-input" accept=".json"></label>
                     <button id="btn-clear-all" class="btn-header"
                         style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️
@@ -678,8 +680,10 @@
             <div id="opt-fill" style="display: none; gap: 15px; align-items: center; font-size: 11px; color: #ccc;">
                 <label>색 유사도 (0~255) <input type="number" id="fill-tolerance" value="32" min="0" max="255"
                         style="width: 50px; text-align: center; margin-left: 5px;"></label>
-                <label title="웹 캔버스 한계상 기초적인 형태만 지원합니다">틈새 닫기 강도 <input type="number" id="fill-gap" value="0" min="0"
-                        max="20" style="width: 50px; text-align: center; margin-left: 5px;"></label>
+                <label title="웹 캔버스 한계상 기초적인 형태만 지원합니다">틈새 닫기 <input type="number" id="fill-gap" value="0" min="0"
+                        max="20" style="width: 40px; text-align: center; margin-left: 5px;"></label>
+                <!-- ✨ 모든 레이어 참조 체크박스 추가 -->
+                <label style="cursor: pointer;"><input type="checkbox" id="fill-sample-all" style="margin: 0 3px 0 0;">모든 레이어 참조</label>
             </div>
         </div>
         
@@ -1859,15 +1863,41 @@
                 }
             }
 
-            function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
+            function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap, sampleAllLayers = false, allLayers = []) {
                 const canvasW = ctx.canvas.width; const canvasH = ctx.canvas.height;
-                const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
-                const data = imgData.data;
+                let sampleData;
+
+                if (sampleAllLayers && allLayers && allLayers.length > 0) {
+                    const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+                    const offCtx = offCvs.getContext('2d');
+                    const sortedLayers = [...allLayers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0));
+                    
+                    sortedLayers.forEach(l => {
+                        offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                        let mode = l.blendMode || 'normal'; if (mode === 'normal') mode = 'source-over';
+                        offCtx.globalCompositeOperation = mode;
+                        if (l.type === 'canvas' && l.canvas) { offCtx.drawImage(l.canvas, 0, 0); }
+                        else if (l.type === 'raster_image' || l.type === 'transform_box') {
+                            const box = l.element; const contentCvs = box.querySelector('canvas.content');
+                            if (contentCvs) {
+                                const w = box.offsetWidth, h = box.offsetHeight;
+                                const cx = parseFloat(box.style.left) + w / 2, cy = parseFloat(box.style.top) + h / 2;
+                                let angle = 0; const tr = window.getComputedStyle(box).transform;
+                                if (tr !== 'none') angle = Math.atan2(tr.split(',')[1], tr.split(',')[0]);
+                                offCtx.save(); offCtx.translate(cx, cy); offCtx.rotate(angle); offCtx.drawImage(contentCvs, -w/2, -h/2, w, h); offCtx.restore();
+                            }
+                        }
+                    });
+                    sampleData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+                } else {
+                    sampleData = ctx.getImageData(0, 0, canvasW, canvasH).data;
+                }
+
                 const sx = Math.floor(startX); const sy = Math.floor(startY);
                 if (sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
 
                 const startPos = (sy * canvasW + sx) * 4;
-                const targetR = data[startPos], targetG = data[startPos + 1], targetB = data[startPos + 2], targetA = data[startPos + 3];
+                const targetR = sampleData[startPos], targetG = sampleData[startPos + 1], targetB = sampleData[startPos + 2], targetA = sampleData[startPos + 3];
 
                 const m = colorStr.match(/[\d.]+/g);
                 if (!m || m.length < 3) return;
@@ -1875,13 +1905,19 @@
 
                 if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
 
-                let checkData = data;
+                let checkData = sampleData;
                 if (gap > 0) {
+                    const baseCvs = document.createElement('canvas'); baseCvs.width = canvasW; baseCvs.height = canvasH;
+                    const baseCtx = baseCvs.getContext('2d');
+                    const baseImgData = baseCtx.createImageData(canvasW, canvasH);
+                    baseImgData.data.set(sampleData);
+                    baseCtx.putImageData(baseImgData, 0, 0);
+
                     const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
                     const offCtx = offCvs.getContext('2d');
-                    offCtx.drawImage(ctx.canvas, 0, 0);
+                    offCtx.drawImage(baseCvs, 0, 0);
                     offCtx.globalAlpha = 1.0; offCtx.globalCompositeOperation = 'source-over';
-                    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) { offCtx.drawImage(ctx.canvas, Math.cos(a) * gap, Math.sin(a) * gap); }
+                    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) { offCtx.drawImage(baseCvs, Math.cos(a) * gap, Math.sin(a) * gap); }
                     checkData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
                 }
 
@@ -1898,14 +1934,11 @@
                 while (pixelStack.length > 0) {
                     const [cx, cy] = pixelStack.pop();
                     let x = cx, y = cy;
-
                     while (y >= 0 && matchColor(x, y)) y--;
                     y++;
-
                     let reachLeft = false, reachRight = false;
                     while (y < canvasH && matchColor(x, y)) {
                         visited[y * canvasW + x] = 1;
-
                         if (x > 0) {
                             if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
                                 if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
@@ -2042,19 +2075,21 @@
                 if (currentTool === 'fill') {
                     const tolInput = document.getElementById('fill-tolerance');
                     const gapInput = document.getElementById('fill-gap');
+                    const sampleAllInput = document.getElementById('fill-sample-all');
                     const tol = tolInput ? parseInt(tolInput.value) : 50; 
                     const gap = gapInput ? parseInt(gapInput.value) : 1; 
+                    const sampleAll = sampleAllInput ? sampleAllInput.checked : false;
 
-                    // ✨ 틈새를 더 꽉 채우기 위해 기본 확장(gap)을 1.5나 2 정도로 늘려주는 것도 팁입니다.
-                    doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap);
+                    doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers);
+                    
                     history.push({
                         type: 'fill',
                         layerId: activeLayer.id,
-                        x: pos.x,
-                        y: pos.y,
+                        point: { x: pos.x, y: pos.y }, // index.html과 호환되게 객체화
                         color: currentColor,
-                        tolerance: tol, // ✨ 추가: 오차 범위 전송
-                        gap: gap        // ✨ 추가: 확장 픽셀 전송
+                        tolerance: tol,
+                        gap: gap,
+                        sampleAllLayers: sampleAll // 데이터 전송
                     });
                     redoStack = [];
                     return;
@@ -2264,7 +2299,11 @@
                         ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height); ctx.restore();
                     }
                     else if (item.type === 'fill') {
-                        doFloodFill(ctx, item.point.x, item.point.y, item.color, item.tolerance, item.gapSize);
+                        // 이전 버전과의 호환성 유지 및 오타 대응
+                        const px = item.point ? item.point.x : item.x;
+                        const py = item.point ? item.point.y : item.y;
+                        const gapVal = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
+                        doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, layers);
                     }
                     else if (item.type === 'path' || !item.type) {
                         if (item.points.length === 0) continue;
@@ -2730,7 +2769,108 @@
                     }, index * 300);
                 });
             };
+            // ✨ GIF 내보내기 기능 구현
+document.getElementById('btn-export-gif').onclick = async () => {
+    if (frames.length === 0) return alert("프레임이 없습니다.");
+    
+    syncToFrame(); // 현재 작업 내용 동기화
 
+    // 텍스트/도형이 래스터화(확정) 되지 않았는지 체크
+    let hasUnrasterized = false;
+    frames.forEach(f => { if (f.layers.some(l => l.type === 'text' || l.type === 'transform_box')) hasUnrasterized = true; });
+    if (hasUnrasterized) {
+        return alert("확정되지 않은 객체가 있습니다. 모든 프레임에서 [확정]을 눌러주세요.");
+    }
+
+    const btn = document.getElementById('btn-export-gif');
+    const originalText = btn.innerText;
+    btn.innerText = "GIF 생성 중...";
+    btn.disabled = true;
+
+    // 1. 모든 프레임을 이미지(DataURL)로 변환
+    const images = [];
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = CANVAS_WIDTH;
+    tempCanvas.height = CANVAS_HEIGHT;
+    const tempCtx = tempCanvas.getContext('2d');
+
+    for (let f of frames) {
+        tempCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        
+        // 프레임 렌더링 (기존 PNG 내보내기 로직 활용)
+        const sortedLayers = [...f.layers].filter(l => l.visible).sort((a, b) => {
+            const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
+            const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
+            return zA - zB;
+        });
+
+        sortedLayers.forEach(l => {
+            tempCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+            let mode = l.blendMode || 'normal';
+            if (mode === 'normal') mode = 'source-over';
+            tempCtx.globalCompositeOperation = mode;
+
+            if (l.type === 'canvas' && l.canvas) {
+                tempCtx.drawImage(l.canvas, 0, 0);
+            } else if (l.type === 'raster_image' || l.type === 'transform_box') {
+                const box = l.element;
+                const contentCvs = box.querySelector('canvas.content');
+                if (contentCvs) {
+                    const w = box.offsetWidth, h = box.offsetHeight;
+                    const cx = parseFloat(box.style.left) + w / 2, cy = parseFloat(box.style.top) + h / 2;
+                    let angle = 0;
+                    const transform = window.getComputedStyle(box).transform;
+                    if (transform !== 'none') {
+                        const vals = transform.split('(')[1].split(')')[0].split(',');
+                        angle = Math.atan2(vals[1], vals[0]);
+                    }
+                    tempCtx.save();
+                    tempCtx.translate(cx, cy);
+                    tempCtx.rotate(angle);
+                    tempCtx.drawImage(contentCvs, -w / 2, -h / 2, w, h);
+                    tempCtx.restore();
+                }
+            }
+        });
+        images.push(tempCanvas.toDataURL('image/png'));
+    }
+
+    // 2. gifshot을 사용하여 GIF 생성
+    // 프레임들의 평균 속도 계산 (gifshot은 일괄 속도 권장)
+    const avgDuration = frames.reduce((acc, f) => acc + (f.duration || 500), 0) / frames.length;
+
+    gifshot.createGIF({
+        images: images,
+        gifWidth: CANVAS_WIDTH / 2, // 1920은 너무 커서 처리 속도를 위해 절반으로 줄임 (선택사항)
+        gifHeight: CANVAS_HEIGHT / 2,
+        interval: avgDuration / 1000, // ms를 초 단위로 변환
+        numWorkers: 4
+    }, function (obj) {
+        if (!obj.error) {
+            const link = document.createElement('a');
+            link.href = obj.image;
+            link.download = (document.getElementById('drawing-title').value || "animation") + ".gif";
+            link.click();
+        } else {
+            alert("GIF 생성 실패: " + obj.error);
+        }
+        btn.innerText = originalText;
+        btn.disabled = false;
+    });
+};
+
+// 💡 팁: 기존 [PNG 내보내기] 버튼 클릭 시 프레임이 많으면 물어보는 기능 추가
+const originalPngExport = document.getElementById('btn-export-png').onclick;
+document.getElementById('btn-export-png').onclick = function() {
+    if (frames.length > 1) {
+        if (confirm("프레임이 여러 개입니다. GIF 애니메이션으로 하나로 합쳐서 내보낼까요?\n(취소 누르면 기존처럼 개별 PNG들로 저장됩니다)")) {
+            document.getElementById('btn-export-gif').click();
+            return;
+        }
+    }
+    // 아니오를 누르거나 프레임이 하나면 기존 로직 실행
+    originalPngExport();
+};
             const topWrapper = document.getElementById('top-wrapper');
             const framePanel = document.getElementById('frame-panel');
             const btnToggleTop = document.getElementById('btn-toggle-top');
@@ -2853,6 +2993,11 @@
 
             btnSend.onclick = async () => {
                 if (isCooldown || !isDonationEnabled) return;
+
+                // ✨ 전송 전 확인 및 저장 권유 팝업 추가
+                if (!confirm("정말 보내시겠습니까?\n(만약의 사태를 대비해 작업을 미리 '파일 저장' 해주세요!)")) {
+                    return; // 취소를 누르면 전송을 중단합니다.
+                }
 
                 syncToFrame();
 

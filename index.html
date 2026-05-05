@@ -92,15 +92,36 @@
             }
         }
 
-        function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap) {
+        function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap, sampleAllLayers = false, layerContexts = null) {
             const canvasW = 1920; const canvasH = 1080;
-            const imgData = ctx.getImageData(0, 0, canvasW, canvasH);
-            const data = imgData.data;
+            let sampleData;
+
+            if (sampleAllLayers && layerContexts) {
+                const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+                const offCtx = offCvs.getContext('2d');
+                
+                // layerContexts에 등록된 화면(캔버스)을 z-index 순서대로 합침
+                const layers = Object.values(layerContexts).filter(c => c && c.canvasNode).sort((a, b) => {
+                    const zA = parseInt(a.canvasNode.style.zIndex) || 0;
+                    const zB = parseInt(b.canvasNode.style.zIndex) || 0;
+                    return zA - zB;
+                });
+                
+                layers.forEach(c => {
+                    offCtx.globalAlpha = c.canvasNode.style.opacity || 1;
+                    offCtx.globalCompositeOperation = c.canvasNode.style.mixBlendMode || 'source-over';
+                    offCtx.drawImage(c.canvasNode, 0, 0);
+                });
+                sampleData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+            } else {
+                sampleData = ctx.getImageData(0, 0, canvasW, canvasH).data;
+            }
+
             const sx = Math.floor(startX); const sy = Math.floor(startY);
             if(sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
             
             const startPos = (sy * canvasW + sx) * 4;
-            const targetR = data[startPos], targetG = data[startPos+1], targetB = data[startPos+2], targetA = data[startPos+3];
+            const targetR = sampleData[startPos], targetG = sampleData[startPos+1], targetB = sampleData[startPos+2], targetA = sampleData[startPos+3];
             
             const m = colorStr.match(/[\d.]+/g);
             if(!m || m.length < 3) return;
@@ -108,13 +129,19 @@
             
             if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
 
-            let checkData = data;
+            let checkData = sampleData;
             if (gap > 0) {
+                const baseCvs = document.createElement('canvas'); baseCvs.width = canvasW; baseCvs.height = canvasH;
+                const baseCtx = baseCvs.getContext('2d');
+                const baseImgData = baseCtx.createImageData(canvasW, canvasH);
+                baseImgData.data.set(sampleData);
+                baseCtx.putImageData(baseImgData, 0, 0);
+
                 const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
                 const offCtx = offCvs.getContext('2d');
-                offCtx.drawImage(ctx.canvas, 0, 0);
+                offCtx.drawImage(baseCvs, 0, 0);
                 offCtx.globalAlpha = 1.0; offCtx.globalCompositeOperation = 'source-over';
-                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { offCtx.drawImage(ctx.canvas, Math.cos(a)*gap, Math.sin(a)*gap); }
+                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { offCtx.drawImage(baseCvs, Math.cos(a)*gap, Math.sin(a)*gap); }
                 checkData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
             }
 
@@ -131,14 +158,11 @@
             while (pixelStack.length > 0) {
                 const [cx, cy] = pixelStack.pop();
                 let x = cx, y = cy;
-                
                 while (y >= 0 && matchColor(x, y)) y--;
                 y++;
-                
                 let reachLeft = false, reachRight = false;
                 while (y < canvasH && matchColor(x, y)) {
                     visited[y * canvasW + x] = 1;
-                    
                     if (x > 0) {
                         if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
                             if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
@@ -274,7 +298,8 @@
                 if (data.type === 'fill') {
                     const tol = data.tolerance !== undefined ? data.tolerance : 50;
                     const gap = data.gap !== undefined ? data.gap : 1;
-                    doFloodFill(ctx, data.point.x, data.point.y, data.color, tol, gap);
+                    const sampleAll = data.sampleAllLayers !== undefined ? data.sampleAllLayers : false;
+                    doFloodFill(ctx, data.point.x, data.point.y, data.color, tol, gap, sampleAll, layerContexts);
                 }
                 else if (data.type === 'start_path') { 
                     lastPoint = data.point; 
