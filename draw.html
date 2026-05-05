@@ -694,7 +694,11 @@
             </div>
         </div>
         
-        <div id="top-option-bar">
+        
+        
+        <div class="panel-toggle-h toggle-top" id="btn-toggle-top" title="상단바 숨기기">▲</div>
+    </div>
+    <div id="top-option-bar">
             <div style="font-size: 12px; font-weight: bold; color: #aaa;" id="current-tool-name">선택 및 조작</div>
 
             <div id="opt-text" style="display: none; gap: 10px; align-items: center;">
@@ -730,10 +734,6 @@
                 <button class="toolbar-btn" id="btn-bg-reset" style="background: #d32f2f; margin-left: 10px;">위치/크기 초기화</button>
             </div>
         </div>
-        
-        <div class="panel-toggle-h toggle-top" id="btn-toggle-top" title="상단바 숨기기">▲</div>
-    </div>
-
     <div id="floating-toolbar">
         <select id="tb-fontfamily"
             style="background:#333; color:white; padding:4px; border:1px solid #555; border-radius:4px;">
@@ -761,6 +761,8 @@
         <div style="font-size: 11px; color: #aaa; margin-bottom: 2px; text-align: center;">레이어 옵션</div>
         <!-- ✨ 현재 보이는 레이어들 중 선택된 것들을 병합 -->
         <button id="ctx-btn-merge-layers" class="sys-btn" style="background: #e65100; border-color: #e65100; padding: 4px;">선택 레이어 병합</button>
+        <!-- ✨ 레이어 삭제 버튼 추가 -->
+        <button id="ctx-btn-delete-layers" class="sys-btn" style="background: #d32f2f; border-color: #b71c1c; padding: 4px;">레이어 삭제</button>
     </div>
 
     <div class="app-body">
@@ -984,15 +986,6 @@
                         checkLiveStatus();
                     }
                 }
-
-                if (needsOptionBar) {
-                    const topWrapper = document.getElementById('top-wrapper');
-                    const btnToggleTop = document.getElementById('btn-toggle-top');
-                    if (topWrapper && topWrapper.classList.contains('collapsed')) {
-                        topWrapper.classList.remove('collapsed');
-                        if (btnToggleTop) btnToggleTop.innerText = '▲';
-                    }
-                }
             }
 
             let frames = [];
@@ -1167,7 +1160,16 @@
                 selectLayer(newLayerId);
                 updateOnionSkin();
             });
-
+            // ✨ 선택 레이어 삭제 버튼 클릭 로직
+            document.getElementById('ctx-btn-delete-layers')?.addEventListener('click', () => {
+                document.getElementById('layer-context-menu').style.display = 'none';
+                
+                if (selectedLayerIds.size > 0) {
+                    deleteLayer(selectedLayerIds);
+                } else if (activeLayerId) {
+                    deleteLayer(activeLayerId);
+                }
+            });
 
             function autoRasterizeAllTransforms() {
                 const transformLayers = layers.filter(l => l.type === 'transform_box');
@@ -1950,19 +1952,49 @@
                 renderLayerUI();
             }
 
-            function deleteLayer(id) {
-                if (confirm('이 레이어를 삭제하시겠습니까?')) {
+            // ✨ 단일 및 다중 레이어 동시 삭제를 지원하도록 업그레이드된 함수
+            function deleteLayer(idOrIds) {
+                let idsToDelete = [];
+                if (idOrIds instanceof Set) {
+                    idsToDelete = Array.from(idOrIds);
+                } else if (Array.isArray(idOrIds)) {
+                    idsToDelete = idOrIds;
+                } else {
+                    idsToDelete = [idOrIds];
+                }
+
+                // 모든 레이어를 지우려고 하면 방어
+                if (layers.length - idsToDelete.length <= 0) {
+                    return alert('최소 1개의 레이어는 남겨두어야 합니다.');
+                }
+
+                // 선택 개수에 따라 안내 팝업 문구 변경
+                const msg = idsToDelete.length > 1 
+                    ? `선택한 ${idsToDelete.length}개의 레이어를 삭제하시겠습니까?` 
+                    : '이 레이어를 삭제하시겠습니까?';
+
+                if (!confirm(msg)) return;
+
+                // 선택된 레이어 일괄 삭제
+                idsToDelete.forEach(id => {
                     const l = layers.find(layer => layer.id === id);
                     if (l) {
                         if (l.type === 'canvas' && l.canvas) l.canvas.remove(); 
                         else if (l.element) l.element.remove();
-                        layers = layers.filter(layer => layer.id !== id);
-                        if (activeLayerId === id) activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
-                        updateLayersZIndex(); renderLayerUI();
-                        
-                        selectLayer(activeLayerId);
                     }
+                });
+
+                layers = layers.filter(layer => !idsToDelete.includes(layer.id));
+                
+                // 만약 현재 선택된(작업 중이던) 레이어가 삭제되었다면, 맨 위 레이어로 이동
+                if (idsToDelete.includes(activeLayerId)) {
+                    activeLayerId = layers.length > 0 ? layers[layers.length - 1].id : null;
                 }
+                
+                selectedLayerIds.clear(); // 삭제 후 선택 상태 초기화
+                updateLayersZIndex(); 
+                renderLayerUI();
+                selectLayer(activeLayerId);
             }
 
             function renderLayerUI() {
@@ -3178,9 +3210,18 @@ document.getElementById('btn-export-png').onclick = function() {
             const btnToggleTop = document.getElementById('btn-toggle-top');
             const btnToggleBottom = document.getElementById('btn-toggle-bottom');
 
+            // ✨ 상단바 내용물 높이만큼만 정확하게 위로 접어주는 로직
             btnToggleTop.addEventListener('click', () => {
-                topWrapper.classList.toggle('collapsed');
-                btnToggleTop.innerText = topWrapper.classList.contains('collapsed') ? '▼' : '▲';
+                if (topWrapper.classList.contains('collapsed')) {
+                    topWrapper.style.marginTop = '0px';
+                    topWrapper.classList.remove('collapsed');
+                    btnToggleTop.innerText = '▲';
+                } else {
+                    const headerHeight = document.querySelector('.app-header').offsetHeight;
+                    topWrapper.style.marginTop = `-${headerHeight}px`;
+                    topWrapper.classList.add('collapsed');
+                    btnToggleTop.innerText = '▼';
+                }
             });
 
             btnToggleBottom.addEventListener('click', () => {
