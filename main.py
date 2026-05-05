@@ -291,16 +291,27 @@ async def process_drawing_queue():
             total_loops = min(20, max(1, int(repeat_count)))
 
             if frames:
-                for _ in range(total_loops):
+                # 1. 시청자 화면(index.html)으로 애니메이션 묶음 데이터를 한 번에 전송
+                for connection in active_connections:
+                    try: 
+                        await connection.send_json({
+                            "type": "play_animation", 
+                            "frames": frames, 
+                            "repeatCount": total_loops
+                        })
+                    except: pass
+                
+                # 2. 서버는 애니메이션이 끝날 때까지 대기 (스킵 감지를 위해 0.1초씩 쪼개어 쉼)
+                total_duration = sum(frame.get("duration", 500) for frame in frames) / 1000.0
+                total_sleep_time = total_duration * total_loops
+                sleep_intervals = int(total_sleep_time / 0.1)
+                
+                for _ in range(sleep_intervals):
                     if skip_current_drawing: break
-                    for frame in frames:
-                        if skip_current_drawing: break
-                        src = frame.get("src")
-                        duration_sec = frame.get("duration", 500) / 1000.0 
-                        for connection in active_connections:
-                            try: await connection.send_json({"type": "draw_frame", "src": src})
-                            except: pass
-                        await asyncio.sleep(duration_sec)
+                    await asyncio.sleep(0.1)
+                
+                if not skip_current_drawing:
+                    await asyncio.sleep(total_sleep_time % 0.1)
         else:
             if drawing_data and isinstance(drawing_data, list):
                 for item in drawing_data:

@@ -195,12 +195,16 @@
         // ✨ 캔버스 타이밍 오류를 막기 위한 메시지 대기열(Queue) 복구
         let messageQueue = [];
         let isProcessingQueue = false;
+        let isAnimationSkipped = false; // ✨ 스킵 감지용 전역 변수
 
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
             ws.onopen = () => { console.log("🟢 웹소켓 연결 성공!"); };
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
+                if (data.type === 'clear') {
+                    isAnimationSkipped = true; // ✨ 스킵 버튼을 누르면 애니메이션 즉시 중단
+                }
                 messageQueue.push(data);
                 processMessageQueue(); // 받은 즉시 순서대로 실행하도록 지시
             };
@@ -240,24 +244,50 @@
                 if (draftCanvas) draftCanvas.style.display = 'none';
                 alertContainer.classList.remove('show');
             }
-            else if (data.type === 'draw_frame') {
+            else if (data.type === 'play_animation') {
+                isAnimationSkipped = false;
+
                 if (!layerContexts['default'] || Object.keys(layerContexts).length > 1) {
                     canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
                     layerContexts = { 'default': document.getElementById('default-canvas').getContext('2d') };
                     canvasContainer.style.opacity = '1';
                 }
-                
                 let ctx = layerContexts['default'];
-                await new Promise(resolve => {
-                    const img = new Image();
-                    img.onload = () => {
+
+                // 1. 모든 프레임 이미지를 메모리에 미리 로드 (네트워크 지연 완벽 해결)
+                const loadedFrames = [];
+                for (let f of data.frames) {
+                    await new Promise(resolve => {
+                        const img = new Image();
+                        img.onload = () => {
+                            loadedFrames.push({ img: img, duration: f.duration || 500 });
+                            resolve();
+                        };
+                        img.onerror = resolve; 
+                        img.src = f.src;
+                    });
+                }
+
+                // 2. 캐싱된 이미지로 끊김 없이 정확한 설정 속도로 재생
+                for (let loop = 0; loop < data.repeatCount; loop++) {
+                    if (isAnimationSkipped) break;
+                    
+                    for (let f of loadedFrames) {
+                        if (isAnimationSkipped) break;
+                        
                         ctx.clearRect(0, 0, 1920, 1080);
-                        ctx.drawImage(img, 0, 0, 1920, 1080);
-                        resolve();
-                    };
-                    img.onerror = resolve;
-                    img.src = data.src;
-                });
+                        ctx.drawImage(f.img, 0, 0, 1920, 1080);
+                        
+                        // 지정된 프레임 속도(duration)만큼 정확히 대기 (스킵 감지를 위해 20ms 단위로 쪼갬)
+                        let elapsed = 0;
+                        while (elapsed < f.duration) {
+                            if (isAnimationSkipped) break;
+                            const sleepTime = Math.min(20, f.duration - elapsed);
+                            await new Promise(res => setTimeout(res, sleepTime));
+                            elapsed += sleepTime;
+                        }
+                    }
+                }
             }
             else if (data.type === 'fade_out') { 
                 canvasContainer.style.opacity = '0';
