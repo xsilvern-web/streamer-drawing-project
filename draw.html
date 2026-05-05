@@ -667,6 +667,7 @@
                     </div>
 
                     <button id="btn-send">화면에 띄우기</button>
+                    <button id="btn-send-test" style="background: #9c27b0; color: white; border: none; font-size: 15px; padding: 8px 20px; font-weight: bold; border-radius: 4px; margin-left: 5px;">테스트전송 개발자용 누르지마셈</button>
                 </div>
             </div>
             <div class="disclaimer">
@@ -3077,12 +3078,13 @@ document.getElementById('btn-export-png').onclick = function() {
                 document.getElementById('label-skip-process').style.display = e.target.checked ? 'none' : 'flex'; 
             });
 
-            btnSend.onclick = async () => {
+            // ✨ 기존 전송 로직을 별도의 함수로 통합 분리 (isTest 파라미터 추가)
+            async function executeDrawingSend(isTest = false) {
                 if (isCooldown || !isDonationEnabled) return;
 
-                // ✨ 전송 전 확인 및 저장 권유 팝업 추가
-                if (!confirm("정말 보내시겠습니까?\n(만약의 사태를 대비해 작업을 미리 '파일 저장' 해주세요!)")) {
-                    return; // 취소를 누르면 전송을 중단합니다.
+                // 테스트가 아닐 때(실제 방송 전송일 때)만 팝업을 띄움
+                if (!isTest && !confirm("정말 보내시겠습니까?\n(만약의 사태를 대비해 작업을 미리 '파일 저장' 해주세요!)")) {
+                    return; 
                 }
 
                 syncToFrame();
@@ -3138,7 +3140,7 @@ document.getElementById('btn-export-png').onclick = function() {
                        animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
                     });
 
-                    // ✨ 입력된 반복 횟수를 가져오며, 1~20회 사이로 강제 조정하여 서버에 함께 전송합니다.
+                    // 입력된 반복 횟수를 가져오며, 1~20회 사이로 강제 조정하여 서버에 함께 전송합니다.
                     const repeatCount = Math.min(20, Math.max(1, parseInt(document.getElementById('anim-repeat-count').value) || 5));
                     finalPayload = { isAnimation: true, frames: animationPayload, repeatCount: repeatCount };
                 } else {
@@ -3161,13 +3163,13 @@ document.getElementById('btn-export-png').onclick = function() {
                         }))
                     });
 
-                    // ✨ 과정 생략 체크박스 값 확인
+                    // 과정 생략 체크박스 값 확인
                     const skipProcess = document.getElementById('chk-skip-process').checked;
 
                     validLayers.forEach(l => {
                         if (l.type === 'canvas') {
                             if (skipProcess) {
-                                // ✨ 과정 생략이 체크되어 있다면 캔버스를 즉시 이미지로 구워서 보냅니다.
+                                // 과정 생략이 체크되어 있다면 캔버스를 즉시 이미지로 구워서 보냅니다.
                                 singleHistoryPayload.push({ 
                                     type: 'raster_image', 
                                     layerId: l.id, 
@@ -3202,35 +3204,42 @@ document.getElementById('btn-export-png').onclick = function() {
                 const finalProfileImage = (useProfileCheckbox.checked && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
                 const payload = { name: customName, email: loggedInUser.email, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
 
-                try {
-                    const res = await fetch(`${API_BASE}/api/submit-drawing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (res.ok) {
-                        alert("전송 성공!"); clearMyCanvas(); document.getElementById('drawing-title').value = '';
-                        
-                        isCooldown = true;
-                        btnSend.disabled = true;
-                        btnSend.style.backgroundColor = '#777';
-                        btnSend.style.cursor = 'not-allowed';
-                        
-                        let timeLeft = 30;
-                        btnSend.innerText = `전송 완료 (${timeLeft}초)`;
-                        
-                        const cooldownTimer = setInterval(() => {
-                            timeLeft--;
-                            if (timeLeft > 0) {
-                                btnSend.innerText = `전송 완료 (${timeLeft}초)`;
-                            } else {
-                                clearInterval(cooldownTimer);
-                                isCooldown = false;
-                                checkDonationStatus();
-                            }
-                        }, 1000);
+                // ✨ isTest 여부에 따라 서버 엔드포인트 변경
+                const targetUrl = isTest ? `${API_BASE}/api/submit-test` : `${API_BASE}/api/submit-drawing`;
 
+                try {
+                    const res = await fetch(targetUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (res.ok) {
+                        alert(isTest ? "테스트 전송 성공! (테스트 화면을 확인하세요)" : "방송 전송 성공!"); 
+                        
+                        // 테스트가 아닐 때만 캔버스를 지우고 쿨타임을 돌림
+                        if (!isTest) {
+                            clearMyCanvas(); document.getElementById('drawing-title').value = '';
+                            isCooldown = true;
+                            btnSend.disabled = true;
+                            btnSend.style.backgroundColor = '#777';
+                            btnSend.style.cursor = 'not-allowed';
+                            
+                            let timeLeft = 30;
+                            btnSend.innerText = `전송 완료 (${timeLeft}초)`;
+                            const cooldownTimer = setInterval(() => {
+                                timeLeft--;
+                                if (timeLeft > 0) btnSend.innerText = `전송 완료 (${timeLeft}초)`;
+                                else { clearInterval(cooldownTimer); isCooldown = false; checkDonationStatus(); }
+                            }, 1000);
+                        }
                     } else {
                         const data = await res.json(); alert("전송 실패: " + (data.detail || "서버 오류"));
                     }
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
-            };
+            }
+
+            // ✨ 분리된 함수를 각각의 버튼에 연결
+            const sendBtn = document.getElementById('btn-send');
+            if (sendBtn) sendBtn.onclick = () => executeDrawingSend(false);
+            
+            const testBtn = document.getElementById('btn-send-test');
+            if (testBtn) testBtn.onclick = () => executeDrawingSend(true);
 
             async function checkNoticePopup() {
                 try {

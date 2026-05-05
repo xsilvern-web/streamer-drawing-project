@@ -25,6 +25,7 @@ app.add_middleware(
 )
 
 active_connections = []
+test_connections = []
 drawing_queue = asyncio.Queue()
 
 skip_current_drawing = False
@@ -121,7 +122,27 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
         cursor.execute("UPDATE settings SET notice_text = %s WHERE id = 1", (notice_text,))
     conn.commit()
     conn.close()
+# ✨ test.html 서빙 라우터 추가
+@app.get("/test")
+async def serve_test_page(): return FileResponse("test.html")
 
+# ✨ 테스트 데이터 수신 엔드포인트
+@app.post("/api/submit-test")
+async def submit_test(request: Request):
+    data = await request.json()
+    data["is_test"] = True # 테스트용 데이터라는 꼬리표(플래그) 부착
+    await drawing_queue.put(data)
+    return {"status": "success"}
+
+# ✨ 테스트 전용 웹소켓 (이곳으로 연결된 화면만 테스트 그림을 받음)
+@app.websocket("/ws/test")
+async def websocket_test_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    test_connections.append(websocket)
+    try:
+        while True: await websocket.receive_text()
+    except: pass
+    finally: test_connections.remove(websocket)
 @app.post("/api/skip")
 async def skip_drawing():
     global skip_current_drawing
@@ -261,9 +282,12 @@ async def process_drawing_queue():
     global skip_current_drawing 
     
     while True:
-        try: # 💡 에러 발생 시 대기열(Queue)이 죽지 않도록 보호하는 안전망
+        try: 
             payload = await drawing_queue.get()
             skip_current_drawing = False 
+            
+            # ✨ 테스트 꼬리표가 있으면 테스트 채널로, 없으면 실제 방송 채널로 보낼 목적지 설정
+            target_connections = test_connections if payload.get("is_test") else active_connections
             
             settings = get_db_settings()
             display_duration = settings.get("display_duration", 8)
