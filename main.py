@@ -323,7 +323,6 @@ async def process_drawing_queue():
                             for connection in active_connections:
                                 try: await connection.send_json({"type": "draw_line", "point": point, "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
-                            if i % 50 == 0: await asyncio.sleep(0.01)
                         
                         if not skip_current_drawing:
                             for connection in active_connections:
@@ -335,7 +334,6 @@ async def process_drawing_queue():
                         for connection in active_connections:
                             try: await connection.send_json(payload_msg)
                             except: pass
-                        await asyncio.sleep(0.03)
                     
                     else:
                         payload_msg = item.copy()
@@ -344,7 +342,6 @@ async def process_drawing_queue():
                         for connection in active_connections:
                             try: await connection.send_json(payload_msg)
                             except: pass
-                        await asyncio.sleep(0.02)
             
         if not skip_current_drawing:
             await asyncio.sleep(display_duration)
