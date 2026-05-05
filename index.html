@@ -259,8 +259,11 @@
                 if (!layerContexts['default'] || Object.keys(layerContexts).length > 1) {
                     canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
                     layerContexts = { 'default': document.getElementById('default-canvas').getContext('2d') };
-                    canvasContainer.style.opacity = '1';
                 }
+                
+                // ✨ 핵심 수정: 캔버스 생성 여부와 상관없이 무조건 화면 투명도를 100%(보임)로 복구합니다.
+                canvasContainer.style.opacity = '1';
+
                 let ctx = layerContexts['default'];
 
                 for (let loop = 0; loop < data.repeatCount; loop++) {
