@@ -363,13 +363,22 @@
             transform-origin: top left;
             touch-action: none;
             box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
-            
-            /* ✨ 캔버스 테두리를 흰색 반투명 점선으로 표시 (레이아웃 크기에 영향을 주지 않음) */
-            outline: 2px dashed rgba(255, 255, 255, 0.6);
-            outline-offset: -2px;
-            
-            /* ✨ 방송 배경을 확대/이동할 때 캔버스 영역 밖으로 삐져나가지 않게 깔끔히 잘라줌 */
+            /* ✨ 화면 밖으로 삐져나가는 배경을 잘라주는 역할 유지 */
             overflow: hidden;
+        }
+
+        /* ✨ 캔버스 테두리를 모든 레이어의 최상단(가장 앞)으로 강제 배치 */
+        #layer-wrapper::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            pointer-events: none; /* 테두리가 마우스 클릭이나 그리기를 방해하지 않도록 투과시킴 */
+            z-index: 10000; /* 방송 화면이나 그림 레이어보다 무조건 앞으로 오게 설정 */
         }
 
         .checker-bg {
