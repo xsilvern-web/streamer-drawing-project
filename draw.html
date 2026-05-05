@@ -3079,19 +3079,21 @@ document.getElementById('btn-export-png').onclick = function() {
             });
 
             // ✨ 기존 전송 로직을 별도의 함수로 통합 분리 (isTest 파라미터 추가)
+            // ✨ 전송 로직 함수 (isTest 파라미터로 실제/테스트 구분)
             async function executeDrawingSend(isTest = false) {
-                if (isCooldown || !isDonationEnabled) return;
+                // 테스트 전송일 경우 도네가 닫혀 있어도(isDonationEnabled=false) 전송 가능하게 허용
+                if (!isTest && (isCooldown || !isDonationEnabled)) return;
+                if (isTest && isCooldown) return;
 
-                // 테스트가 아닐 때(실제 방송 전송일 때)만 팝업을 띄움
                 if (!isTest && !confirm("정말 보내시겠습니까?\n(만약의 사태를 대비해 작업을 미리 '파일 저장' 해주세요!)")) {
                     return; 
                 }
 
                 syncToFrame();
-
                 const title = document.getElementById('drawing-title').value || "제목없음";
                 const customName = document.getElementById('custom-nickname').value || (loggedInUser ? loggedInUser.name : "익명");
-                if (!loggedInUser) return alert("로그인이 필요합니다.");
+                
+                if (!isTest && !loggedInUser) return alert("로그인이 필요합니다.");
 
                 const isAnimationMode = document.getElementById('chk-animation-mode').checked;
                 let finalPayload;
@@ -3140,7 +3142,6 @@ document.getElementById('btn-export-png').onclick = function() {
                        animationPayload.push({ src: offCanvas.toDataURL('image/png'), duration: f.duration });
                     });
 
-                    // 입력된 반복 횟수를 가져오며, 1~20회 사이로 강제 조정하여 서버에 함께 전송합니다.
                     const repeatCount = Math.min(20, Math.max(1, parseInt(document.getElementById('anim-repeat-count').value) || 5));
                     finalPayload = { isAnimation: true, frames: animationPayload, repeatCount: repeatCount };
                 } else {
@@ -3163,13 +3164,11 @@ document.getElementById('btn-export-png').onclick = function() {
                         }))
                     });
 
-                    // 과정 생략 체크박스 값 확인
                     const skipProcess = document.getElementById('chk-skip-process').checked;
 
                     validLayers.forEach(l => {
                         if (l.type === 'canvas') {
                             if (skipProcess) {
-                                // 과정 생략이 체크되어 있다면 캔버스를 즉시 이미지로 구워서 보냅니다.
                                 singleHistoryPayload.push({ 
                                     type: 'raster_image', 
                                     layerId: l.id, 
@@ -3181,7 +3180,6 @@ document.getElementById('btn-export-png').onclick = function() {
                                     angle: 0 
                                 });
                             } else {
-                                // 기존: 수많은 붓 터치 과정을 하나하나 전송
                                 const layerHistory = history.filter(item => item.layerId === l.id);
                                 singleHistoryPayload.push(...layerHistory);
                             }
@@ -3201,10 +3199,11 @@ document.getElementById('btn-export-png').onclick = function() {
                     finalPayload = singleHistoryPayload;
                 }
 
-                const finalProfileImage = (useProfileCheckbox.checked && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
-                const payload = { name: customName, email: loggedInUser.email, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
+                const finalProfileImage = (useProfileCheckbox.checked && loggedInUser && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
+                const userEmail = loggedInUser ? loggedInUser.email : "test@test.com";
+                const payload = { name: customName, email: userEmail, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
 
-                // ✨ isTest 여부에 따라 서버 엔드포인트 변경
+                // 목적지 URL 자동 변경 (테스트 vs 실제 방송)
                 const targetUrl = isTest ? `${API_BASE}/api/submit-test` : `${API_BASE}/api/submit-drawing`;
 
                 try {
@@ -3212,7 +3211,6 @@ document.getElementById('btn-export-png').onclick = function() {
                     if (res.ok) {
                         alert(isTest ? "테스트 전송 성공! (테스트 화면을 확인하세요)" : "방송 전송 성공!"); 
                         
-                        // 테스트가 아닐 때만 캔버스를 지우고 쿨타임을 돌림
                         if (!isTest) {
                             clearMyCanvas(); document.getElementById('drawing-title').value = '';
                             isCooldown = true;
@@ -3234,12 +3232,9 @@ document.getElementById('btn-export-png').onclick = function() {
                 } catch (error) { console.error("Error:", error); alert("서버 연결에 실패했습니다."); }
             }
 
-            // ✨ 분리된 함수를 각각의 버튼에 연결
-            const sendBtn = document.getElementById('btn-send');
-            if (sendBtn) sendBtn.onclick = () => executeDrawingSend(false);
-            
-            const testBtn = document.getElementById('btn-send-test');
-            if (testBtn) testBtn.onclick = () => executeDrawingSend(true);
+            // 버튼들에 각각 기능 연결
+            document.getElementById('btn-send').onclick = () => executeDrawingSend(false);
+            document.getElementById('btn-send-test').onclick = () => executeDrawingSend(true);
 
             async function checkNoticePopup() {
                 try {

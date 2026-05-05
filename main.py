@@ -286,7 +286,7 @@ async def process_drawing_queue():
             payload = await drawing_queue.get()
             skip_current_drawing = False 
             
-            # ✨ 테스트 꼬리표가 있으면 테스트 채널로, 없으면 실제 방송 채널로 보낼 목적지 설정
+            # ✨ 목적지 분기 처리 (테스트 플래그 확인)
             target_connections = test_connections if payload.get("is_test") else active_connections
             
             settings = get_db_settings()
@@ -296,7 +296,8 @@ async def process_drawing_queue():
             title = payload.get("title", "제목없음")
             profile_image = payload.get("profileImage", "")
             
-            for connection in active_connections:
+            # 여기서부터 아래의 모든 통신은 target_connections로 발송됩니다.
+            for connection in target_connections:
                 try: 
                     await connection.send_json({"type": "clear"})
                     await connection.send_json({
@@ -316,24 +317,22 @@ async def process_drawing_queue():
                 total_loops = min(20, max(1, int(repeat_count)))
 
                 if frames:
-                    # ✨ 1. 용량 초과 방지: 묶음 데이터를 보내지 않고 한 장씩 보내어 브라우저에 임시 저장(Cache)
-                    for connection in active_connections:
+                    for connection in target_connections:
                         try: await connection.send_json({"type": "init_animation_cache"})
                         except: pass
                         
                     for i, frame in enumerate(frames):
                         if skip_current_drawing: break
-                        for connection in active_connections:
+                        for connection in target_connections:
                             try: await connection.send_json({
                                 "type": "cache_frame", 
                                 "src": frame.get("src"), 
                                 "duration": frame.get("duration", 500)
                             })
                             except: pass
-                        await asyncio.sleep(0.05) # 네트워크 버퍼가 터지지 않게 짧게 쉼
+                        await asyncio.sleep(0.05) 
 
-                    # ✨ 2. 전송이 끝나면 재생 명령만 하달
-                    for connection in active_connections:
+                    for connection in target_connections:
                         try: 
                             await connection.send_json({
                                 "type": "play_animation", 
@@ -341,7 +340,6 @@ async def process_drawing_queue():
                             })
                         except: pass
                     
-                    # 3. 서버는 재생이 끝날 때까지 대기
                     total_duration = sum(frame.get("duration", 500) for frame in frames) / 1000.0
                     total_sleep_time = total_duration * total_loops
                     sleep_intervals = int(total_sleep_time / 0.1)
@@ -354,12 +352,11 @@ async def process_drawing_queue():
                         await asyncio.sleep(total_sleep_time % 0.1)
             else:
                 if drawing_data and isinstance(drawing_data, list):
-                    # ✨ 스마트 배속: 전체 작업량(획의 개수)이 많을수록 딜레이를 줄여서 초고속으로 재생합니다.
                     total_items = len(drawing_data)
                     base_delay = 0.01
-                    if total_items > 300: base_delay = 0.005  # 1.5배속
-                    if total_items > 800: base_delay = 0.001  # 5배속
-                    if total_items > 1500: base_delay = 0     # 딜레이 거의 없이 폭풍 재생
+                    if total_items > 300: base_delay = 0.005 
+                    if total_items > 800: base_delay = 0.001 
+                    if total_items > 1500: base_delay = 0    
 
                     for item in drawing_data:
                         if skip_current_drawing: break
@@ -372,29 +369,28 @@ async def process_drawing_queue():
                             opacity = item.get("opacity", 1.0) 
 
                             if not points: continue
-                            for connection in active_connections:
+                            for connection in target_connections:
                                 try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
                             
-                            # ✨ 선이 유독 길면 50개가 아니라 200개씩 한 번에 팍팍 그립니다.
                             chunk_size = 50 if len(points) < 500 else 200
                             
                             for i in range(1, len(points), chunk_size):
                                 if skip_current_drawing: break 
                                 chunk = points[i:i+chunk_size]
-                                for connection in active_connections:
+                                for connection in target_connections:
                                     try: await connection.send_json({"type": "draw_lines", "points": chunk, "color": color, "layerId": layer_id, "opacity": opacity})
                                     except: pass
-                                await asyncio.sleep(base_delay) # 동적 딜레이 적용
+                                await asyncio.sleep(base_delay) 
                             
                             if not skip_current_drawing:
-                                for connection in active_connections:
+                                for connection in target_connections:
                                     try: await connection.send_json({"type": "end_path", "layerId": layer_id, "opacity": opacity})
                                     except: pass
                         
                         elif item_type == "fill":
                             payload_msg = item.copy()
-                            for connection in active_connections:
+                            for connection in target_connections:
                                 try: await connection.send_json(payload_msg)
                                 except: pass
                             await asyncio.sleep(base_delay)
@@ -403,7 +399,7 @@ async def process_drawing_queue():
                             payload_msg = item.copy()
                             payload_msg["type"] = "draw_shape"
                             payload_msg["shape"] = item_type
-                            for connection in active_connections:
+                            for connection in target_connections:
                                 try: await connection.send_json(payload_msg)
                                 except: pass
                             await asyncio.sleep(base_delay)
@@ -411,18 +407,18 @@ async def process_drawing_queue():
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)
             
-            for connection in active_connections:
+            for connection in target_connections:
                 try: await connection.send_json({"type": "fade_out"})
                 except: pass
                 
             await asyncio.sleep(1.5) 
             
-            for connection in active_connections:
+            for connection in target_connections:
                 try: await connection.send_json({"type": "clear"})
                 except: pass
 
         except Exception as e:
-            print(f"Queue Processing Error: {e}") # 에러가 나도 다음 그림으로 자연스럽게 넘아감
+            print(f"Queue Processing Error: {e}")
         finally:
             drawing_queue.task_done()
 
