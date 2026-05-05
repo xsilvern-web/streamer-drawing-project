@@ -685,6 +685,13 @@
                 <!-- ✨ 모든 레이어 참조 체크박스 추가 -->
                 <label style="cursor: pointer;"><input type="checkbox" id="fill-sample-all" style="margin: 0 3px 0 0;">모든 레이어 참조</label>
             </div>
+            <div id="opt-bg-control" style="display: none; gap: 10px; align-items: center;">
+                <span style="font-size: 11px; color: #ccc; margin-right: 10px;">ℹ️ 화면을 드래그하여 배경 위치를 이동하세요</span>
+                <button class="toolbar-btn" id="btn-bg-zoom-out">- 축소</button>
+                <span id="bg-zoom-text" style="font-size: 11px; color: white; width: 40px; text-align: center;">100%</span>
+                <button class="toolbar-btn" id="btn-bg-zoom-in">+ 확대</button>
+                <button class="toolbar-btn" id="btn-bg-reset" style="background: #d32f2f; margin-left: 10px;">위치/크기 초기화</button>
+            </div>
         </div>
         
         <div class="panel-toggle-h toggle-top" id="btn-toggle-top" title="상단바 숨기기">▲</div>
@@ -741,6 +748,8 @@
             <div style="width: 80%; height: 1px; background: #444; margin: 5px 0;"></div>
 
             <button class="tool-btn active-tool" data-tool="cursor" style="font-size: 20px;" title="선택 및 조작">↖</button>
+            <!-- ✨ 방송배경 조작 버튼 추가 -->
+            <button class="tool-btn" data-tool="bg_control" style="font-size: 11px; font-weight: bold; color: #ff9800;" title="방송배경 위치 및 크기 조작">배경<br>조작</button>
             <button class="tool-btn" data-tool="pen">펜</button>
             <button class="tool-btn" data-tool="eraser">지우개</button>
             <button class="tool-btn" data-tool="fill" title="채우기">버킷</button>
@@ -905,27 +914,33 @@
             function updateTopOptionBar(tool) {
                 const optText = document.getElementById('opt-text');
                 const optFill = document.getElementById('opt-fill');
+                const optBg = document.getElementById('opt-bg-control'); // ✨ 추가
                 const toolNameDisplay = document.getElementById('current-tool-name');
 
                 if(optText) optText.style.display = 'none';
                 if(optFill) optFill.style.display = 'none';
+                if(optBg) optBg.style.display = 'none'; // ✨ 추가
                 
                 const toolNames = {
                     'cursor': '선택 및 조작', 'pen': '펜', 'eraser': '지우개', 'text': '텍스트',
                     'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기',
-                    'eyedropper': '스포이드'
+                    'eyedropper': '스포이드', 'bg_control': '방송배경 조작' // ✨ 추가
                 };
                 if(toolNameDisplay) toolNameDisplay.innerText = toolNames[tool] || tool;
 
                 let needsOptionBar = false;
 
-                if (tool === 'text') {
-                    if (optText) optText.style.display = 'flex';
+                if (tool === 'text') { if (optText) optText.style.display = 'flex'; needsOptionBar = true; }
+                if (tool === 'fill') { if (optFill) optFill.style.display = 'flex'; needsOptionBar = true; }
+                
+                // ✨ 배경 조작 툴 선택 시 옵션바 켜기 & 방송배경 자동 활성화
+                if (tool === 'bg_control') {
+                    if (optBg) optBg.style.display = 'flex';
                     needsOptionBar = true;
-                }
-                if (tool === 'fill') {
-                    if (optFill) optFill.style.display = 'flex';
-                    needsOptionBar = true;
+                    if (!toggleBgBtn.checked) {
+                        toggleBgBtn.checked = true;
+                        checkLiveStatus();
+                    }
                 }
 
                 if (needsOptionBar) {
@@ -945,6 +960,40 @@
             let history = []; let redoStack = [];
 
             let isDrawing = false; let currentWidth = 5; let currentTool = 'cursor';
+
+
+            let isDraggingBg = false;
+            let dragStartBgX = 0, dragStartBgY = 0;
+            let bgOffsetX = 0, bgOffsetY = 0, bgScale = 1.0;
+
+            function updateBgTransform() {
+                const bg = document.getElementById('broadcast-bg');
+                if (bg) {
+                    bg.style.transformOrigin = 'center center';
+                    bg.style.transform = `translate(${bgOffsetX}px, ${bgOffsetY}px) scale(${bgScale})`;
+                }
+            }
+
+            document.getElementById('btn-bg-zoom-in')?.addEventListener('click', () => {
+                bgScale += 0.05;
+                document.getElementById('bg-zoom-text').innerText = `${Math.round(bgScale * 100)}%`;
+                updateBgTransform();
+            });
+
+            document.getElementById('btn-bg-zoom-out')?.addEventListener('click', () => {
+                bgScale = Math.max(0.1, bgScale - 0.05);
+                document.getElementById('bg-zoom-text').innerText = `${Math.round(bgScale * 100)}%`;
+                updateBgTransform();
+            });
+
+            document.getElementById('btn-bg-reset')?.addEventListener('click', () => {
+                bgScale = 1.0; bgOffsetX = 0; bgOffsetY = 0;
+                document.getElementById('bg-zoom-text').innerText = `100%`;
+                updateBgTransform();
+            });
+
+
+
             let smX = 0, smY = 0, smW = 0; let lastX = 0, lastY = 0;
             let shapeStartX = 0, shapeStartY = 0; let canvasSnapshot = null;
             let currentPath = [];
@@ -1995,6 +2044,14 @@
             layerWrapper.addEventListener('pointerdown', (e) => {
                 const pos = getPointerPos(e);
 
+                // ✨ 배경 조작 모드일 때
+                if (currentTool === 'bg_control') {
+                    isDraggingBg = true;
+                    dragStartBgX = pos.x;
+                    dragStartBgY = pos.y;
+                    return;
+                }
+                
                 if (currentTool === 'eyedropper') {
                     const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
                     const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0));
@@ -2119,6 +2176,16 @@
             layerWrapper.addEventListener('pointermove', (e) => {
                 const pos = getPointerPos(e);
 
+                // ✨ 배경 조작 모드 드래그 처리
+                if (currentTool === 'bg_control' && isDraggingBg) {
+                    bgOffsetX += (pos.x - dragStartBgX);
+                    bgOffsetY += (pos.y - dragStartBgY);
+                    updateBgTransform();
+                    dragStartBgX = pos.x;
+                    dragStartBgY = pos.y;
+                    return;
+                }
+
                 if (transformState && transformState.target) {
                     if (transformState.action === 'move') {
                         transformState.target.style.left = `${transformState.startLeft + (pos.x - transformState.startX)}px`; transformState.target.style.top = `${transformState.startTop + (pos.y - transformState.startY)}px`;
@@ -2192,6 +2259,7 @@
             });
 
             layerWrapper.addEventListener('pointerup', (e) => {
+                if (currentTool === 'bg_control') { isDraggingBg = false; return; } // ✨ 추가
                 if (transformState) { transformState = null; return; }
                 if (!isDrawing) return;
                 isDrawing = false; const pos = getPointerPos(e);
@@ -2217,6 +2285,7 @@
             });
             
             layerWrapper.addEventListener('pointerleave', () => {
+                if (currentTool === 'bg_control') { isDraggingBg = false; return; } // ✨ 추가
                 if (transformState) transformState = null;
                 if (!isDrawing) return;
                 isDrawing = false;
