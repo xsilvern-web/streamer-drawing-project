@@ -1233,18 +1233,46 @@
                 selectFrame(newFId);
             }
 
-            function deleteFrame(fId) {
-                if (frames.length <= 1) return alert('마지막 프레임은 삭제할 수 없습니다.');
-                if (!confirm('해당 프레임을 삭제하시겠습니까?')) return;
+            function deleteFrame(fIdOrIds) {
+                // 단일 선택과 다중 선택(Set 또는 배열)을 모두 배열 형태로 변환하여 처리
+                let idsToDelete = [];
+                if (fIdOrIds instanceof Set) {
+                    idsToDelete = Array.from(fIdOrIds);
+                } else if (Array.isArray(fIdOrIds)) {
+                    idsToDelete = fIdOrIds;
+                } else {
+                    idsToDelete = [fIdOrIds];
+                }
 
-                const f = frames.find(f => f.id === fId);
-                f.layers.forEach(l => {
-                    if (l.type === 'canvas' && l.canvas) l.canvas.remove();
-                    else if (l.element) l.element.remove();
+                // 모든 프레임을 지우려고 하면 방어
+                if (frames.length - idsToDelete.length <= 0) {
+                    return alert('최소 1개의 프레임은 남겨두어야 합니다.');
+                }
+
+                // 프레임 개수에 따라 안내 팝업 문구 변경
+                const msg = idsToDelete.length > 1 
+                    ? `선택한 ${idsToDelete.length}개의 프레임을 삭제하시겠습니까?` 
+                    : '해당 프레임을 삭제하시겠습니까?';
+                    
+                // 팝업은 여기서 딱 한 번만 뜹니다.
+                if (!confirm(msg)) return;
+
+                // 선택된 프레임들 일괄 삭제
+                idsToDelete.forEach(id => {
+                    const f = frames.find(frm => frm.id === id);
+                    if (f) {
+                        f.layers.forEach(l => {
+                            if (l.type === 'canvas' && l.canvas) l.canvas.remove();
+                            else if (l.element) l.element.remove();
+                        });
+                    }
                 });
 
-                frames = frames.filter(frm => frm.id !== fId);
-                if (currentFrameId === fId) {
+                // 프레임 목록 업데이트
+                frames = frames.filter(frm => !idsToDelete.includes(frm.id));
+
+                // 현재 보고 있던 화면이 삭제된 화면에 포함되어 있다면, 남은 프레임 중 마지막으로 이동
+                if (idsToDelete.includes(currentFrameId)) {
                     selectFrame(frames[frames.length - 1].id);
                 } else {
                     renderFrameUI();
@@ -1368,19 +1396,27 @@
                 selectedFrameIds.clear();
                 document.getElementById('frame-context-menu').style.display = 'none';
             });
-            document.getElementById('ctx-btn-del')?.addEventListener('click', () => {
-                if(contextMenuTargetId) deleteFrame(contextMenuTargetId);
+            
+            document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
+                if(contextMenuTargetId) copyFrame(contextMenuTargetId);
                 selectedFrameIds.clear();
                 document.getElementById('frame-context-menu').style.display = 'none';
             });
-            document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
-                if(contextMenuTargetId) copyFrame(contextMenuTargetId);
-                document.getElementById('frame-context-menu').style.display = 'none';
-            });
+
+            // ✅ 삭제 버튼 이벤트 (다중 삭제 지원 및 중복 방지)
             document.getElementById('ctx-btn-del')?.addEventListener('click', () => {
-                if(contextMenuTargetId) deleteFrame(contextMenuTargetId);
+                if (selectedFrameIds.size > 1) {
+                    // 다중 선택 삭제
+                    deleteFrame(selectedFrameIds);
+                } else if (contextMenuTargetId) {
+                    // 단일 선택 삭제
+                    deleteFrame(contextMenuTargetId);
+                }
+                
+                selectedFrameIds.clear(); // 삭제 후 선택 상태 초기화
                 document.getElementById('frame-context-menu').style.display = 'none';
             });
+            
             document.addEventListener('click', (e) => {
                 if(!e.target.closest('#frame-context-menu') && !e.target.classList.contains('frame-item')) {
                     const menu = document.getElementById('frame-context-menu');
