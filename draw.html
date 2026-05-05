@@ -456,6 +456,25 @@
         .layer-item.active { background: #094771; border-color: #007acc; }
         .layer-item:hover:not(.active) { background: #555; }
 
+        .layer-item.multi-selected {
+            background: #005f9e;
+            border-color: #4fc3f7;
+        }
+
+        /* ✨ 레이어 우클릭 옵션 메뉴 스타일 */
+        .layer-context-menu {
+            position: absolute;
+            background: #252526;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 8px;
+            display: none;
+            z-index: 3000;
+            flex-direction: column;
+            gap: 6px;
+            box-shadow: 2px 4px 15px rgba(0,0,0,0.8);
+        }
+
         .layer-name {
             font-size: 11px;
             flex-grow: 1;
@@ -738,6 +757,11 @@
         <button id="ctx-btn-copy" class="sys-btn" style="background: #007acc; border-color: #005f9e; padding: 4px;">프레임 복사</button>
         <button id="ctx-btn-del" class="sys-btn" style="background: #d32f2f; border-color: #b71c1c; padding: 4px;">삭제</button>
     </div>
+    <div id="layer-context-menu" class="layer-context-menu">
+        <div style="font-size: 11px; color: #aaa; margin-bottom: 2px; text-align: center;">레이어 옵션</div>
+        <!-- ✨ 현재 보이는 레이어들 중 선택된 것들을 병합 -->
+        <button id="ctx-btn-merge-layers" class="sys-btn" style="background: #e65100; border-color: #e65100; padding: 4px;">선택 레이어 병합</button>
+    </div>
 
     <div class="app-body">
         <div class="sidebar-left" id="sidebar-left">
@@ -758,7 +782,7 @@
             <div style="margin-top: 15px;">
                 <label style="font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; color: #eee;">
                     <input type="checkbox" id="chk-use-pressure" checked style="width: 15px; height: 15px;">
-                    펜 필압 사용
+                    필압
                 </label>
             </div>
             <div class="control-group"><label>떨림방지</label><input type="range" id="smoothing-level" min="0" max="20"
@@ -975,6 +999,7 @@
             let currentFrameId = null;
             let selectedFrameIds = new Set();
             let layers = []; let layerCounter = 0; let activeLayerId = null;
+            let selectedLayerIds = new Set();
             let history = []; let redoStack = [];
 
             let isDrawing = false; let currentWidth = 5; let currentTool = 'cursor';
@@ -1057,6 +1082,92 @@
 
             btnShape.addEventListener('click', (e) => { shapeFlyout.classList.toggle('show'); e.stopPropagation(); });
             document.addEventListener('click', (e) => { if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) shapeFlyout.classList.remove('show'); });
+            
+            // ✨ 다른 곳을 클릭하면 레이어 우클릭 메뉴 숨기기
+            document.addEventListener('click', (e) => {
+                const lMenu = document.getElementById('layer-context-menu');
+                if (lMenu && !e.target.closest('#layer-context-menu') && !e.target.closest('.layer-item')) {
+                    lMenu.style.display = 'none';
+                }
+            });
+
+            // ✨ 선택 레이어 병합 버튼 클릭 로직
+            document.getElementById('ctx-btn-merge-layers')?.addEventListener('click', () => {
+                document.getElementById('layer-context-menu').style.display = 'none';
+
+                // 1. 선택된 레이어 중 현재 '보이는(눈 모양 켜진)' 레이어들만 추려냅니다.
+                const layersToMerge = layers.filter(l => selectedLayerIds.has(l.id) && l.visible);
+                if (layersToMerge.length < 2) return alert('병합하려면 보이는 레이어가 2개 이상 선택되어야 합니다.');
+
+                // 2. 텍스트나 그림 객체가 '확정(래스터화)'되지 않았다면 경고
+                if (layersToMerge.some(l => l.type !== 'canvas')) {
+                    return alert('병합하기 전에 텍스트나 변형 이미지를 모두 [확정] 해주세요.');
+                }
+
+                // 3. 임시 캔버스를 만들어 합칩니다.
+                const offCvs = document.createElement('canvas');
+                offCvs.width = CANVAS_WIDTH;
+                offCvs.height = CANVAS_HEIGHT;
+                const offCtx = offCvs.getContext('2d');
+
+                let lastMergedIndex = -1; // 병합된 레이어가 삽입될 기준 위치
+
+                layersToMerge.forEach(l => {
+                    const idx = layers.findIndex(layer => layer.id === l.id);
+                    if (idx > lastMergedIndex) lastMergedIndex = idx; // 가장 위에 있던 레이어의 위치 기억
+
+                    offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                    let mode = l.blendMode || 'normal';
+                    if (mode === 'normal') mode = 'source-over';
+                    offCtx.globalCompositeOperation = mode;
+                    offCtx.drawImage(l.canvas, 0, 0);
+                });
+
+                // 4. 새로운 캔버스(합쳐진 레이어) 생성
+                layerCounter++;
+                const newLayerId = `layer_${layerCounter}`;
+                const newCvs = document.createElement('canvas');
+                newCvs.id = newLayerId;
+                newCvs.width = CANVAS_WIDTH;
+                newCvs.height = CANVAS_HEIGHT;
+                newCvs.className = 'drawing-layer';
+                newCvs.style.pointerEvents = (currentTool === 'cursor') ? 'none' : 'auto';
+                
+                const newCtx = newCvs.getContext('2d');
+                newCtx.lineCap = 'round'; newCtx.lineJoin = 'round';
+                newCtx.drawImage(offCvs, 0, 0);
+                layerWrapper.appendChild(newCvs);
+
+                const newLayer = {
+                    id: newLayerId, name: `병합된 레이어`, canvas: newCvs, ctx: newCtx,
+                    visible: true, opacity: 1, blendMode: 'normal', type: 'canvas'
+                };
+
+                // 5. 원본 레이어들 삭제 및 새 레이어 삽입
+                layersToMerge.forEach(l => {
+                    if (l.canvas) l.canvas.remove();
+                    const idx = layers.findIndex(layer => layer.id === l.id);
+                    layers.splice(idx, 1);
+                    if (idx < lastMergedIndex) lastMergedIndex--; // 인덱스 밀림 보정
+                });
+                layers.splice(lastMergedIndex, 0, newLayer);
+
+                // 6. 뒤로가기 복구를 위해 작업 기록(History)에 도장 찍기
+                history.push({
+                    type: 'raster_image', layerId: newLayerId,
+                    src: newCvs.toDataURL('image/png'),
+                    cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                    width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                });
+
+                // 7. UI 및 상태 동기화
+                selectedLayerIds.clear();
+                selectedLayerIds.add(newLayerId);
+                updateLayersZIndex();
+                selectLayer(newLayerId);
+                updateOnionSkin();
+            });
+
 
             function autoRasterizeAllTransforms() {
                 const transformLayers = layers.filter(l => l.type === 'transform_box');
@@ -1857,7 +1968,59 @@
             function renderLayerUI() {
                 layerListDiv.innerHTML = '';
                 layers.forEach(l => {
-                    const div = document.createElement('div'); div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; div.draggable = true; div.onclick = () => selectLayer(l.id);
+                    const div = document.createElement('div'); 
+                div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`; 
+                div.draggable = true; 
+                
+                // ✨ 다중 선택 CSS 적용
+                if (selectedLayerIds.has(l.id) && l.id !== activeLayerId) {
+                    div.classList.add('multi-selected');
+                }
+
+                // ✨ 마우스 좌클릭 이벤트 (Ctrl, Shift 다중 선택 지원)
+                div.onclick = (e) => {
+                    if (e.ctrlKey) {
+                        if (selectedLayerIds.has(l.id)) selectedLayerIds.delete(l.id);
+                        else selectedLayerIds.add(l.id);
+                        
+                        if (!selectedLayerIds.has(activeLayerId)) {
+                            const arr = Array.from(selectedLayerIds);
+                            if (arr.length > 0) selectLayer(arr[arr.length - 1]);
+                            else { activeLayerId = null; renderLayerUI(); }
+                        } else renderLayerUI();
+                    } else if (e.shiftKey) {
+                        const currentIndex = layers.findIndex(layer => layer.id === activeLayerId);
+                        const targetIndex = layers.findIndex(layer => layer.id === l.id);
+                        if (currentIndex > -1 && targetIndex > -1) {
+                            selectedLayerIds.clear();
+                            const start = Math.min(currentIndex, targetIndex);
+                            const end = Math.max(currentIndex, targetIndex);
+                            for (let i = start; i <= end; i++) selectedLayerIds.add(layers[i].id);
+                        }
+                        selectLayer(l.id);
+                    } else {
+                        selectedLayerIds.clear();
+                        selectedLayerIds.add(l.id);
+                        selectLayer(l.id);
+                    }
+                };
+
+                // ✨ 마우스 우클릭 이벤트 (옵션창 띄우기)
+                div.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    if (!selectedLayerIds.has(l.id)) {
+                        selectedLayerIds.clear();
+                        selectedLayerIds.add(l.id);
+                        selectLayer(l.id);
+                    }
+                    const menu = document.getElementById('layer-context-menu');
+                    if (menu) {
+                        menu.style.display = 'flex';
+                        // 화면 우측 밖으로 메뉴가 잘리지 않도록 위치 보정
+                        menu.style.left = `${Math.min(e.pageX, window.innerWidth - 160)}px`;
+                        menu.style.top = `${e.pageY}px`;
+                    }
+                };
 
                     div.ondragstart = (e) => { e.dataTransfer.setData('text/plain', l.id); div.style.opacity = '0.5'; };
                     div.ondragend = (e) => { div.style.opacity = '1'; };
@@ -2070,7 +2233,7 @@
                     return;
                 }
                 
-                if (currentTool === 'eyedropper') {
+                if (currentTool === 'eyedropper' || e.button === 2) {
                     const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
                     const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0));
                     offC.translate(-pos.x, -pos.y);
@@ -2092,7 +2255,7 @@
                         const hex = "#" + (1 << 24 | pixel[0] << 16 | pixel[1] << 8 | pixel[2]).toString(16).slice(1).toUpperCase();
                         document.getElementById('color-picker').value = hex; currentColorHex = hex; updateCurrentColor();
                     }
-                    return;
+                    return; // 우클릭 시 여기서 종료되므로 그리기 방지
                 }
                 
                 if (currentTool === 'cursor') {
@@ -2390,7 +2553,18 @@
                         const px = item.point ? item.point.x : item.x;
                         const py = item.point ? item.point.y : item.y;
                         const gapVal = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
-                        doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, layers);
+                        
+                        // ✨ 버그 수정: 재현(Redraw) 중에는 실제 텅 빈 레이어가 아닌, 현재까지 복구된 '임시 버퍼(buffers)'를 참조하도록 가짜 레이어 목록 생성
+                        const bufferLayers = layers.map(l => {
+                            if (l.type === 'canvas' && buffers[l.id]) {
+                                buffers[l.id].cvs.style.zIndex = l.canvas.style.zIndex; // z-index 정렬 기준 복사
+                                return { ...l, canvas: buffers[l.id].cvs };
+                            }
+                            return l;
+                        });
+
+                        // 기존 layers 대신 bufferLayers를 전달
+                        doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, bufferLayers);
                     }
                     else if (item.type === 'path' || !item.type) {
                         if (item.points.length === 0) continue;
@@ -2450,6 +2624,19 @@
             document.getElementById('btn-undo').onclick = undo; document.getElementById('btn-redo').onclick = redo;
 
             window.addEventListener('keydown', (e) => {
+                // ✨ 텍스트 입력 중일 때는 단축키 오작동 방지
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+
+                // ✨ B (브러시/펜), E (지우개) 단축키
+                if (e.key.toLowerCase() === 'b') {
+                    e.preventDefault();
+                    document.querySelector('.tool-btn[data-tool="pen"]').click();
+                }
+                if (e.key.toLowerCase() === 'e') {
+                    e.preventDefault();
+                    document.querySelector('.tool-btn[data-tool="eraser"]').click();
+                }
+
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     autoRasterizeAllTransforms();
@@ -2744,9 +2931,14 @@
 
             useProfileCheckbox.addEventListener('change', (e) => { profilePreview.style.opacity = e.target.checked ? "1" : "0.3"; });
 
+            let lastSeenNotice = ""; // ✨ 이전 공지 내용 기억용 변수
+
             async function checkDonationStatus() {
                 try {
-                    const response = await fetch(`${API_BASE}/api/settings`); const data = await response.json();
+                    const response = await fetch(`${API_BASE}/api/settings`); 
+                    const data = await response.json();
+                    
+                    // 1. 도네이션(그림받기) 상태 업데이트
                     if (data.is_donation_enabled) { 
                         isDonationEnabled = true; 
                         if (!isCooldown) {
@@ -2761,6 +2953,29 @@
                         btnSend.style.cursor = 'not-allowed'; 
                         btnSend.innerText = '현재 그림 받기가 닫혀있습니다'; 
                         btnSend.disabled = true;
+                    }
+
+                    // ✨ 2. 실시간 공지사항 팝업 감지
+                    const noticeText = data.notice_text;
+                    if (noticeText && noticeText.trim() !== '') {
+                        // 공지 내용이 관리자에 의해 바뀌었을 때 (또는 처음 접속 시)
+                        if (lastSeenNotice !== noticeText) {
+                            lastSeenNotice = noticeText;
+                            
+                            const hideUntil = localStorage.getItem('hide_notice_until');
+                            const hiddenNotice = localStorage.getItem('hidden_notice_text');
+                            const now = new Date().getTime();
+                            
+                            // 오늘 하루 안보기를 체크하지 않았거나, 체크했더라도 공지가 '새로운 내용'으로 바뀌었다면 무조건 팝업!
+                            if (!hideUntil || now > parseInt(hideUntil) || hiddenNotice !== noticeText) {
+                                document.getElementById('notice-content').innerText = noticeText;
+                                document.getElementById('notice-popup').style.display = 'flex';
+                            }
+                        }
+                    } else {
+                        // 관리자가 공지를 비우면 열려있던 팝업도 강제로 닫힘
+                        document.getElementById('notice-popup').style.display = 'none';
+                        lastSeenNotice = "";
                     }
                 } catch (error) { console.log("서버 상태 확인 불가"); }
             }
@@ -3258,8 +3473,8 @@ document.getElementById('btn-export-png').onclick = function() {
             // 팝업 닫기 버튼 로직
             document.getElementById('btn-close-notice').onclick = () => {
                 if (document.getElementById('chk-hide-notice-today').checked) {
-                    // 체크 시 현재 시간으로부터 24시간(86400000ms) 동안 숨김 처리
-                    localStorage.setItem('hide_notice_until', new Date().getTime() + 86400000);
+                    localStorage.setItem('hide_notice_until', new Date().getTime() + 86400000); // 24시간
+                    localStorage.setItem('hidden_notice_text', document.getElementById('notice-content').innerText); // 닫은 공지 내용 기억
                 }
                 document.getElementById('notice-popup').style.display = 'none';
             };

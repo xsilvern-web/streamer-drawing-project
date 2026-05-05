@@ -2,341 +2,443 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>크리에이터 제어판</title>
+    <title>방송 관리자 대시보드</title>
     <style>
-        body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e1e; color: #eee; margin: 0; padding: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-        
-        #login-gate { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1e1e1e; display: flex; justify-content: center; align-items: center; z-index: 9999; }
-        .login-box { background: #2d2d2d; padding: 40px; border-radius: 10px; width: 300px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.8); border: 1px solid #444; }
-        .login-box h3 { margin-top: 0; color: #007acc; }
-        .login-box input { width: 100%; padding: 10px; margin-bottom: 15px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; text-align: center; font-size: 16px; letter-spacing: 2px;}
-        .login-box button { background: #007acc; color: white; border: none; padding: 10px; width: 100%; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px;}
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-        .dashboard { display: none; background: #2d2d2d; padding: 30px; border-radius: 10px; width: 650px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-        h2 { border-bottom: 2px solid #007acc; padding-bottom: 10px; margin-top: 0; }
-        .setting-group { margin-bottom: 20px; background: #333; padding: 15px; border-radius: 6px; }
-        label { display: block; font-weight: bold; margin-bottom: 8px; font-size: 14px; }
-        input[type="text"], input[type="number"] { width: 100%; padding: 8px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
-        .btn-general { background: #007acc; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
-        .btn-general:hover { background: #005f9e; }
-        .toggle-btn { background: #ff4757; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; }
-        .toggle-btn.on { background: #2ed573; }
+        /* 로그인 화면 */
+        #login-screen {
+            background: #2d2d2d;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            text-align: center;
+            margin-top: 100px;
+        }
 
-        .list-item { display: flex; justify-content: space-between; align-items: center; background: #222; padding: 12px; margin-bottom: 8px; border-radius: 4px; font-size: 13px; border-left: 4px solid #444; }
-        .action-btn { padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; font-size: 12px; width: auto; margin-left: 5px;}
-        .unban-btn { background: #555; color: white; }
-        .replay-btn { background: #ff9800; color: white; }
+        #login-screen input {
+            padding: 10px;
+            font-size: 16px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        /* 대시보드 화면 */
+        #dashboard {
+            display: none;
+            width: 100%;
+            max-width: 1000px;
+            display: none; /* JS에서 block으로 전환 */
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .panel-title {
+            margin-top: 0;
+            color: #4fc3f7;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        .btn-primary { background: #007acc; color: white; }
+        .btn-primary:hover { background: #005f9e; }
         
-        .copyable-id { 
-            font-size: 11px; color: #777; background: #1a1a1a; padding: 2px 6px; 
-            border-radius: 3px; cursor: pointer; transition: 0.2s; border: 1px dashed #444;
-        }
-        .copyable-id:hover { color: #007acc; border-color: #007acc; background: #222; }
+        .btn-danger { background: #d32f2f; color: white; }
+        .btn-danger:hover { background: #b71c1c; }
         
-        /* 페이지네이션 스타일 추가 */
-        .pagination {
-            display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px;
+        .btn-success { background: #4CAF50; color: white; }
+        .btn-success:hover { background: #388E3C; }
+
+        .btn-warning { background: #ff9800; color: white; }
+        .btn-warning:hover { background: #f57c00; }
+
+        input[type="text"], input[type="number"] {
+            background: #333; color: white; border: 1px solid #555; padding: 6px 10px; border-radius: 4px;
         }
-        .pagination button {
-            padding: 5px 15px; border: 1px solid #ccc; background-color: #fff; color: #333; border-radius: 4px; cursor: pointer; font-weight: bold;
+
+        /* 테이블 스타일 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
         }
-        .pagination button:hover:not(:disabled) { background-color: #f0f0f0; }
-        .pagination button:disabled { background-color: #444; color: #777; cursor: not-allowed; border-color: #555; }
-        .page-info { font-size: 14px; font-weight: bold; color: #aaa; }
-        ul { list-style: none; padding: 0; margin: 0; }
+        th, td {
+            border: 1px solid #444;
+            padding: 10px;
+            text-align: left;
+            font-size: 14px;
+        }
+        th { background: #333; color: #ccc; }
+        tr:nth-child(even) { background: #2a2a2b; }
+
+        .control-group {
+            display: flex; gap: 10px; align-items: center; margin-bottom: 15px;
+        }
     </style>
 </head>
 <body>
 
-    <div id="login-gate">
-        <div class="login-box">
-            <h3>🔒 크리에이터 인증</h3>
-            <p style="font-size: 12px; color: #aaa; margin-bottom: 20px;">권한이 있는 크리에이터만<br>접근할 수 있습니다.</p>
-            <input type="password" id="creator-pw" placeholder="비밀번호 입력">
-            <button id="btn-login">제어판 열기</button>
-        </div>
+    <!-- 로그인 팝업 -->
+    <div id="login-screen">
+        <h2>🔒 관리자 로그인</h2>
+        <input type="password" id="admin-pw" placeholder="비밀번호 입력" onkeypress="if(event.key === 'Enter') checkPassword()">
+        <br>
+        <button class="btn-primary" onclick="checkPassword()">접속하기</button>
     </div>
 
-    <div class="dashboard" id="main-dashboard">
-        <h2>⚙️ 그림 받기 제어판</h2>
-
-        <div class="setting-group">
-            <label>1. 그림 창구 상태 제어</label>
-            <div style="display: flex; gap: 10px; align-items: stretch;">
-                <button id="btn-toggle" class="toggle-btn on" style="flex: 1; padding: 15px;">🟢 현재 상태: 열림 (클릭하여 닫기)</button>
-                <button id="btn-skip-drawing" style="background-color: #f44336; color: white; border: none; padding: 15px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; flex: 1;">
-                    ⏭️ 현재 그림 스킵
-                </button>
-            </div>
-        </div>
-
-        <div class="setting-group">
-            <label>2. 방송 화면 표시 설정</label>
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <span style="font-size: 13px; width: 140px;">그림 노출 시간 (초):</span>
-                <input type="number" id="display-duration" value="8" min="1" style="width: 100px; margin-bottom: 0;">
-            </div>
-            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                <span style="font-size: 13px; width: 140px;">일일 최대 표시 개수:</span>
-                <input type="number" id="daily-limit" placeholder="0" min="0" style="width: 100px; margin-bottom: 0;">
-                <span style="font-size: 11px; color: #888;">(매일 새벽 6시 초기화, 0 입력 시 무제한)</span>
-            </div>
-            <button id="btn-save-display" class="btn-general">표시 설정 저장</button>
-        </div>
-
-        <div class="setting-group">
-            <label>3. 악성 유저 이메일/고유ID 차단</label>
-            <div style="display: flex; gap: 10px;">
-                <input type="text" id="ban-email" placeholder="차단할 이메일 또는 고유ID 입력">
-                <button id="btn-ban" class="btn-general" style="width: 80px; background: #ff4757;">차단</button>
-            </div>
-            <div id="ban-list-container" style="margin-top: 15px;">
-                <ul id="blocked-list"></ul>
-                <div class="pagination" id="block-pagination" style="display: none;">
-                    <button id="btn-block-prev">이전</button>
-                    <span id="block-page-info" class="page-info">1 / 1</span>
-                    <button id="btn-block-next">다음</button>
+    <!-- 메인 대시보드 -->
+    <div id="dashboard">
+        <h1 style="margin: 0;">🎛️ 방송 스케치북 관리자</h1>
+        
+        <div style="display: flex; gap: 20px;">
+            <!-- 좌측 패널 -->
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                
+                <!-- 방송 제어 패널 -->
+                <div class="panel">
+                    <h2 class="panel-title">전체 제어</h2>
+                    <div class="control-group">
+                        <span style="font-size: 16px;">현재 상태:</span>
+                        <span id="status-text" style="font-size: 18px; font-weight: bold;">확인 중...</span>
+                        <button id="btn-toggle" class="btn-primary" onclick="toggleDonation()">수신 상태 변경</button>
+                    </div>
+                    <div class="control-group" style="margin-top: 20px;">
+                        <button class="btn-warning" onclick="skipCurrentDrawing()" style="width: 100%; padding: 12px; font-size: 15px;">
+                            ⏭️ 현재 방송 화면에 나오는 그림 스킵하기 (강제종료)
+                        </button>
+                    </div>
                 </div>
-            </div>
-        </div>
-        <div class="setting-group">
-            <label>4. 📢 시청자 공지사항 팝업 설정</label>
-            <p style="font-size: 11px; color: #aaa; margin-top: 0;">비워두시면 시청자에게 팝업이 뜨지 않습니다.</p>
-            <textarea id="notice-text" rows="5" placeholder="팝업으로 띄울 공지사항을 입력하세요" style="width: 100%; padding: 10px; background: #222; color: white; border: 1px solid #555; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; resize: vertical; font-family: 'Malgun Gothic';"></textarea>
-            <button id="btn-save-notice" class="btn-general">공지사항 저장</button>
-        </div>
-        <div class="setting-group">
-            <label>5. 📺 받은 그림 목록 (클릭 시 ID 복사)</label>
-            <div id="recent-donations-container">
-                <ul id="donation-list"></ul>
-                <div class="pagination" id="donation-pagination" style="display: none;">
-                    <button id="btn-donation-prev">이전</button>
-                    <span id="donation-page-info" class="page-info">1 / 1</span>
-                    <button id="btn-donation-next">다음</button>
+
+                <!-- 기본 설정 패널 -->
+                <div class="panel">
+                    <h2 class="panel-title">기본 설정</h2>
+                    <div class="control-group">
+                        <label style="width: 130px;">그림 노출 시간 (초)</label>
+                        <input type="number" id="setting-duration" value="8" style="width: 60px;">
+                    </div>
+                    <div class="control-group">
+                        <label style="width: 130px;">일일 갯수 제한</label>
+                        <input type="number" id="setting-limit" value="0" style="width: 60px;" title="0이면 무제한">
+                        <span style="font-size: 12px; color: #aaa;">(0 = 무제한)</span>
+                    </div>
+                    <button class="btn-success" onclick="saveSettings()">설정 저장</button>
                 </div>
+
+                <!-- 공지사항 팝업 패널 -->
+                <div class="panel">
+                    <h2 class="panel-title" style="color: #ff9800;">📢 실시간 공지 팝업 띄우기</h2>
+                    <p style="font-size: 12px; color: #aaa; margin-bottom: 10px; margin-top: 0;">
+                        내용을 작성하고 전송하면, 시청자들의 그리기 페이지에 최대 10초 내로 팝업창이 나타납니다.<br>
+                        (내용을 완전히 지우고 전송하면 띄워진 팝업이 강제로 닫힙니다.)
+                    </p>
+                    <textarea id="admin-notice-input" rows="4" style="width: 100%; box-sizing: border-box; padding: 10px; border-radius: 4px; background: #222; color: white; border: 1px solid #555; font-size: 14px; margin-bottom: 10px;" placeholder="시청자에게 띄울 공지사항이나 경고 문구를 입력하세요..."></textarea>
+                    <div style="text-align: right;">
+                        <button class="btn-warning" onclick="sendNoticePopup()">팝업 전송하기</button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- 우측 패널 -->
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+                
+                <!-- 블랙리스트 관리 패널 -->
+                <div class="panel">
+                    <h2 class="panel-title" style="color: #ef5350;">블랙리스트 (차단 관리)</h2>
+                    <div class="control-group">
+                        <input type="text" id="ban-email" placeholder="차단할 고유ID (이메일)" style="flex: 1;">
+                        <button class="btn-danger" onclick="banUser()">차단 추가</button>
+                    </div>
+                    <ul id="ban-list" style="list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; background: #222; border: 1px solid #444; border-radius: 4px; padding: 5px;">
+                        <!-- 차단 목록 렌더링 -->
+                    </ul>
+                </div>
+
             </div>
         </div>
+
+        <!-- 그리기 내역 (원장) 패널 -->
+        <div class="panel" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="panel-title" style="margin: 0; border: none;">최근 그리기 내역 (다시 재생)</h2>
+                <button class="btn-primary" onclick="loadLedger()">🔄 새로고침</button>
+            </div>
+            
+            <div style="max-height: 400px; overflow-y: auto; margin-top: 15px;">
+                <table id="ledger-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">ID</th>
+                            <th style="width: 150px;">닉네임</th>
+                            <th>제목</th>
+                            <th style="width: 180px;">전송 시간</th>
+                            <th style="width: 100px;">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 내역 렌더링 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <script>
-        document.addEventListener('contextmenu', event => event.preventDefault());
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I') || (e.ctrlKey && e.key === 'u')) e.preventDefault();
-        });
-
         const API_BASE = window.location.origin;
-        const loginGate = document.getElementById('login-gate');
-        const mainDashboard = document.getElementById('main-dashboard');
+        let isEnabled = true;
 
-        // 페이지네이션을 위한 전역 변수 설정
-        let allDonations = [];
-        let allBlockedEmails = [];
-        let currentDonationPage = 1;
-        let currentBlockPage = 1;
-        const ITEMS_PER_PAGE = 10;
-
-        if (sessionStorage.getItem('creator_auth') === 'true') openDashboard();
-
-        document.getElementById('btn-login').onclick = async () => {
-            const pw = document.getElementById('creator-pw').value;
+        // 비밀번호 확인 및 로그인
+        async function checkPassword() {
+            const pw = document.getElementById('admin-pw').value;
             try {
                 const res = await fetch(`${API_BASE}/api/verify-password`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password: pw })
                 });
-                if (res.ok) { sessionStorage.setItem('creator_auth', 'true'); openDashboard(); } 
-                else { alert("비밀번호가 틀렸습니다."); }
-            } catch (error) { alert("서버와 통신할 수 없습니다."); }
-        };
-
-        function openDashboard() {
-            loginGate.style.display = 'none';
-            mainDashboard.style.display = 'block';
-            fetchSettings();
-            fetchRecentDonations();
-            setInterval(fetchRecentDonations, 10000); // 10초마다 그림 목록 갱신
-        }
-
-        function copyId(text) {
-            navigator.clipboard.writeText(text).then(() => {
-                alert("ID가 복사되었습니다: " + text + "\n위의 차단 칸에 붙여넣기 하세요.");
-            });
-        }
-
-        // === 차단 목록 렌더링 (페이지네이션) ===
-        function renderBlockedEmails() {
-            const list = document.getElementById('blocked-list');
-            const paginationEl = document.getElementById('block-pagination');
-            list.innerHTML = '';
-
-            if (allBlockedEmails.length === 0) {
-                list.innerHTML = '<div style="font-size: 13px; color: #aaa; padding: 10px 0;">차단된 리스트가 없습니다.</div>';
-                paginationEl.style.display = 'none';
-                return;
+                if (res.ok) {
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'flex';
+                    loadSettings();
+                    loadLedger();
+                } else {
+                    alert("비밀번호가 틀렸습니다.");
+                }
+            } catch (e) {
+                alert("서버 연결 실패");
             }
-
-            paginationEl.style.display = 'flex';
-            const totalPages = Math.ceil(allBlockedEmails.length / ITEMS_PER_PAGE) || 1;
-            if (currentBlockPage > totalPages) currentBlockPage = totalPages;
-            
-            document.getElementById('block-page-info').innerText = `${currentBlockPage} / ${totalPages}`;
-            document.getElementById('btn-block-prev').disabled = currentBlockPage === 1;
-            document.getElementById('btn-block-next').disabled = currentBlockPage === totalPages;
-
-            const startIdx = (currentBlockPage - 1) * ITEMS_PER_PAGE;
-            const pageData = allBlockedEmails.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-            pageData.forEach(email => {
-                const li = document.createElement('li');
-                li.className = 'list-item';
-                li.innerHTML = `<span style="color: #ff6b81;">${email}</span><button class="action-btn unban-btn" onclick="unbanEmail('${email}')">차단 해제</button>`;
-                list.appendChild(li);
-            });
         }
 
-        document.getElementById('btn-block-prev').onclick = () => { if (currentBlockPage > 1) { currentBlockPage--; renderBlockedEmails(); } };
-        document.getElementById('btn-block-next').onclick = () => { if (currentBlockPage < Math.ceil(allBlockedEmails.length / ITEMS_PER_PAGE)) { currentBlockPage++; renderBlockedEmails(); } };
-
-        async function fetchSettings() {
+        // 설정 불러오기
+        async function loadSettings() {
             try {
                 const res = await fetch(`${API_BASE}/api/settings`);
                 const data = await res.json();
                 
-                const btnToggle = document.getElementById('btn-toggle');
-                if(data.is_donation_enabled) { btnToggle.className = 'toggle-btn on'; btnToggle.innerText = '🟢 현재 상태: 열림 (클릭하여 닫기)'; } 
-                else { btnToggle.className = 'toggle-btn'; btnToggle.innerText = '🔴 현재 상태: 닫힘 (클릭하여 열기)'; }
-                
-                document.getElementById('display-duration').value = data.display_duration || 8;
-                document.getElementById('daily-limit').value = data.daily_limit !== undefined ? data.daily_limit : 0;
-                document.getElementById('notice-text').value = data.notice_text || ""; 
+                isEnabled = data.is_donation_enabled;
+                updateStatusText();
 
-                allBlockedEmails = data.blocked_emails || [];
-                renderBlockedEmails();
-            } catch (error) { console.error("설정 실패", error); }
-        }
+                document.getElementById('setting-duration').value = data.display_duration;
+                document.getElementById('setting-limit').value = data.daily_limit;
+                document.getElementById('admin-notice-input').value = data.notice_text || "";
 
-        // === 그림 목록 렌더링 (페이지네이션) ===
-        function renderDonations() {
-            const list = document.getElementById('donation-list');
-            const paginationEl = document.getElementById('donation-pagination');
-            list.innerHTML = '';
-
-            if (allDonations.length === 0) {
-                list.innerHTML = '<div style="font-size: 13px; color: #aaa; padding: 10px 0;">받은 그림 내역이 없습니다.</div>';
-                paginationEl.style.display = 'none';
-                return;
+                const banListUl = document.getElementById('ban-list');
+                banListUl.innerHTML = '';
+                if(data.blocked_emails.length === 0) {
+                    banListUl.innerHTML = '<li style="padding: 10px; color: #888; text-align: center;">차단된 사용자가 없습니다.</li>';
+                } else {
+                    data.blocked_emails.forEach(email => {
+                        const li = document.createElement('li');
+                        li.style.padding = '8px';
+                        li.style.borderBottom = '1px solid #444';
+                        li.style.display = 'flex';
+                        li.style.justifyContent = 'space-between';
+                        li.innerHTML = `
+                            <span>${email}</span>
+                            <button onclick="unbanUser('${email}')" style="background: transparent; color: #ef5350; border: 1px solid #ef5350; padding: 2px 6px; font-size: 11px;">해제</button>
+                        `;
+                        banListUl.appendChild(li);
+                    });
+                }
+            } catch (e) {
+                console.error("설정 로드 실패", e);
             }
-
-            paginationEl.style.display = 'flex';
-            const totalPages = Math.ceil(allDonations.length / ITEMS_PER_PAGE) || 1;
-            if (currentDonationPage > totalPages) currentDonationPage = totalPages;
-
-            document.getElementById('donation-page-info').innerText = `${currentDonationPage} / ${totalPages}`;
-            document.getElementById('btn-donation-prev').disabled = currentDonationPage === 1;
-            document.getElementById('btn-donation-next').disabled = currentDonationPage === totalPages;
-
-            const startIdx = (currentDonationPage - 1) * ITEMS_PER_PAGE;
-            const pageData = allDonations.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
-            pageData.forEach(d => {
-                const item = document.createElement('li');
-                item.className = 'list-item';
-                const idHtml = d.email ? `<span class="copyable-id" onclick="copyId('${d.email}')" title="클릭하여 ID 복사">ID: ${d.email}</span>` : '';
-
-                item.innerHTML = `
-                    <div style="flex: 1;">
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                            <strong style="font-size: 14px;">${d.name}</strong>
-                            ${idHtml}
-                        </div>
-                        <div style="color: #aaa; font-size: 12px;">제목: ${d.title} | ${d.time}</div>
-                    </div>
-                    <button class="action-btn replay-btn" onclick="replayDonation(${d.id})">다시보기</button>
-                `;
-                list.appendChild(item);
-            });
         }
 
-        document.getElementById('btn-donation-prev').onclick = () => { if (currentDonationPage > 1) { currentDonationPage--; renderDonations(); } };
-        document.getElementById('btn-donation-next').onclick = () => { if (currentDonationPage < Math.ceil(allDonations.length / ITEMS_PER_PAGE)) { currentDonationPage++; renderDonations(); } };
+        function updateStatusText() {
+            const statusEl = document.getElementById('status-text');
+            if (isEnabled) {
+                statusEl.innerText = "🟢 수신 허용 중";
+                statusEl.style.color = "#4CAF50";
+            } else {
+                statusEl.innerText = "🔴 수신 차단됨 (닫힘)";
+                statusEl.style.color = "#f44336";
+            }
+        }
 
-        async function fetchRecentDonations() {
+        // 수신 온오프 토글
+        async function toggleDonation() {
+            try {
+                const res = await fetch(`${API_BASE}/api/toggle-donation?enable=${!isEnabled}`, { method: 'POST' });
+                if (res.ok) {
+                    loadSettings();
+                }
+            } catch (e) {
+                alert("설정 변경 실패");
+            }
+        }
+
+        // 현재 화면 그림 스킵 (강제 종료)
+        async function skipCurrentDrawing() {
+            if(!confirm("현재 방송 화면에 그려지고 있는 그림을 강제로 종료(스킵)하시겠습니까?")) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/skip`, { method: 'POST' });
+                if (res.ok) {
+                    alert("그림이 성공적으로 스킵되었습니다.");
+                }
+            } catch (e) {
+                alert("스킵 실패");
+            }
+        }
+
+        // 기본 설정 저장
+        async function saveSettings() {
+            const duration = parseInt(document.getElementById('setting-duration').value) || 8;
+            const limit = parseInt(document.getElementById('setting-limit').value) || 0;
+            try {
+                const res = await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ display_duration: duration, daily_limit: limit })
+                });
+                if (res.ok) alert("설정이 저장되었습니다.");
+            } catch (e) {
+                alert("저장 실패");
+            }
+        }
+
+        // 실시간 팝업 전송
+        async function sendNoticePopup() {
+            const text = document.getElementById('admin-notice-input').value;
+            const btn = event.target;
+            btn.innerText = "전송 중...";
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notice_text: text })
+                });
+                
+                if (response.ok) {
+                    alert(text.trim() === "" ? "공지 팝업을 내렸습니다." : "시청자들에게 팝업을 띄웠습니다! (최대 10초 내에 반영됨)");
+                } else {
+                    alert("전송 실패: 서버 오류입니다.");
+                }
+            } catch (e) {
+                alert("서버 연결 오류");
+            } finally {
+                btn.innerText = "팝업 전송하기";
+                btn.disabled = false;
+            }
+        }
+
+        // 차단 (Ban) 추가
+        async function banUser() {
+            const email = document.getElementById('ban-email').value.trim();
+            if(!email) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ add_blocked_email: email })
+                });
+                if (res.ok) {
+                    document.getElementById('ban-email').value = '';
+                    loadSettings();
+                }
+            } catch (e) {
+                alert("차단 실패");
+            }
+        }
+
+        // 차단 해제
+        async function unbanUser(email) {
+            try {
+                const res = await fetch(`${API_BASE}/api/update-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ remove_blocked_email: email })
+                });
+                if (res.ok) {
+                    loadSettings();
+                }
+            } catch (e) {
+                alert("차단 해제 실패");
+            }
+        }
+
+        // 그리기 내역 목록 로드
+        async function loadLedger() {
             try {
                 const res = await fetch(`${API_BASE}/api/recent-donations`);
-                allDonations = await res.json();
-                renderDonations();
-            } catch (error) { console.error("내역 실패", error); }
-        }
+                const data = await res.json();
+                
+                const tbody = document.querySelector('#ledger-table tbody');
+                tbody.innerHTML = '';
+                
+                if(data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: #888;">최근 내역이 없습니다.</td></tr>';
+                    return;
+                }
 
-        async function unbanEmail(email) {
-            if(!confirm(`차단을 해제하시겠습니까?`)) return;
-            await fetch(`${API_BASE}/api/update-settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ remove_blocked_email: email }) });
-            fetchSettings();
-        }
-
-        async function replayDonation(id) {
-            try {
-                await fetch(`${API_BASE}/api/replay-donation/${id}`, { method: 'POST' });
-                alert("그림을 방송 화면에 다시 전송했습니다!");
-            } catch (error) { alert("다시보기 실패"); }
-        }
-
-        document.getElementById('btn-toggle').onclick = async () => {
-            const isCurrentlyOn = document.getElementById('btn-toggle').classList.contains('on');
-            await fetch(`${API_BASE}/api/toggle-donation?enable=${!isCurrentlyOn}`, { method: 'POST' });
-            fetchSettings();
-        };
-
-        // 스킵 버튼 이벤트
-        document.getElementById('btn-skip-drawing').onclick = async () => {
-            if (!confirm("현재 방송 화면에 재생 중인 그림/애니메이션을 즉시 중단(스킵)하시겠습니까?")) return;
-            try {
-                const response = await fetch(`${API_BASE}/api/skip`, { method: 'POST' });
-                if (response.ok) alert("재생 중인 그림이 스킵되었습니다.");
-                else alert("스킵 처리 중 오류가 발생했습니다.");
-            } catch (error) {
-                console.error("Skip Error:", error);
-                alert("서버 통신에 실패했습니다.");
-            }
-        };
-
-        document.getElementById('btn-save-display').onclick = async () => {
-            const duration = parseInt(document.getElementById('display-duration').value) || 8;
-            const limit = parseInt(document.getElementById('daily-limit').value) || 0;
-            
-            try {
-                await fetch(`${API_BASE}/api/update-settings`, { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ display_duration: duration, daily_limit: limit }) 
+                data.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item.id}</td>
+                        <td>
+                            <div style="font-weight: bold;">${item.name}</div>
+                            <div style="font-size: 11px; color: #aaa;">${item.email}</div>
+                        </td>
+                        <td>${item.title}</td>
+                        <td style="font-size: 12px; color: #bbb;">${item.time.split('.')[0]}</td>
+                        <td>
+                            <button class="btn-success" style="font-size: 11px; padding: 5px 10px;" onclick="replayDrawing(${item.id})">▶ 재생</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
                 });
-                alert("방송 화면 표시 설정이 성공적으로 저장되었습니다.");
-                fetchSettings();
             } catch (e) {
-                alert("설정 저장에 실패했습니다.");
+                console.error("내역 로드 실패", e);
             }
-        };
+        }
 
-        document.getElementById('btn-ban').onclick = async () => {
-            const banEmail = document.getElementById('ban-email').value.trim();
-            if(!banEmail) return alert("값을 입력하세요.");
-            await fetch(`${API_BASE}/api/update-settings`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ add_blocked_email: banEmail }) });
-            document.getElementById('ban-email').value = '';
-            fetchSettings();
-        };
-        document.getElementById('btn-save-notice').onclick = async () => {
-            const noticeText = document.getElementById('notice-text').value;
+        // 단일 내역 다시 방송 화면에 띄우기
+        async function replayDrawing(id) {
+            if(!confirm(`해당 그림(ID: ${id})을 방송 화면에 다시 재생하시겠습니까?`)) return;
             try {
-                await fetch(`${API_BASE}/api/update-settings`, { 
-                    method: 'POST', 
-                    headers: {'Content-Type': 'application/json'}, 
-                    body: JSON.stringify({ notice_text: noticeText }) 
-                });
-                alert("공지사항이 성공적으로 저장되었습니다!");
+                const res = await fetch(`${API_BASE}/api/replay-donation/${id}`, { method: 'POST' });
+                if (res.ok) {
+                    alert("방송 화면에 재생을 요청했습니다.");
+                } else {
+                    alert("데이터를 찾을 수 없거나 재생에 실패했습니다.");
+                }
             } catch (e) {
-                alert("공지사항 저장에 실패했습니다.");
+                alert("재생 요청 실패");
             }
-        };
+        }
     </script>
 </body>
 </html>
