@@ -226,7 +226,7 @@
             isProcessingQueue = false;
         }
 
-        async function handleSocketMessage(data) {
+       async function handleSocketMessage(data) {
             if (data.type === 'alert') {
                 document.getElementById('donor-name-display').innerText = data.name;
                 document.getElementById('drawing-title-display').innerText = data.title;
@@ -238,15 +238,13 @@
                 audio.play().catch(e => console.log("오디오 재생 에러:", e));
             } 
             else if (data.type === 'clear') {
-                // ✨ 화면을 지울 때 캔버스를 투명한 상태로 유지하여 다음 그림의 페이드인을 준비합니다.
+                isAnimationSkipped = true;
                 canvasContainer.style.opacity = '0'; 
                 Object.values(layerContexts).forEach(ctx => ctx.clearRect(0, 0, 1920, 1080));
                 if (draftContext) draftContext.clearRect(0, 0, 1920, 1080);
                 if (draftCanvas) draftCanvas.style.display = 'none';
                 alertContainer.classList.remove('show');
             }
-            
-            // ✨ 1. 애니메이션 캐시 초기화 및 프레임 저장 로직
             else if (data.type === 'init_animation_cache') {
                 animationCache = [];
             }
@@ -255,8 +253,6 @@
                 img.src = data.src;
                 animationCache.push({ img: img, duration: data.duration });
             }
-            
-            // 기존에 작성하셨던 play_animation 교체
             else if (data.type === 'play_animation') {
                 isAnimationSkipped = false;
 
@@ -267,11 +263,9 @@
                 }
                 let ctx = layerContexts['default'];
 
-                // 2. 캐싱된 이미지로 끊김 없이 정확한 설정 속도로 재생
                 for (let loop = 0; loop < data.repeatCount; loop++) {
                     if (isAnimationSkipped) break;
                     
-                    // ✨ 기존의 로드 로직 대신 animationCache를 바로 사용합니다!
                     for (let f of animationCache) {
                         if (isAnimationSkipped) break;
                         
@@ -287,34 +281,15 @@
                         }
                     }
                 }
-                animationCache = []; // 재생 완료 후 메모리 비우기
-            }
-
-            // ✨ 3. 묶음 단위로 전송된 점(선) 데이터를 부드럽게 그려주는 로직
-            else if (data.type === 'draw_lines') {
-                if (!lastPoint) return;
-                
-                if (data.color === 'erase') {
-                    for (let pt of data.points) {
-                        renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, pt.x, pt.y, pt.w, data.color, true);
-                        lastPoint = pt;
-                    }
-                } else {
-                    const dCtx = getDraftLayer();
-                    let rgbColor = data.color.startsWith('#') ? data.color : '#ffffff';
-                    let drawColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
-                    for (let pt of data.points) {
-                        renderBrushStroke(dCtx, lastPoint.x, lastPoint.y, lastPoint.w, pt.x, pt.y, pt.w, drawColor, false);
-                        lastPoint = pt;
-                    }
-                }
+                animationCache = [];
             }
             else if (data.type === 'fade_out') { 
                 canvasContainer.style.opacity = '0';
                 alertContainer.classList.remove('show');
             }
             else {
-                if (data.type === 'draw_shape' && data.shape === 'init_layers') {
+                // ✨ 여기서부터가 핵심입니다! 이 else 블록 안에서 레이어(ctx)를 찾습니다.
+                if (data.shape === 'init_layers') {
                     canvasContainer.innerHTML = '';
                     layerContexts = {};
                     data.layers.forEach((lInfo, index) => {
@@ -367,9 +342,27 @@
                         renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, lastPoint.x, lastPoint.y, lastPoint.w, data.color, true);
                     }
                 } 
-                else if (data.type === 'draw_line') {
+                // ✨ 수정된 부분: draw_lines가 레이어(ctx)를 찾을 수 있도록 안쪽으로 안전하게 배치되었습니다.
+                else if (data.type === 'draw_lines') {
                     if (!lastPoint) return;
                     
+                    if (data.color === 'erase') {
+                        for (let pt of data.points) {
+                            renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, pt.x, pt.y, pt.w, data.color, true);
+                            lastPoint = pt;
+                        }
+                    } else {
+                        const dCtx = getDraftLayer();
+                        let rgbColor = data.color.startsWith('#') ? data.color : '#ffffff';
+                        let drawColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
+                        for (let pt of data.points) {
+                            renderBrushStroke(dCtx, lastPoint.x, lastPoint.y, lastPoint.w, pt.x, pt.y, pt.w, drawColor, false);
+                            lastPoint = pt;
+                        }
+                    }
+                }
+                else if (data.type === 'draw_line') {
+                    if (!lastPoint) return;
                     if (data.color === 'erase') {
                         renderBrushStroke(ctx, lastPoint.x, lastPoint.y, lastPoint.w, data.point.x, data.point.y, data.point.w, data.color, true);
                     } else {
@@ -400,7 +393,6 @@
                     }
 
                     if (data.shape === 'raster_image') {
-                        // ✨ 이미지가 완전히 렌더링될 때까지 대기(await)하여 타이밍 꼬임을 방지합니다.
                         await new Promise(resolve => {
                             const img = new Image();
                             img.onload = () => {
