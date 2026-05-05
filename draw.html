@@ -334,7 +334,11 @@
             border-color: #007acc;
             color: white;
         }
-
+        .frame-item.multi-selected {
+            background: #005f9e; /* 다중 선택된 상태의 색상 */
+            border-color: #4fc3f7;
+            color: white;
+        }
         .frame-context-menu {
             position: absolute;
             background: #252526;
@@ -715,8 +719,13 @@
                 title="스포이드">스포이드</button>
             <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range"
                     id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
-            <div class="control-group"><label>굵기 <span id="width-val">5</span></label><input type="range"
-                    id="line-width" min="1" max="50" value="5"></div>
+            <div class="control-group">
+                <label style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                    굵기 
+                    <input type="number" id="width-input" value="5" min="1" max="100" style="width: 40px; height: 16px; text-align: center; font-size: 11px; padding: 0; background: #444; border: 1px solid #555; color: white; border-radius: 3px;">
+                </label>
+                <input type="range" id="line-width" min="1" max="100" value="5">
+            </div>
             <div style="margin-top: 15px;">
                 <label style="font-size: 13px; display: flex; align-items: center; gap: 5px; cursor: pointer; color: #eee;">
                     <input type="checkbox" id="chk-use-pressure" checked style="width: 15px; height: 15px;">
@@ -771,6 +780,11 @@
                     <button id="btn-play-anim" class="sys-btn" style="width: auto; background: #4CAF50; border-color: #388E3C; padding: 4px 6px; font-weight: bold; font-size: 11px;">▶</button>
                     <button id="btn-add-frame" class="sys-btn" style="width: auto; background: #007acc; border-color: #007acc; padding: 4px 6px; font-size: 11px; margin-right: 5px;">+</button>
                     
+                    <!-- ✨ 새로 추가된 기본 노출 속도 입력칸 -->
+                    <div style="display: flex; align-items: center; gap: 3px; font-size: 11px; color: #ccc;">
+                        기본 속도: <input type="number" id="default-frame-duration" value="500" min="50" step="50" style="width: 45px; height: 14px; text-align: center; font-size: 11px; padding: 0; background: #444; border: 1px solid #555; color: white; border-radius: 3px;" title="새 프레임 생성 시 적용될 기본 노출 시간(ms)">
+                    </div>
+
                     <div style="width: 1px; height: 18px; background: #555; margin: 0 4px;"></div>
                     
                     <label style="font-size: 11px; color: #ccc; display: flex; align-items: center; gap: 3px; cursor: pointer; user-select: none;">
@@ -922,7 +936,7 @@
 
             let frames = [];
             let currentFrameId = null;
-
+            let selectedFrameIds = new Set();
             let layers = []; let layerCounter = 0; let activeLayerId = null;
             let history = []; let redoStack = [];
 
@@ -944,7 +958,27 @@
 
             document.getElementById('color-picker').onchange = (e) => { currentColorHex = e.target.value; updateCurrentColor(); };
             document.getElementById('brush-opacity').oninput = (e) => { currentOpacity = parseFloat(e.target.value); document.getElementById('opacity-val').innerText = `${Math.round(currentOpacity * 100)}%`; updateCurrentColor(); };
-            document.getElementById('line-width').oninput = (e) => { currentWidth = parseInt(e.target.value); document.getElementById('width-val').innerText = currentWidth; };
+            const lineWidthSlider = document.getElementById('line-width');
+            const widthInput = document.getElementById('width-input');
+
+            // 슬라이더를 조절할 때 숫자 칸도 같이 업데이트
+            lineWidthSlider.oninput = (e) => { 
+                currentWidth = parseInt(e.target.value); 
+                widthInput.value = currentWidth; 
+            };
+
+            // 숫자를 직접 입력했을 때 슬라이더와 펜 굵기 업데이트
+            widthInput.addEventListener('change', (e) => {
+                let val = parseInt(e.target.value);
+                // 숫자가 아니거나 1보다 작으면 1로 고정
+                if (isNaN(val) || val < 1) val = 1;
+                // 최댓값을 100으로 고정 (원하시면 더 늘리실 수 있습니다)
+                if (val > 100) val = 100; 
+                
+                currentWidth = val;
+                widthInput.value = val;
+                lineWidthSlider.value = val;
+            });
 
             const btnShape = document.getElementById('btn-shape');
             const shapeFlyout = document.getElementById('shape-flyout');
@@ -1124,8 +1158,12 @@
 
             function createNewFrame() {
                 const fId = `frame_${Date.now()}`;
+                // ✨ 입력칸에서 기본 속도 값을 가져옴 (없으면 500)
+                const defaultDurationInput = document.getElementById('default-frame-duration');
+                const defaultDuration = defaultDurationInput ? parseInt(defaultDurationInput.value) || 500 : 500;
+
                 const newFrame = {
-                    id: fId, duration: 500,
+                    id: fId, duration: defaultDuration,
                     layers: [], layerCounter: 0, history: [], redoStack: [], activeLayerId: null
                 };
                 frames.push(newFrame);
@@ -1240,18 +1278,66 @@
                         }
                     };
 
+                    // ✨ 다중 선택 시각적 표시
+                    if (selectedFrameIds.has(f.id) && f.id !== currentFrameId) {
+                        item.classList.add('multi-selected');
+                    }
+
                     item.onclick = (e) => {
-                        selectFrame(f.id);
+                        if (e.ctrlKey) {
+                            // Ctrl 클릭: 개별 다중 선택/해제
+                            if (selectedFrameIds.has(f.id)) {
+                                selectedFrameIds.delete(f.id);
+                            } else {
+                                selectedFrameIds.add(f.id);
+                            }
+                            // 만약 선택된 것이 현재 프레임이면 다른 것으로 이동할 수도 있지만, 여기서는 단순 선택만 유지
+                            renderFrameUI(); 
+                        } else if (e.shiftKey) {
+                            // Shift 클릭: 범위 선택
+                            const currentIndex = frames.findIndex(frm => frm.id === currentFrameId);
+                            const targetIndex = idx;
+                            if (currentIndex > -1 && targetIndex > -1) {
+                                selectedFrameIds.clear();
+                                const start = Math.min(currentIndex, targetIndex);
+                                const end = Math.max(currentIndex, targetIndex);
+                                for (let i = start; i <= end; i++) {
+                                    selectedFrameIds.add(frames[i].id);
+                                }
+                            }
+                            renderFrameUI();
+                        } else {
+                            // 일반 클릭: 다중 선택 해제 후 해당 프레임으로 이동
+                            selectedFrameIds.clear();
+                            selectedFrameIds.add(f.id);
+                            selectFrame(f.id);
+                        }
                     };
 
                     item.oncontextmenu = (e) => {
                         e.preventDefault();
+                        // 우클릭한 프레임이 선택 그룹에 없다면 그룹을 초기화하고 클릭한 것만 선택
+                        if (!selectedFrameIds.has(f.id)) {
+                            selectedFrameIds.clear();
+                            selectedFrameIds.add(f.id);
+                            selectFrame(f.id); // 화면도 이동
+                        }
+                        
                         contextMenuTargetId = f.id;
                         const menu = document.getElementById('frame-context-menu');
                         menu.style.display = 'flex';
                         menu.style.left = `${e.pageX}px`;
                         menu.style.top = `${e.pageY - 120}px`; 
-                        document.getElementById('ctx-duration').value = f.duration || 500;
+                        
+                        // 다중 선택 상태라면 '여러 개'라고 표시, 단일이면 현재 값 표시
+                        const durationInput = document.getElementById('ctx-duration');
+                        if (selectedFrameIds.size > 1) {
+                            durationInput.placeholder = "일괄변경";
+                            durationInput.value = "";
+                        } else {
+                            durationInput.placeholder = "";
+                            durationInput.value = f.duration || 500;
+                        }
                     };
 
                     list.appendChild(item);
@@ -1260,11 +1346,32 @@
                 updateOnionSkin(); 
             }
 
+            // ✨ 다중 선택된 프레임 속도 일괄 변경
             document.getElementById('ctx-duration')?.addEventListener('change', (e) => {
-                if(contextMenuTargetId) {
+                const newDuration = parseInt(e.target.value);
+                if (isNaN(newDuration) || newDuration < 10) return; // 최소 10ms 방어
+                
+                if (selectedFrameIds.size > 0) {
+                    selectedFrameIds.forEach(id => {
+                        const f = frames.find(frm => frm.id === id);
+                        if (f) f.duration = newDuration;
+                    });
+                } else if (contextMenuTargetId) {
                     const f = frames.find(frm => frm.id === contextMenuTargetId);
-                    if(f) f.duration = parseInt(e.target.value) || 500;
+                    if (f) f.duration = newDuration;
                 }
+            });
+
+            // 복사/삭제 버튼 클릭 시 다중 선택 해제 (단일 타겟만 처리하거나, 추후 다중 복사/삭제 기능으로 확장 가능)
+            document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
+                if(contextMenuTargetId) copyFrame(contextMenuTargetId);
+                selectedFrameIds.clear();
+                document.getElementById('frame-context-menu').style.display = 'none';
+            });
+            document.getElementById('ctx-btn-del')?.addEventListener('click', () => {
+                if(contextMenuTargetId) deleteFrame(contextMenuTargetId);
+                selectedFrameIds.clear();
+                document.getElementById('frame-context-menu').style.display = 'none';
             });
             document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
                 if(contextMenuTargetId) copyFrame(contextMenuTargetId);
@@ -1318,7 +1425,17 @@
                 } else if (type === 'text') {
                     content = document.createElement('div');
                     content.className = 'content'; content.contentEditable = 'true';
-                    content.style.fontSize = `${currentWidth * 6}px`; content.style.color = currentColor;
+                    
+                    // ✨ 펜 설정이 아닌 상단 텍스트 툴바의 값을 직접 가져와서 초기 생성에 반영합니다.
+                    const tbFontSize = document.getElementById('tb-fontsize').value || 40;
+                    const tbColor = document.getElementById('tb-color').value || '#ffffff';
+                    const tbFontFamily = document.getElementById('tb-fontfamily').value || "'Malgun Gothic', sans-serif";
+                    
+                    content.style.fontSize = `${tbFontSize}px`; 
+                    content.style.color = tbColor;
+                    content.style.fontFamily = tbFontFamily;
+                    content.style.fontWeight = 'normal';
+                    content.style.fontStyle = 'normal';
                 }
 
                 const handles = ['nw', 'ne', 'sw', 'se'];
@@ -1862,6 +1979,19 @@
                     activeTextContent = e.target.closest('.content[contenteditable="true"]');
                     const selection = window.getSelection();
                     if(selection.rangeCount > 0) savedSelectionRange = selection.getRangeAt(0).cloneRange();
+                    
+                    // ✨ 텍스트를 클릭하면 상단 툴바 UI도 해당 텍스트의 스타일로 즉시 동기화합니다.
+                    const style = window.getComputedStyle(activeTextContent);
+                    document.getElementById('tb-fontsize').value = parseInt(style.fontSize) || 40;
+                    document.getElementById('tb-fontfamily').value = style.fontFamily.replace(/"/g, "'");
+                    
+                    const rgb = style.color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+                    if (rgb) {
+                        const hex = "#" + ("0" + parseInt(rgb[1]).toString(16)).slice(-2) + 
+                                          ("0" + parseInt(rgb[2]).toString(16)).slice(-2) + 
+                                          ("0" + parseInt(rgb[3]).toString(16)).slice(-2);
+                        document.getElementById('tb-color').value = hex;
+                    }
                     return;
                 }
 
@@ -1899,6 +2029,10 @@
                     const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
                     let pressure = (e.pointerType === 'pen' && usePressure) ? e.pressure : 1; 
                     if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
+                    
+                    // ✅ pointermove 이벤트와 동일하게 targetWidth를 계산하는 코드를 추가합니다.
+                    let targetWidth = Math.max(currentWidth * pressure, 1);
+
                     smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{ x: smX, y: smY, w: smW }];
 
                     if (currentTool === 'pen') {
@@ -2344,68 +2478,62 @@
             });
 
             let activeTextContent = null;
-            let savedSelectionRange = null; // 포커스를 잃어도 선택 영역을 기억할 변수
+            let savedSelectionRange = null;
 
             function applyTextFormat(command, value) {
                 if (!activeTextContent) return;
                 
-                if (savedSelectionRange && !savedSelectionRange.collapsed) {
-                    // 드래그한 선택 영역이 있으면 그 부분만 적용
-                    const selection = window.getSelection();
-                    selection.removeAllRanges();
-                    selection.addRange(savedSelectionRange);
+                const selection = window.getSelection();
+                const hasSelection = selection.rangeCount > 0 && !selection.isCollapsed && activeTextContent.contains(selection.anchorNode);
+
+                if (hasSelection) {
+                    // 드래그한 텍스트 영역이 있을 때는 부분 적용
                     document.execCommand('styleWithCSS', false, true);
-                    document.execCommand(command, false, value);
-                    savedSelectionRange = selection.getRangeAt(0).cloneRange();
+                    if (command === 'fontSize') {
+                        document.execCommand('fontSize', false, '7'); 
+                        const fonts = activeTextContent.querySelectorAll('font[size="7"], span[style*="font-size"]');
+                        fonts.forEach(f => { 
+                            if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large') || f.style.fontSize === '48px') { 
+                                f.removeAttribute('size'); 
+                                f.style.fontSize = `${value}px`; 
+                            } 
+                        });
+                        savedSelectionRange = selection.getRangeAt(0).cloneRange();
+                    } else {
+                        document.execCommand(command, false, value);
+                        savedSelectionRange = selection.getRangeAt(0).cloneRange();
+                    }
                 } else {
-                    // 선택 영역이 없으면 박스 전체에 일괄 적용
+                    // ✨ 드래그 없이 텍스트 상자만 선택되어 있을 때는 전체 내용에 즉각 반영
                     if (command === 'foreColor') {
                         activeTextContent.style.color = value;
                         activeTextContent.querySelectorAll('*').forEach(el => el.style.color = value);
                     } else if (command === 'bold') {
-                        const isBold = activeTextContent.style.fontWeight === 'bold';
+                        const isBold = activeTextContent.style.fontWeight === 'bold' || parseInt(window.getComputedStyle(activeTextContent).fontWeight) >= 700;
                         activeTextContent.style.fontWeight = isBold ? 'normal' : 'bold';
+                        activeTextContent.querySelectorAll('*').forEach(el => el.style.fontWeight = isBold ? 'normal' : 'bold');
                     } else if (command === 'italic') {
                         const isItalic = activeTextContent.style.fontStyle === 'italic';
                         activeTextContent.style.fontStyle = isItalic ? 'normal' : 'italic';
+                        activeTextContent.querySelectorAll('*').forEach(el => el.style.fontStyle = isItalic ? 'normal' : 'italic');
                     } else if (command === 'fontName') {
                         activeTextContent.style.fontFamily = value;
                         activeTextContent.querySelectorAll('*').forEach(el => el.style.fontFamily = value);
+                    } else if (command === 'fontSize') {
+                        activeTextContent.style.fontSize = `${value}px`;
+                        activeTextContent.querySelectorAll('*').forEach(el => el.style.fontSize = `${value}px`);
                     }
                 }
             }
 
+            // 이벤트 리스너 통합 연동
             document.getElementById('tb-color')?.addEventListener('input', (e) => applyTextFormat('foreColor', e.target.value));
             document.getElementById('tb-bold')?.addEventListener('click', () => applyTextFormat('bold', null));
             document.getElementById('tb-italic')?.addEventListener('click', () => applyTextFormat('italic', null));
             document.getElementById('tb-fontfamily')?.addEventListener('change', (e) => applyTextFormat('fontName', e.target.value));
-
-            document.getElementById('tb-fontsize')?.addEventListener('change', (e) => {
-                if (!activeTextContent) return;
-                
-                if (savedSelectionRange && !savedSelectionRange.collapsed) {
-                    // 텍스트의 일부를 드래그(선택)한 상태에서 사이즈 수정 시, 자동으로 영역 복구 후 사이즈 적용
-                    const selection = window.getSelection();
-                    selection.removeAllRanges();
-                    selection.addRange(savedSelectionRange);
-                    
-                    document.execCommand('styleWithCSS', false, true); 
-                    document.execCommand('fontSize', false, '7'); 
-                    
-                    const fonts = activeTextContent.querySelectorAll('font[size="7"], span[style*="font-size"]');
-                    fonts.forEach(f => { 
-                        if (f.getAttribute('size') === '7' || f.style.fontSize.includes('xxx-large') || f.style.fontSize === '48px') { 
-                            f.removeAttribute('size'); 
-                            f.style.fontSize = `${e.target.value}px`; 
-                        } 
-                    });
-                    savedSelectionRange = selection.getRangeAt(0).cloneRange();
-                } else {
-                    // 텍스트 블록 전체를 선택한 상태에서 사이즈 수정 시 전체 일괄 적용
-                    activeTextContent.style.fontSize = `${e.target.value}px`;
-                    activeTextContent.querySelectorAll('*').forEach(el => el.style.fontSize = `${e.target.value}px`);
-                }
-            });
+            
+            // ✨ input 이벤트를 사용하여 크기 조절 화살표를 누를 때마다 실시간으로 크기가 변경되도록 수정
+            document.getElementById('tb-fontsize')?.addEventListener('input', (e) => applyTextFormat('fontSize', e.target.value));
 
             document.addEventListener('selectionchange', () => {
                 const selection = window.getSelection();
@@ -2414,8 +2542,6 @@
                     const container = range.commonAncestorContainer;
                     const textContent = container.nodeType === 3 ? container.parentNode.closest('.content[contenteditable="true"]') : container.closest('.content[contenteditable="true"]');
                     
-                    // 텍스트 박스 안쪽을 선택했을 때만 상태를 저장합니다.
-                    // 바깥(사이즈 입력칸 등)을 클릭했다고 해서 null로 초기화시키지 않습니다!
                     if (textContent) {
                         activeTextContent = textContent;
                         savedSelectionRange = range.cloneRange();
