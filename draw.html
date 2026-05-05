@@ -363,6 +363,13 @@
             transform-origin: top left;
             touch-action: none;
             box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+            
+            /* ✨ 캔버스 테두리를 흰색 반투명 점선으로 표시 (레이아웃 크기에 영향을 주지 않음) */
+            outline: 2px dashed rgba(255, 255, 255, 0.6);
+            outline-offset: -2px;
+            
+            /* ✨ 방송 배경을 확대/이동할 때 캔버스 영역 밖으로 삐져나가지 않게 깔끔히 잘라줌 */
+            overflow: hidden;
         }
 
         .checker-bg {
@@ -380,7 +387,8 @@
             height: 100%;
             z-index: 0;
             pointer-events: none;
-            opacity: 0.8;
+            /* opacity: 0.8; 기존 코드 */
+            opacity: 1; /* ✨ 방송 화면을 불투명하게 변경 */
             display: none;
         }
 
