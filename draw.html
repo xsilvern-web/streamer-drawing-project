@@ -2593,16 +2593,22 @@
                 const activeLayer = layers.find(l => l.id === activeLayerId); const ctx = activeLayer.ctx;
                 // ✨ 2. 브러시 커서 크기 조절 (화면에 브러시 범위 표시)
                 const cursor = document.getElementById('custom-cursor');
-                if (currentTool === 'eraser' || currentTool === 'pen') {
-                    cursor.style.width = `${currentLineWidth * zoomLevel}px`;
-                    cursor.style.height = `${currentLineWidth * zoomLevel}px`;
-                } else if (currentTool.startsWith('liq_')) {
-                    const liqR = parseInt(document.getElementById('liq-size').value) * zoomLevel;
-                    cursor.style.width = `${liqR * 2}px`; cursor.style.height = `${liqR * 2}px`;
-                } else {
-                    cursor.style.width = '10px'; cursor.style.height = '10px';
+                if (cursor) { // 커서 UI가 HTML에 존재할 때만 작동하도록 보호
+                    try {
+                        if (currentTool === 'eraser' || currentTool === 'pen') {
+                            const penSize = (typeof currentLineWidth !== 'undefined' ? currentLineWidth : 5) * zoomLevel;
+                            cursor.style.width = `${penSize}px`;
+                            cursor.style.height = `${penSize}px`;
+                        } else if (currentTool.startsWith('liq_')) {
+                            const liqR = parseInt(document.getElementById('liq-size').value) * zoomLevel;
+                            cursor.style.width = `${liqR * 2}px`; 
+                            cursor.style.height = `${liqR * 2}px`;
+                        } else {
+                            cursor.style.width = '10px'; 
+                            cursor.style.height = '10px';
+                        }
+                    } catch(e) { console.warn("커서 크기 조절 오류(무시됨)"); }
                 }
-
                 // ✨ 3. 실시간 픽셀 왜곡 (밀기/팽창/수축)
                 if (currentTool.startsWith('liq_') && isDrawing) {
                     const ctx = layerContexts[activeLayerId];
