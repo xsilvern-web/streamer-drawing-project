@@ -540,6 +540,7 @@
         }
 
         // ✨ 2. 지정된 날짜 일괄 다운로드 (ZIP) 함수
+        // ✨ 2. 지정된 날짜 일괄 다운로드 (ZIP) 함수 - 과부하 방지 버전으로 업그레이드!
         async function downloadBatchByDate() {
             const dateVal = document.getElementById('batch-date').value;
             if(!dateVal) return alert("먼저 다운로드할 날짜를 선택해주세요!");
@@ -548,10 +549,18 @@
             const originalText = btn.innerText;
             
             try {
-                btn.innerText = "⏳ 이미지 변환 및 압축 중...";
+                btn.innerText = "⏳ 목록 불러오는 중...";
                 btn.disabled = true;
 
+                // 1. 해당 날짜의 '목록(ID)'만 먼저 가볍게 가져옵니다.
                 const res = await fetch(`${API_BASE}/api/donations/by-date?date=${dateVal}`);
+                
+                // HTML 에러 페이지가 반환되었을 때 뻗지 않도록 방어
+                const contentType = res.headers.get("content-type");
+                if (!contentType || !contentType.includes("application/json")) {
+                    throw new Error("서버에서 올바른 데이터를 반환하지 않았습니다. (서버 과부하)");
+                }
+
                 const list = await res.json();
                 
                 if(list.length === 0) {
@@ -564,15 +573,27 @@
                 const zip = new JSZip();
                 const folder = zip.folder(`donations_${dateVal}`);
 
-                // 각각의 그림 데이터를 PNG로 변환하여 ZIP 폴더에 추가
-                for (let item of list) {
-                    const dataUrl = await renderDrawingToDataURL(item.data);
-                    const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
-                    const safeName = item.name.replace(/[^a-z0-9가-힣]/gi, '_'); // 파일명 오류 방지
-                    folder.file(`[${item.id}]_${safeName}.png`, base64Data, {base64: true});
+                // ✨ 2. 목록의 ID를 바탕으로 서버가 뻗지 않게 1개씩 순차적으로 가져와 변환합니다.
+                for (let i = 0; i < list.length; i++) {
+                    const item = list[i];
+                    btn.innerText = `⏳ 변환 및 압축 중... (${i+1} / ${list.length})`;
+                    
+                    try {
+                        // 작동이 검증된 개별 조회 API를 재활용
+                        const detailRes = await fetch(`${API_BASE}/api/donation/${item.id}`);
+                        if (!detailRes.ok) continue;
+                        const detailData = await detailRes.json();
+
+                        const dataUrl = await renderDrawingToDataURL(detailData.data);
+                        const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
+                        const safeName = item.name.replace(/[^a-z0-9가-힣]/gi, '_'); // 파일명 오류 방지
+                        folder.file(`[${item.id}]_${safeName}.png`, base64Data, {base64: true});
+                    } catch(err) {
+                        console.error(`ID ${item.id} 변환 실패:`, err);
+                    }
                 }
 
-                // 브라우저 단에서 ZIP 파일 생성 및 다운로드 강제 실행
+                btn.innerText = "⏳ ZIP 파일 생성 중...";
                 const content = await zip.generateAsync({type:"blob"});
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(content);

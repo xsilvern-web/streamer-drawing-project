@@ -460,11 +460,11 @@ async def get_donation_data(ledger_id: int):
 async def get_donations_by_date(date: str):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=DictCursor)
-    # 선택한 날짜(YYYY-MM-DD)와 일치하는 데이터만 가져옵니다.
-    cursor.execute("SELECT * FROM ledger WHERE DATE(timestamp) = %s", (date,))
+    # ✨ 핵심 수정: 서버 메모리가 터지지 않도록 용량이 거대한 drawing_data는 빼고 조회합니다.
+    cursor.execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger WHERE DATE(timestamp) = %s", (date,))
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "data": json.loads(r["drawing_data"]), "time": str(r["timestamp"])} for r in rows]
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
