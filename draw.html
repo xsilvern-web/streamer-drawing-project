@@ -3006,7 +3006,74 @@
                     e.preventDefault();
                     if (activeLayerId) {
                         const layer = layers.find(l => l.id === activeLayerId);
-                        if (layer && layer.type === 'canvas') activateTransform(layer);
+                        if (layer && layer.type === 'canvas') {
+                            
+                            // ✨ 1. 올가미 점선(선택 영역)이 활성화되어 있는지 확인
+                            if (typeof currentSelectionPath !== 'undefined' && currentSelectionPath && currentSelectionPath.length > 2) {
+                                
+                                // 2. 선택 영역을 담을 '새 레이어' 생성
+                                layerCounter++;
+                                const newLayerId = `layer_${layerCounter}`;
+                                const newCvs = document.createElement('canvas');
+                                newCvs.id = newLayerId;
+                                newCvs.width = CANVAS_WIDTH;
+                                newCvs.height = CANVAS_HEIGHT;
+                                newCvs.className = 'drawing-layer';
+                                newCvs.style.pointerEvents = 'none'; // 변형 도구가 제어하므로 none 처리
+                                const newCtx = newCvs.getContext('2d');
+                                
+                                // 3. 선택 영역만큼만 가위로 오려서 새 레이어에 복사 (Clipping)
+                                newCtx.save();
+                                newCtx.beginPath();
+                                newCtx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                                for(let i = 1; i < currentSelectionPath.length; i++) newCtx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                                newCtx.closePath();
+                                newCtx.clip();
+                                newCtx.drawImage(layer.canvas, 0, 0);
+                                newCtx.restore();
+
+                                // 4. 원본 레이어에서는 오려낸 부분만큼 지우개로 뚫어버리기 (Cut 효과)
+                                layer.ctx.save();
+                                layer.ctx.beginPath();
+                                layer.ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                                for(let i = 1; i < currentSelectionPath.length; i++) layer.ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                                layer.ctx.closePath();
+                                layer.ctx.globalCompositeOperation = 'destination-out';
+                                layer.ctx.fill();
+                                layer.ctx.restore();
+
+                                // 5. 새 레이어를 시스템 배열에 등록
+                                const newLayer = {
+                                    id: newLayerId, name: `선택영역 변형`, canvas: newCvs, ctx: newCtx,
+                                    visible: true, opacity: 1, blendMode: 'normal', type: 'canvas'
+                                };
+                                
+                                // 현재 레이어 바로 위에 새 레이어를 삽입
+                                const currentIdx = layers.findIndex(l => l.id === activeLayerId);
+                                layers.splice(currentIdx + 1, 0, newLayer);
+                                layerWrapper.appendChild(newCvs);
+
+                                // 6. 뒤로가기(Ctrl+Z)를 위해 원본 레이어의 구멍 뚫린 상태 기록
+                                history.push({
+                                    type: 'raster_image', layerId: layer.id,
+                                    src: layer.canvas.toDataURL('image/png'),
+                                    cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2, width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                                });
+
+                                // 7. UI 업데이트 및 점선(선택) 해제
+                                if (typeof clearSelection === 'function') clearSelection();
+                                updateLayersZIndex();
+                                renderLayerUI();
+                                selectLayer(newLayerId);
+                                
+                                // 8. 분리된 새 레이어를 대상으로 Transform(조작) 도구 즉시 실행
+                                setTimeout(() => { activateTransform(newLayer); }, 50);
+
+                            } else {
+                                // ✨ 선택 영역이 없을 때는 기존처럼 전체 레이어 조작
+                                activateTransform(layer);
+                            }
+                        }
                     }
                 }
             });
