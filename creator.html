@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>방송 관리자 대시보드</title>
+    <!-- ✨ 추가: 일괄 다운로드를 위한 압축 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
             font-family: 'Malgun Gothic', sans-serif;
@@ -190,7 +192,12 @@
         <!-- 그리기 내역 (원장) 패널 -->
         <div class="panel" style="margin-top: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2 class="panel-title" style="margin: 0; border: none;">최근 그리기 내역 (다시 재생)</h2>
+                <!-- ✨ 날짜 선택과 일괄 다운로드 영역 추가 -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <h2 class="panel-title" style="margin: 0; border: none;">최근 그리기 내역 (다시 재생)</h2>
+                    <input type="date" id="batch-date" style="background: #333; color: white; border: 1px solid #555; padding: 5px; border-radius: 4px; margin-left: 20px;">
+                    <button class="btn-primary" style="background: #9c27b0;" onclick="downloadBatchByDate()">📦 일괄 다운로드</button>
+                </div>
                 <button class="btn-primary" onclick="loadLedger()">🔄 새로고침</button>
             </div>
             
@@ -406,6 +413,7 @@
 
                 data.forEach(item => {
                     const tr = document.createElement('tr');
+                    // 기존 loadLedger() 함수 내의 tr.innerHTML 부분 수정
                     tr.innerHTML = `
                         <td>${item.id}</td>
                         <td>
@@ -416,6 +424,8 @@
                         <td style="font-size: 12px; color: #bbb;">${item.time.split('.')[0]}</td>
                         <td>
                             <button class="btn-success" style="font-size: 11px; padding: 5px 10px;" onclick="replayDrawing(${item.id})">▶ 재생</button>
+                            <!-- ✨ 다운로드 버튼 추가 -->
+                            <button class="btn-primary" style="font-size: 11px; padding: 5px 10px; margin-left: 5px;" onclick="downloadSingleDrawing(${item.id}, '${item.name}', '${item.time}')">💾 다운</button>
                         </td>
                     `;
                     tbody.appendChild(tr);
@@ -437,6 +447,145 @@
                 }
             } catch (e) {
                 alert("재생 요청 실패");
+            }
+        }
+        // ✨ [핵심 기능] 서버의 그리기 데이터를 해석하여 보이지 않는 캔버스에 그린 후 PNG로 반환하는 엔진
+        async function renderDrawingToDataURL(drawingData) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1920; canvas.height = 1080;
+            const ctx = canvas.getContext('2d');
+
+            // 1. 다중 프레임(움짤) 모드인 경우, 첫 프레임만 추출
+            if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
+                return await new Promise(res => {
+                    const img = new Image();
+                    img.onload = () => { ctx.drawImage(img, 0, 0); res(canvas.toDataURL('image/png')); };
+                    img.src = drawingData.frames[0].src;
+                });
+            }
+
+            // 2. 일반 드로잉 데이터 해석 및 렌더링
+            const items = Array.isArray(drawingData) ? drawingData : [];
+            for (let item of items) {
+                if (item.type === 'raster_image') {
+                    await new Promise(res => {
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.save(); ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                            ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height);
+                            ctx.restore(); res();
+                        };
+                        img.src = item.src;
+                    });
+                } else if (item.type === 'path' || !item.type) {
+                    if(!item.points || item.points.length === 0) continue;
+                    ctx.globalCompositeOperation = item.color === 'erase' ? 'destination-out' : 'source-over';
+                    ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
+                    ctx.fillStyle = item.color === 'erase' ? 'rgba(0,0,0,1)' : item.color;
+                    
+                    for (let i = 1; i < item.points.length; i++) {
+                        const p1 = item.points[i-1], p2 = item.points[i];
+                        const dx = p2.x - p1.x, dy = p2.y - p1.y, distance = Math.hypot(dx, dy);
+                        const spacing = Math.max(1, Math.min(p1.w, p2.w) * 0.1);
+                        const steps = Math.max(1, Math.floor(distance / spacing));
+                        for(let j=0; j<=steps; j++) {
+                            const ratio = steps===0 ? 1 : j/steps;
+                            const cx = p1.x + dx*ratio, cy = p1.y + dy*ratio, cw = p1.w + (p2.w-p1.w)*ratio;
+                            ctx.beginPath(); ctx.arc(cx, cy, cw/2, 0, Math.PI*2); ctx.fill();
+                        }
+                    }
+                } else if (['line', 'rect', 'circle', 'text', 'draw_shape'].includes(item.type)) {
+                    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1.0;
+                    ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
+                    let shape = item.shape || item.type;
+                    if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
+                    else if (shape === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                    else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
+                    else if (shape === 'text') {
+                         ctx.font = `bold ${item.width}px 'Malgun Gothic', sans-serif`;
+                         ctx.fillStyle = item.color; ctx.textBaseline = 'top';
+                         const lines = item.end.text.split('\n'); let curY = item.start.y;
+                         for(let line of lines) { ctx.fillText(line, item.start.x, curY); curY += item.width * 1.2; }
+                    }
+                }
+            }
+
+            // 다운로드 시 지우개로 뚫린 구멍이 까맣게 보이지 않도록 뒤에 흰색 배경 합성
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = 1920; finalCanvas.height = 1080;
+            const fCtx = finalCanvas.getContext('2d');
+            fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 1920, 1080);
+            fCtx.drawImage(canvas, 0, 0);
+
+            return finalCanvas.toDataURL('image/png');
+        }
+
+        // ✨ 1. 개별 이미지 다운로드 함수
+        async function downloadSingleDrawing(id, name, time) {
+            try {
+                const res = await fetch(`${API_BASE}/api/donation/${id}`);
+                if (!res.ok) throw new Error("데이터를 찾을 수 없습니다.");
+                const data = await res.json();
+                
+                const dataUrl = await renderDrawingToDataURL(data.data);
+                
+                const link = document.createElement('a');
+                // 저장될 파일 이름 규칙: 닉네임_날짜.png
+                link.download = `drawing_${name}_${time.split(' ')[0]}.png`;
+                link.href = dataUrl;
+                link.click();
+            } catch (e) {
+                alert("이미지 다운로드 실패: " + e.message);
+            }
+        }
+
+        // ✨ 2. 지정된 날짜 일괄 다운로드 (ZIP) 함수
+        async function downloadBatchByDate() {
+            const dateVal = document.getElementById('batch-date').value;
+            if(!dateVal) return alert("먼저 다운로드할 날짜를 선택해주세요!");
+            
+            const btn = event.target;
+            const originalText = btn.innerText;
+            
+            try {
+                btn.innerText = "⏳ 이미지 변환 및 압축 중...";
+                btn.disabled = true;
+
+                const res = await fetch(`${API_BASE}/api/donations/by-date?date=${dateVal}`);
+                const list = await res.json();
+                
+                if(list.length === 0) {
+                    alert(`${dateVal} 날짜에 저장된 그림이 없습니다.`);
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                    return;
+                }
+
+                const zip = new JSZip();
+                const folder = zip.folder(`donations_${dateVal}`);
+
+                // 각각의 그림 데이터를 PNG로 변환하여 ZIP 폴더에 추가
+                for (let item of list) {
+                    const dataUrl = await renderDrawingToDataURL(item.data);
+                    const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
+                    const safeName = item.name.replace(/[^a-z0-9가-힣]/gi, '_'); // 파일명 오류 방지
+                    folder.file(`[${item.id}]_${safeName}.png`, base64Data, {base64: true});
+                }
+
+                // 브라우저 단에서 ZIP 파일 생성 및 다운로드 강제 실행
+                const content = await zip.generateAsync({type:"blob"});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `donations_${dateVal}.zip`;
+                link.click();
+                URL.revokeObjectURL(link.href);
+
+                btn.innerText = originalText;
+                btn.disabled = false;
+            } catch(e) {
+                alert("일괄 다운로드 중 오류 발생: " + e.message);
+                btn.innerText = originalText;
+                btn.disabled = false;
             }
         }
     </script>

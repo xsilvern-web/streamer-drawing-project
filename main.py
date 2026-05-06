@@ -444,7 +444,27 @@ async def auto_delete_old_data():
         except Exception as e: 
             print(f"Delete old data error: {e}")
         await asyncio.sleep(86400) # 24시간(86400초)마다 한 번씩 검사하여 삭제를 수행합니다.
+# --- 기존 코드 (app.get("/api/recent-donations") 등) 아래 쯤에 추가 ---
 
+@app.get("/api/donation/{ledger_id}")
+async def get_donation_data(ledger_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT * FROM ledger WHERE id = %s", (ledger_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
+    return {"id": row["id"], "name": row["donor_name"], "title": row["drawing_title"], "data": json.loads(row["drawing_data"]), "time": str(row["timestamp"])}
+
+@app.get("/api/donations/by-date")
+async def get_donations_by_date(date: str):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    # 선택한 날짜(YYYY-MM-DD)와 일치하는 데이터만 가져옵니다.
+    cursor.execute("SELECT * FROM ledger WHERE DATE(timestamp) = %s", (date,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "data": json.loads(r["drawing_data"]), "time": str(r["timestamp"])} for r in rows]
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
