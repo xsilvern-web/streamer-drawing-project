@@ -1700,11 +1700,6 @@
                 document.getElementById('frame-context-menu').style.display = 'none';
             });
             
-            document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
-                if(contextMenuTargetId) copyFrame(contextMenuTargetId);
-                selectedFrameIds.clear();
-                document.getElementById('frame-context-menu').style.display = 'none';
-            });
 
             // ✅ 삭제 버튼 이벤트 (다중 삭제 지원 및 중복 방지)
             document.getElementById('ctx-btn-del')?.addEventListener('click', () => {
@@ -2386,7 +2381,7 @@
                 }
                 // ✨ 1. 유동화 시작 전 상태 세팅 및 선택 영역 마스크(캐시) 생성
                 if (currentTool.startsWith('liq_')) {
-                    if (!activeLayerId || !layerContexts[activeLayerId]) return alert('레이어를 선택해주세요.');
+                    if (!activeLayerId) return alert('레이어를 선택해주세요.');
                     const l = layers.find(ly => ly.id === activeLayerId);
                     if (l && l.type !== 'canvas') return alert('텍스트/그림 객체는 [확정]을 눌러 래스터화 한 후 유동화할 수 있습니다.');
                     
@@ -2611,8 +2606,9 @@
                 }
                 // ✨ 3. 실시간 픽셀 왜곡 (밀기/팽창/수축)
                 if (currentTool.startsWith('liq_') && isDrawing) {
-                    const ctx = layerContexts[activeLayerId];
-                    if (!ctx) return;
+                    const layer = layers.find(ly => ly.id === activeLayerId);
+                    if (!layer || !layer.ctx) return;
+                    const ctx = layer.ctx;
                     
                     const R = parseInt(document.getElementById('liq-size').value);
                     const S = parseInt(document.getElementById('liq-strength').value) / 100;
