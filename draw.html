@@ -2925,6 +2925,25 @@
                         // 기존 layers 대신 bufferLayers를 전달
                         doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, bufferLayers);
                     }
+                    else if (item.type === 'raster_image') {
+                        await new Promise(resolve => {
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.save();
+                                // 핵심: 전체 화면 크기의 데이터(유동화, 병합 등)라면 기존 선이 겹치지 않게 캔버스를 먼저 깨끗이 지웁니다.
+                                if (item.width >= CANVAS_WIDTH && item.height >= CANVAS_HEIGHT) {
+                                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                                }
+                                ctx.translate(item.cx, item.cy);
+                                ctx.rotate(item.angle || 0);
+                                ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height);
+                                ctx.restore();
+                                resolve();
+                            };
+                            img.onerror = resolve;
+                            img.src = item.src;
+                        });
+                    }
                     else if (item.type === 'path' || !item.type) {
                         if (item.points.length === 0) continue;
 
