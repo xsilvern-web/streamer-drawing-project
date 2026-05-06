@@ -437,12 +437,13 @@ async def auto_delete_old_data():
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '90 days'")
+            # 90 days에서 2 days로 수정된 부분입니다.
+            cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '2 days'")
             conn.commit()
             conn.close()
         except Exception as e: 
             print(f"Delete old data error: {e}")
-        await asyncio.sleep(86400) 
+        await asyncio.sleep(86400) # 24시간(86400초)마다 한 번씩 검사하여 삭제를 수행합니다.
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
