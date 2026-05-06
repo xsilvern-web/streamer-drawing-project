@@ -142,9 +142,13 @@
             align-items: center;
             padding: 10px 0;
             gap: 10px;
-            overflow-y: visible;
+            overflow-y: auto; /* ✨ 도구창 스크롤 가능하게 변경 */
+            overflow-x: hidden;
             flex-shrink: 0;
         }
+        /* ✨ 도구창 스크롤바 디자인 */
+        .sidebar-left::-webkit-scrollbar { width: 4px; }
+        .sidebar-left::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
 
         .sidebar-left.collapsed {
             margin-left: -60px;
@@ -232,21 +236,19 @@
             justify-content: center;
         }
 
-        .shape-flyout {
+        .shape-flyout, .selection-flyout {
             display: none;
-            position: absolute;
-            left: 60px; 
-            top: 0;
+            position: fixed; /* ✨ 스크롤 안에서 잘리지 않도록 변경 */
             background: #252526;
             border: 1px solid #555;
             border-radius: 4px;
             padding: 5px;
             gap: 5px;
-            z-index: 100;
+            z-index: 3000;
             box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.5);
         }
 
-        .shape-flyout.show {
+        .shape-flyout.show, .selection-flyout.show {
             display: flex;
             flex-direction: row;
         }
@@ -717,7 +719,11 @@
                 <button class="toolbar-btn" id="tb-italic"
                     style="background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-style: italic;">I</button>
             </div>
-
+            <!-- 선택 옵션바 아래에 픽셀 유동화 세팅창 추가 -->
+            <div id="opt-liquify" style="display: none; gap: 15px; align-items: center;">
+                <label style="font-size: 12px; color: #ccc;">브러시 반경: <input type="range" id="liq-size" min="10" max="800" value="150" style="vertical-align: middle; width: 100px;"></label>
+                <label style="font-size: 12px; color: #ccc;">왜곡 강도: <input type="range" id="liq-strength" min="1" max="100" value="50" style="vertical-align: middle; width: 100px;"></label>
+            </div>
             <div id="opt-fill" style="display: none; gap: 15px; align-items: center; font-size: 11px; color: #ccc;">
                 <label>색 유사도 (0~255) <input type="number" id="fill-tolerance" value="32" min="0" max="255"
                         style="width: 50px; text-align: center; margin-left: 5px;"></label>
@@ -732,6 +738,11 @@
                 <span id="bg-zoom-text" style="font-size: 11px; color: white; width: 40px; text-align: center;">100%</span>
                 <button class="toolbar-btn" id="btn-bg-zoom-in">+ 확대</button>
                 <button class="toolbar-btn" id="btn-bg-reset" style="background: #d32f2f; margin-left: 10px;">위치/크기 초기화</button>
+            </div>
+            <!-- 배경 제어 옵션바 아래에 선택 옵션바 추가 -->
+            <div id="opt-selection" style="display: none; gap: 10px; align-items: center;">
+                <span style="font-size: 11px; color: #ccc;">점선을 그려서 영역을 선택하세요.</span>
+                <button class="toolbar-btn" id="btn-clear-selection" style="background: #d32f2f; margin-left: 10px;">선택 해제 (Ctrl+D)</button>
             </div>
         </div>
     <div id="floating-toolbar">
@@ -798,6 +809,26 @@
             <button class="tool-btn" data-tool="eraser">지우개</button>
             <button class="tool-btn" data-tool="fill" title="채우기">버킷</button>
             <button class="tool-btn" data-tool="text" style="font-size: 16px; font-weight: bold;">T</button>
+
+            <!-- 기존 도형 툴 컨테이너 아래에 추가 -->
+            <div class="shape-container">
+                <button class="tool-btn" id="btn-selection" style="font-size: 11px;">선택 ▶</button>
+                <div id="selection-flyout" class="selection-flyout">
+                    <button class="tool-btn sub-tool" data-tool="lasso" title="올가미">올가미</button>
+                    <!-- 나중에 추가할 사각형 선택 툴을 위해 자리만 만들어 둠 -->
+                    <button class="tool-btn sub-tool" data-tool="rect_select" title="사각형 선택" style="font-weight:bold;">[ ]</button>
+                </div>
+            </div>
+            <!-- 이전에 추가한 선택 툴 컨테이너 바로 아래에 픽셀유동화 컨테이너 추가 -->
+            <div class="shape-container">
+                <button class="tool-btn" id="btn-liquify" style="font-size: 11px;">유동화 ▶</button>
+                <!-- CSS 재사용을 위해 class는 selection-flyout을 그대로 씁니다 -->
+                <div id="liquify-flyout" class="selection-flyout">
+                    <button class="tool-btn sub-tool" data-tool="liq_push" title="밀기">밀기</button>
+                    <button class="tool-btn sub-tool" data-tool="liq_bloat" title="팽창">팽창</button>
+                    <button class="tool-btn sub-tool" data-tool="liq_pucker" title="수축">수축</button>
+                </div>
+            </div>
 
             <div class="shape-container">
                 <button class="tool-btn" id="btn-shape">도형 ▶</button>
@@ -919,7 +950,8 @@
             const layerListDiv = document.getElementById('layer-list');
             const zoomText = document.getElementById('zoom-text');
             const scrollContainer = document.getElementById('scroll-container');
-
+            let liqLastPos = null;
+            let selectionMaskData = null;
             let baseScale = 1.0;
             let zoomLevel = 1.0;
 
@@ -960,15 +992,20 @@
                 const optFill = document.getElementById('opt-fill');
                 const optBg = document.getElementById('opt-bg-control'); // ✨ 추가
                 const toolNameDisplay = document.getElementById('current-tool-name');
-
+                const optSelection = document.getElementById('opt-selection');
+                const optLiquify = document.getElementById('opt-liquify');
+                if (optLiquify) optLiquify.style.display = 'none';
+                
                 if(optText) optText.style.display = 'none';
                 if(optFill) optFill.style.display = 'none';
                 if(optBg) optBg.style.display = 'none'; // ✨ 추가
-                
+                if (optSelection) optSelection.style.display = 'none';
+
+
                 const toolNames = {
                     'cursor': '선택 및 조작', 'pen': '펜', 'eraser': '지우개', 'text': '텍스트',
                     'line': '직선', 'rect': '사각형', 'circle': '원', 'fill': '채우기',
-                    'eyedropper': '스포이드', 'bg_control': '방송배경 조작' // ✨ 추가
+                    'eyedropper': '스포이드', 'bg_control': '방송배경 조작', 'lasso': '올가미 선택', 'rect_select':'사각형 선택', 'liq_push':'유동화 (밀기)','liq_bloat':'유동화 (팽창)','liq_pucker':'유동화 (수축)'
                 };
                 if(toolNameDisplay) toolNameDisplay.innerText = toolNames[tool] || tool;
 
@@ -976,7 +1013,14 @@
 
                 if (tool === 'text') { if (optText) optText.style.display = 'flex'; needsOptionBar = true; }
                 if (tool === 'fill') { if (optFill) optFill.style.display = 'flex'; needsOptionBar = true; }
-                
+                if (tool === 'lasso' || tool === 'rect_select') {
+                    if (optSelection) optSelection.style.display = 'flex';
+                    needsOptionBar = true;
+                }
+                if (tool.startsWith('liq_')) {
+                    if (optLiquify) optLiquify.style.display = 'flex';
+                    needsOptionBar = true;
+                }
                 // ✨ 배경 조작 툴 선택 시 옵션바 켜기 & 방송배경 자동 활성화
                 if (tool === 'bg_control') {
                     if (optBg) optBg.style.display = 'flex';
@@ -1001,6 +1045,36 @@
             let isDraggingBg = false;
             let dragStartBgX = 0, dragStartBgY = 0;
             let bgOffsetX = 0, bgOffsetY = 0, bgScale = 1.0;
+
+            let selectionCanvas = null;
+            let selectionCtx = null;
+            let currentSelectionPath = [];
+
+            function getSelectionLayer() {
+                if (!selectionCanvas) {
+                    selectionCanvas = document.createElement('canvas');
+                    selectionCanvas.id = 'selection-layer';
+                    selectionCanvas.width = CANVAS_WIDTH;
+                    selectionCanvas.height = CANVAS_HEIGHT;
+                    selectionCanvas.style.position = 'absolute';
+                    selectionCanvas.style.top = '0px';
+                    selectionCanvas.style.left = '0px';
+                    selectionCanvas.style.pointerEvents = 'none';
+                    selectionCanvas.style.zIndex = '2500'; // 최상단에 배치
+                    layerWrapper.appendChild(selectionCanvas);
+                    selectionCtx = selectionCanvas.getContext('2d');
+                }
+                return selectionCtx;
+            }
+
+            function clearSelection() {
+                currentSelectionPath = [];
+                const ctx = getSelectionLayer();
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            }
+
+            document.getElementById('btn-clear-selection')?.addEventListener('click', clearSelection);
+
 
             function updateBgTransform() {
                 const bg = document.getElementById('broadcast-bg');
@@ -1073,8 +1147,33 @@
             const shapeFlyout = document.getElementById('shape-flyout');
             const allToolBtns = document.querySelectorAll('.tool-btn[data-tool]');
 
-            btnShape.addEventListener('click', (e) => { shapeFlyout.classList.toggle('show'); e.stopPropagation(); });
-            document.addEventListener('click', (e) => { if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) shapeFlyout.classList.remove('show'); });
+            // ✨ 도형 및 선택 플라이아웃 메뉴 제어 로직
+            const btnSelection = document.getElementById('btn-selection');
+            const selectionFlyout = document.getElementById('selection-flyout');
+            const btnLiquify = document.getElementById('btn-liquify');
+            const liquifyFlyout = document.getElementById('liquify-flyout');
+
+            function toggleFlyoutMenu(btn, flyout, e) {
+                const isShowing = flyout.classList.contains('show');
+                // 열려있는 모든 플라이아웃 닫기
+                document.querySelectorAll('.shape-flyout, .selection-flyout').forEach(f => f.classList.remove('show'));
+                
+                if (!isShowing) {
+                    const rect = btn.getBoundingClientRect();
+                    flyout.style.top = `${rect.top}px`;
+                    flyout.style.left = `${rect.right + 5}px`;
+                    flyout.classList.add('show');
+                }
+                e.stopPropagation();
+            }
+            if (btnLiquify) btnLiquify.addEventListener('click', (e) => toggleFlyoutMenu(btnLiquify, liquifyFlyout, e));
+            btnShape.addEventListener('click', (e) => toggleFlyoutMenu(btnShape, shapeFlyout, e));
+            if (btnSelection) btnSelection.addEventListener('click', (e) => toggleFlyoutMenu(btnSelection, selectionFlyout, e));
+
+            document.addEventListener('click', (e) => {
+                if (!btnShape.contains(e.target) && !shapeFlyout.contains(e.target)) shapeFlyout.classList.remove('show');
+                if (btnSelection && !btnSelection.contains(e.target) && !selectionFlyout.contains(e.target)) selectionFlyout.classList.remove('show');
+            });
             
             // ✨ 다른 곳을 클릭하면 레이어 우클릭 메뉴 숨기기
             document.addEventListener('click', (e) => {
@@ -1180,9 +1279,29 @@
 
             allToolBtns.forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    allToolBtns.forEach(b => b.classList.remove('active-tool')); btnShape.classList.remove('active-tool');
-                    if (e.currentTarget.classList.contains('sub-tool')) { btnShape.classList.add('active-tool'); shapeFlyout.classList.remove('show'); }
+                    allToolBtns.forEach(b => b.classList.remove('active-tool')); 
+                    btnShape.classList.remove('active-tool');
+                    if (btnSelection) btnSelection.classList.remove('active-tool');
+
+                    // 도형 툴 안의 버튼을 눌렀을 때
+                    if (e.currentTarget.parentElement.id === 'shape-flyout') { 
+                        btnShape.classList.add('active-tool'); 
+                        shapeFlyout.classList.remove('show'); 
+                    } 
+                    // ✨ 선택 툴 안의 버튼을 눌렀을 때
+                    else if (e.currentTarget.parentElement.id === 'selection-flyout') {
+                        btnSelection.classList.add('active-tool'); 
+                        selectionFlyout.classList.remove('show');
+                    } 
+                    else if (e.currentTarget.parentElement.id === 'selection-flyout') {
+                        btnSelection.classList.add('active-tool'); selectionFlyout.classList.remove('show');
+                    }
+                    // ✨ 유동화 플라이아웃 클릭 시
+                    else if (e.currentTarget.parentElement.id === 'liquify-flyout') {
+                        btnLiquify.classList.add('active-tool'); liquifyFlyout.classList.remove('show');
+                    }
                     else { e.currentTarget.classList.add('active-tool'); }
+                    
                     currentTool = e.currentTarget.getAttribute('data-tool');
 
                     layers.forEach(l => {
@@ -1606,6 +1725,7 @@
                     const menu = document.getElementById('frame-context-menu');
                     if (menu) menu.style.display = 'none';
                 }
+                if (btnLiquify && !btnLiquify.contains(e.target) && !liquifyFlyout.contains(e.target)) liquifyFlyout.classList.remove('show');
             });
 
             document.getElementById('btn-add-frame').onclick = createNewFrame;
@@ -2264,7 +2384,34 @@
                     dragStartBgY = pos.y;
                     return;
                 }
-                
+                // ✨ 1. 유동화 시작 전 상태 세팅 및 선택 영역 마스크(캐시) 생성
+                if (currentTool.startsWith('liq_')) {
+                    if (!activeLayerId || !layerContexts[activeLayerId]) return alert('레이어를 선택해주세요.');
+                    const l = layers.find(ly => ly.id === activeLayerId);
+                    if (l && l.type !== 'canvas') return alert('텍스트/그림 객체는 [확정]을 눌러 래스터화 한 후 유동화할 수 있습니다.');
+                    
+                    isDrawing = true;
+                    liqLastPos = { x: pos.x, y: pos.y };
+                    
+                    // 올가미 선택 영역이 있으면 그 모양대로 임시 흑백 마스크를 생성하여 연산 최적화
+                    if (currentSelectionPath && currentSelectionPath.length > 2) {
+                        const mCvs = document.createElement('canvas'); mCvs.width = CANVAS_WIDTH; mCvs.height = CANVAS_HEIGHT;
+                        const mCtx = mCvs.getContext('2d');
+                        mCtx.beginPath(); mCtx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                        for(let i=1; i<currentSelectionPath.length; i++) mCtx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                        mCtx.closePath(); mCtx.fillStyle = 'black'; mCtx.fill();
+                        selectionMaskData = mCtx.getImageData(0,0,CANVAS_WIDTH,CANVAS_HEIGHT).data;
+                    } else {
+                        selectionMaskData = null;
+                    }
+                    return;
+                }
+                if (currentTool === 'lasso') {
+                    isDrawing = true;
+                    clearSelection();
+                    currentSelectionPath = [{ x: pos.x, y: pos.y }];
+                    return;
+                }
                 if (currentTool === 'eyedropper' || e.button === 2) {
                     const off = document.createElement('canvas'); off.width = 1; off.height = 1; const offC = off.getContext('2d');
                     const sortedLayers = [...layers].filter(l => l.visible).sort((a, b) => (parseInt(a.type === 'canvas' ? a.canvas?.style.zIndex : a.element?.style.zIndex) || 0) - (parseInt(b.type === 'canvas' ? b.canvas?.style.zIndex : b.element?.style.zIndex) || 0));
@@ -2364,7 +2511,7 @@
                     redoStack = [];
                     return;
                 }
-
+                
                 isDrawing = true;
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
@@ -2375,7 +2522,7 @@
                     let targetWidth = Math.max(currentWidth * pressure, 1);
 
                     smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{ x: smX, y: smY, w: smW }];
-
+                    
                     if (currentTool === 'pen') {
                         const draftLayer = getDraftLayer();
                         draftLayer.style.display = 'block'; 
@@ -2444,7 +2591,105 @@
 
                 if (!isDrawing) return;
                 const activeLayer = layers.find(l => l.id === activeLayerId); const ctx = activeLayer.ctx;
+                // ✨ 2. 브러시 커서 크기 조절 (화면에 브러시 범위 표시)
+                const cursor = document.getElementById('custom-cursor');
+                if (currentTool === 'eraser' || currentTool === 'pen') {
+                    cursor.style.width = `${currentLineWidth * zoomLevel}px`;
+                    cursor.style.height = `${currentLineWidth * zoomLevel}px`;
+                } else if (currentTool.startsWith('liq_')) {
+                    const liqR = parseInt(document.getElementById('liq-size').value) * zoomLevel;
+                    cursor.style.width = `${liqR * 2}px`; cursor.style.height = `${liqR * 2}px`;
+                } else {
+                    cursor.style.width = '10px'; cursor.style.height = '10px';
+                }
 
+                // ✨ 3. 실시간 픽셀 왜곡 (밀기/팽창/수축)
+                if (currentTool.startsWith('liq_') && isDrawing) {
+                    const ctx = layerContexts[activeLayerId];
+                    if (!ctx) return;
+                    
+                    const R = parseInt(document.getElementById('liq-size').value);
+                    const S = parseInt(document.getElementById('liq-strength').value) / 100;
+                    
+                    // 전체가 아닌 브러시 영향권(Bounding Box)에 있는 픽셀만 연산하여 퍼포먼스 극대화
+                    const cx = pos.x; const cy = pos.y;
+                    let boxX = Math.max(0, Math.floor(cx - R)); let boxY = Math.max(0, Math.floor(cy - R));
+                    let boxW = Math.min(CANVAS_WIDTH, Math.ceil(cx + R)) - boxX; let boxH = Math.min(CANVAS_HEIGHT, Math.ceil(cy + R)) - boxY;
+                    
+                    if (boxW <= 0 || boxH <= 0) return;
+
+                    const imgData = ctx.getImageData(boxX, boxY, boxW, boxH);
+                    const origData = new Uint8ClampedArray(imgData.data);
+
+                    for (let y = 0; y < boxH; y++) {
+                        const py = boxY + y;
+                        for (let x = 0; x < boxW; x++) {
+                            const px = boxX + x;
+
+                            // 올가미 점선 바깥 영역은 픽셀 조작 보호
+                            if (selectionMaskData && selectionMaskData[(py * CANVAS_WIDTH + px) * 4 + 3] === 0) continue;
+
+                            const dx = px - cx; const dy = py - cy;
+                            const dist2 = dx*dx + dy*dy;
+                            
+                            if (dist2 < R*R) {
+                                const dist = Math.sqrt(dist2);
+                                let sx = px, sy = py;
+                                const falloff = Math.pow(1 - dist/R, 2) * S;
+
+                                if (currentTool === 'liq_push') { // 밀기
+                                    sx = px - (pos.x - liqLastPos.x) * falloff;
+                                    sy = py - (pos.y - liqLastPos.y) * falloff;
+                                } else if (currentTool === 'liq_bloat') { // 팽창
+                                    sx = px - dx * falloff;
+                                    sy = py - dy * falloff;
+                                } else if (currentTool === 'liq_pucker') { // 수축
+                                    sx = px + dx * falloff;
+                                    sy = py + dy * falloff;
+                                }
+
+                                let sx_int = Math.round(sx) - boxX; let sy_int = Math.round(sy) - boxY;
+                                sx_int = Math.max(0, Math.min(boxW - 1, sx_int));
+                                sy_int = Math.max(0, Math.min(boxH - 1, sy_int));
+
+                                const srcIdx = (sy_int * boxW + sx_int) * 4;
+                                const dstIdx = (y * boxW + x) * 4;
+
+                                imgData.data[dstIdx] = origData[srcIdx];
+                                imgData.data[dstIdx+1] = origData[srcIdx+1];
+                                imgData.data[dstIdx+2] = origData[srcIdx+2];
+                                imgData.data[dstIdx+3] = origData[srcIdx+3];
+                            }
+                        }
+                    }
+                    ctx.putImageData(imgData, boxX, boxY);
+                    liqLastPos = { x: pos.x, y: pos.y }; // 다음 프레임을 위한 마우스 이동값 캐싱
+                    return;
+                }
+                // 펜/지우개 조건문 시작하기 직전에 추가
+                if (currentTool === 'lasso' && isDrawing) {
+                    currentSelectionPath.push({ x: pos.x, y: pos.y });
+                    const ctx = getSelectionLayer();
+                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                    for (let i = 1; i < currentSelectionPath.length; i++) {
+                        ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                    }
+                    
+                    // 점선 효과 그리기 (Marching Ants 스타일)
+                    ctx.lineWidth = 1.5 / zoomLevel; 
+                    ctx.strokeStyle = 'white';
+                    ctx.setLineDash([5 / zoomLevel, 5 / zoomLevel]);
+                    ctx.stroke();
+
+                    ctx.strokeStyle = 'black';
+                    ctx.lineDashOffset = 5 / zoomLevel;
+                    ctx.stroke();
+                    ctx.setLineDash([]); // 초기화
+                    return;
+                }
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
                     let pressure = (e.pointerType === 'pen' && usePressure) ? e.pressure : 1; 
@@ -2476,7 +2721,47 @@
                 if (transformState) { transformState = null; return; }
                 if (!isDrawing) return;
                 isDrawing = false; const pos = getPointerPos(e);
+                // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
+                if (currentTool.startsWith('liq_')) {
+                    if (isDrawing) {
+                        isDrawing = false;
+                        const layer = layers.find(ly => ly.id === activeLayerId);
+                        if (layer && layer.type === 'canvas') {
+                            history.push({
+                                type: 'raster_image', layerId: activeLayerId,
+                                src: layer.canvas.toDataURL('image/png'),
+                                cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                                width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                            });
+                        }
+                    }
+                    return;
+                }
+                if (currentTool === 'lasso') {
+                    if (currentSelectionPath.length > 2) {
+                        const ctx = getSelectionLayer();
+                        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                        ctx.beginPath();
+                        ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                        for (let i = 1; i < currentSelectionPath.length; i++) {
+                            ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                        }
+                        ctx.closePath(); // 시작점과 끝점 연결
 
+                        ctx.lineWidth = 1.5 / zoomLevel;
+                        ctx.strokeStyle = 'white';
+                        ctx.setLineDash([5 / zoomLevel, 5 / zoomLevel]);
+                        ctx.stroke();
+
+                        ctx.strokeStyle = 'black';
+                        ctx.lineDashOffset = 5 / zoomLevel;
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    } else {
+                        clearSelection();
+                    }
+                    return;
+                }
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     if (currentPath.length > 0) {
                         if (currentTool === 'pen') {
@@ -2502,7 +2787,47 @@
                 if (transformState) transformState = null;
                 if (!isDrawing) return;
                 isDrawing = false;
+                // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
+                if (currentTool.startsWith('liq_')) {
+                    if (isDrawing) {
+                        isDrawing = false;
+                        const layer = layers.find(ly => ly.id === activeLayerId);
+                        if (layer && layer.type === 'canvas') {
+                            history.push({
+                                type: 'raster_image', layerId: activeLayerId,
+                                src: layer.canvas.toDataURL('image/png'),
+                                cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                                width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                            });
+                        }
+                    }
+                    return;
+                }
+                if (currentTool === 'lasso') {
+                    if (currentSelectionPath.length > 2) {
+                        const ctx = getSelectionLayer();
+                        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                        ctx.beginPath();
+                        ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                        for (let i = 1; i < currentSelectionPath.length; i++) {
+                            ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                        }
+                        ctx.closePath(); // 시작점과 끝점 연결
 
+                        ctx.lineWidth = 1.5 / zoomLevel;
+                        ctx.strokeStyle = 'white';
+                        ctx.setLineDash([5 / zoomLevel, 5 / zoomLevel]);
+                        ctx.stroke();
+
+                        ctx.strokeStyle = 'black';
+                        ctx.lineDashOffset = 5 / zoomLevel;
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    } else {
+                        clearSelection();
+                    }
+                    return;
+                }
                 if (currentTool === 'pen' || currentTool === 'eraser') {
                     if (currentPath.length > 0) {
                         if (currentTool === 'pen') {
@@ -2658,7 +2983,7 @@
             window.addEventListener('keydown', (e) => {
                 // ✨ 텍스트 입력 중일 때는 단축키 오작동 방지
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
-
+                
                 // ✨ B (브러시/펜), E (지우개) 단축키
                 if (e.key.toLowerCase() === 'b') {
                     e.preventDefault();
@@ -2668,7 +2993,7 @@
                     e.preventDefault();
                     document.querySelector('.tool-btn[data-tool="eraser"]').click();
                 }
-
+                if (e.ctrlKey && e.key.toLowerCase() === 'd') { e.preventDefault(); clearSelection(); }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     autoRasterizeAllTransforms();
