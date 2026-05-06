@@ -328,7 +328,7 @@ async def process_drawing_queue():
 
                 if frames:
                     for connection in target_connections:
-                        try: await connection.send_json({"type": "init_animation_cache"})
+                        try: await connection.send_json({"type": "init_animation_cache", "totalFrames": len(frames)})
                         except: pass
                         
                     for i, frame in enumerate(frames):

@@ -631,6 +631,26 @@
             border-color: #007acc;
             z-index: 999 !important;
         }
+        /* ✨ 변형 박스 반전 버튼 스타일 */
+        .flip-controls {
+            position: absolute;
+            bottom: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: none;
+            gap: 5px;
+            z-index: 50;
+        }
+        .transform-box.active .flip-controls {
+            display: flex;
+        }
+        .flip-btn {
+            background: #333; color: white; border: 1px solid #555;
+            border-radius: 4px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            white-space: nowrap;
+        }
+        .flip-btn:hover { background: #555; color: #4fc3f7; border-color: #4fc3f7; }
 
         .transform-box:hover {
             border-color: rgba(0, 122, 204, 0.5);
@@ -1206,7 +1226,25 @@
                 baseScale = Math.min(scaleX, scaleY) * 0.98;
                 updateZoom(zoomLevel);
             }
+            // ✨ 캔버스 이미지 좌우/상하 반전 헬퍼 함수
+            function flipCanvasContent(cvs, isHorizontal) {
+                const ctx = cvs.getContext('2d');
+                const temp = document.createElement('canvas');
+                temp.width = cvs.width; temp.height = cvs.height;
+                temp.getContext('2d').drawImage(cvs, 0, 0);
 
+                ctx.clearRect(0, 0, cvs.width, cvs.height);
+                ctx.save();
+                if (isHorizontal) {
+                    ctx.translate(cvs.width, 0);
+                    ctx.scale(-1, 1);
+                } else {
+                    ctx.translate(0, cvs.height);
+                    ctx.scale(1, -1);
+                }
+                ctx.drawImage(temp, 0, 0);
+                ctx.restore();
+            }
             function updateZoom(newZoom) {
                 zoomLevel = Math.max(0.1, Math.min(newZoom, 5.0));
                 const finalScale = baseScale * zoomLevel;
@@ -2022,7 +2060,18 @@
                     const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h);
                     const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
                 });
+                if (type === 'transform_box' && content) {
+                    const controls = document.createElement('div');
+                    controls.className = 'flip-controls';
+                    const flipX = document.createElement('button'); flipX.className = 'flip-btn'; flipX.innerText = '↔ 좌우반전';
+                    const flipY = document.createElement('button'); flipY.className = 'flip-btn'; flipY.innerText = '↕ 상하반전';
 
+                    flipX.onpointerdown = (e) => { e.stopPropagation(); flipCanvasContent(content, true); };
+                    flipY.onpointerdown = (e) => { e.stopPropagation(); flipCanvasContent(content, false); };
+
+                    controls.appendChild(flipX); controls.appendChild(flipY);
+                    wrapper.appendChild(controls);
+                }
                 wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
 
                 layers.push({ id: lId, name: type === 'transform_box' ? `변형 이미지` : `텍스트 ${layerCounter}`, type: type, element: wrapper, visible: true, opacity: 1, blendMode: 'normal' });
@@ -2291,6 +2340,16 @@
                     const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h);
                     const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
                 });
+                const controls = document.createElement('div');
+                controls.className = 'flip-controls';
+                const flipX = document.createElement('button'); flipX.className = 'flip-btn'; flipX.innerText = '↔ 좌우반전';
+                const flipY = document.createElement('button'); flipY.className = 'flip-btn'; flipY.innerText = '↕ 상하반전';
+
+                flipX.onpointerdown = (e) => { e.stopPropagation(); flipCanvasContent(tempCvs, true); };
+                flipY.onpointerdown = (e) => { e.stopPropagation(); flipCanvasContent(tempCvs, false); };
+
+                controls.appendChild(flipX); controls.appendChild(flipY);
+                wrapper.appendChild(controls);
 
                 wrapper.appendChild(tempCvs);
                 layerWrapper.appendChild(wrapper);
