@@ -246,7 +246,105 @@
                 alert("서버 연결 실패");
             }
         }
+        // ✨ 1. 채우기(버킷) 도구 완벽 지원을 위한 픽셀 연산 함수 추가
+        function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap, sampleAllLayers = false, layerContexts = null) {
+            const canvasW = 1920; const canvasH = 1080;
+            let sampleData;
 
+            if (sampleAllLayers && layerContexts) {
+                const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+                const offCtx = offCvs.getContext('2d');
+                
+                const layers = Object.values(layerContexts).filter(c => c && c.canvasNode).sort((a, b) => {
+                    const zA = parseInt(a.canvasNode.style.zIndex) || 0;
+                    const zB = parseInt(b.canvasNode.style.zIndex) || 0;
+                    return zA - zB;
+                });
+                
+                layers.forEach(c => {
+                    offCtx.globalAlpha = c.canvasNode.style.opacity || 1;
+                    offCtx.globalCompositeOperation = c.canvasNode.style.mixBlendMode || 'source-over';
+                    offCtx.drawImage(c.canvasNode, 0, 0);
+                });
+                sampleData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+            } else {
+                sampleData = ctx.getImageData(0, 0, canvasW, canvasH).data;
+            }
+
+            const sx = Math.floor(startX); const sy = Math.floor(startY);
+            if(sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
+            
+            const startPos = (sy * canvasW + sx) * 4;
+            const targetR = sampleData[startPos], targetG = sampleData[startPos+1], targetB = sampleData[startPos+2], targetA = sampleData[startPos+3];
+            
+            const m = colorStr.match(/[\d.]+/g);
+            if(!m || m.length < 3) return;
+            const fillR = parseInt(m[0]), fillG = parseInt(m[1]), fillB = parseInt(m[2]), fillA = m[3] ? Math.round(parseFloat(m[3])*255) : 255;
+            
+            if (Math.abs(targetR - fillR) <= tolerance && Math.abs(targetG - fillG) <= tolerance && Math.abs(targetB - fillB) <= tolerance && Math.abs(targetA - fillA) <= tolerance) return;
+
+            let checkData = sampleData;
+            if (gap > 0) {
+                const baseCvs = document.createElement('canvas'); baseCvs.width = canvasW; baseCvs.height = canvasH;
+                const baseCtx = baseCvs.getContext('2d');
+                const baseImgData = baseCtx.createImageData(canvasW, canvasH);
+                baseImgData.data.set(sampleData);
+                baseCtx.putImageData(baseImgData, 0, 0);
+
+                const offCvs = document.createElement('canvas'); offCvs.width = canvasW; offCvs.height = canvasH;
+                const offCtx = offCvs.getContext('2d');
+                offCtx.drawImage(baseCvs, 0, 0);
+                offCtx.globalAlpha = 1.0; offCtx.globalCompositeOperation = 'source-over';
+                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { offCtx.drawImage(baseCvs, Math.cos(a)*gap, Math.sin(a)*gap); }
+                checkData = offCtx.getImageData(0, 0, canvasW, canvasH).data;
+            }
+
+            const visited = new Uint8Array(canvasW * canvasH);
+            const pixelStack = [[sx, sy]];
+
+            function matchColor(x, y) {
+                if (x < 0 || x >= canvasW || y < 0 || y >= canvasH) return false;
+                const p = (y * canvasW + x) * 4;
+                if (checkData[p+3] === 0 && targetA === 0) return true;
+                return Math.abs(checkData[p]-targetR)<=tolerance && Math.abs(checkData[p+1]-targetG)<=tolerance && Math.abs(checkData[p+2]-targetB)<=tolerance && Math.abs(checkData[p+3]-targetA)<=tolerance;
+            }
+
+            while (pixelStack.length > 0) {
+                const [cx, cy] = pixelStack.pop();
+                let x = cx, y = cy;
+                while (y >= 0 && matchColor(x, y)) y--;
+                y++;
+                let reachLeft = false, reachRight = false;
+                while (y < canvasH && matchColor(x, y)) {
+                    visited[y * canvasW + x] = 1;
+                    if (x > 0) {
+                        if (matchColor(x - 1, y) && !visited[y * canvasW + x - 1]) {
+                            if (!reachLeft) { pixelStack.push([x - 1, y]); reachLeft = true; }
+                        } else if (reachLeft) reachLeft = false;
+                    }
+                    if (x < canvasW - 1) {
+                        if (matchColor(x + 1, y) && !visited[y * canvasW + x + 1]) {
+                            if (!reachRight) { pixelStack.push([x + 1, y]); reachRight = true; }
+                        } else if (reachRight) reachRight = false;
+                    }
+                    y++;
+                }
+            }
+
+            const fillCvs = document.createElement('canvas'); fillCvs.width = canvasW; fillCvs.height = canvasH;
+            const fillCtx = fillCvs.getContext('2d');
+            const fillImgData = fillCtx.createImageData(canvasW, canvasH);
+            const fd = fillImgData.data;
+            for(let i=0; i<canvasW*canvasH; i++) {
+                if(visited[i]) { fd[i*4] = fillR; fd[i*4+1] = fillG; fd[i*4+2] = fillB; fd[i*4+3] = fillA; }
+            }
+            fillCtx.putImageData(fillImgData, 0, 0);
+
+            ctx.globalCompositeOperation = 'source-over';
+            if (gap > 0) {
+                for(let a=0; a<Math.PI*2; a+=Math.PI/4) { ctx.drawImage(fillCvs, Math.cos(a)*gap, Math.sin(a)*gap); }
+            } else { ctx.drawImage(fillCvs, 0, 0); }
+        }
         // 설정 불러오기
         async function loadSettings() {
             try {
@@ -452,71 +550,82 @@
         // ✨ [핵심 기능] 서버의 그리기 데이터를 해석하여 보이지 않는 캔버스에 그린 후 PNG로 반환하는 엔진
         // ✨ [업그레이드] PNG와 GIF를 모두 지원하는 렌더링 엔진
         // ✨ [고스트 현상 해결 버전] PNG와 GIF를 모두 지원하며 잔상을 방지하는 렌더링 엔진
+        // ✨ 2. [draw.html 완벽 호환] 레이어와 채우기를 모두 지원하는 렌더링 엔진
         async function renderDrawingToDataURL(drawingData) {
-            // 1. 다중 프레임(움짤) 모드인 경우 -> 잔상 방지 처리 후 GIF 생성
+            // [움짤(GIF) 모드 처리] - 잔상 방지 포함
             if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
-                // gifshot 내부에서도 Image 객체가 필요하므로 async/await로 순차 처리
                 const totalFrames = drawingData.frames.length;
-                const opaqueFrames = []; // 흰색 배경이 합성된 DataURL들을 담을 배열
-                
-                // 임시로 그릴 오프스크린 캔버스 생성
+                const opaqueFrames = [];
                 const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = 1920;  // 데이터 원본 크기
-                tempCanvas.height = 1080;
+                tempCanvas.width = 1920; tempCanvas.height = 1080;
                 const tempCtx = tempCanvas.getContext('2d');
 
-                // 🚨 핵심: 모든 프레임을 돌면서 흰색 배경을 강제로 합성합니다.
                 for (let i = 0; i < totalFrames; i++) {
                     const frameSrc = drawingData.frames[i].src;
+                    tempCtx.globalCompositeOperation = 'source-over';
+                    tempCtx.fillStyle = '#ffffff';
+                    tempCtx.fillRect(0, 0, 1920, 1080);
                     
-                    // 캔버스 초기화 및 배경 칠하기
-                    tempCtx.globalCompositeOperation = 'source-over'; // 기본값
-                    tempCtx.fillStyle = '#ffffff'; // 불투명한 흰색 배경
-                    tempCtx.fillRect(0, 0, 1920, 1080); // 캔버스 전체를 흰색으로 칠함
-                    
-                    // 배경 위에 투명 프레임을 그립니다.
                     await new Promise((imgRes) => {
                         const img = new Image();
                         img.onload = () => {
-                            tempCtx.drawImage(img, 0, 0); // 흰색 배경 위에 이미지 그리기
-                            // 최종적으로 흰색 배경과 합쳐진 불투명 PNG 데이터 추출
+                            tempCtx.drawImage(img, 0, 0);
                             opaqueFrames.push(tempCanvas.toDataURL('image/png'));
                             imgRes();
                         };
-                        img.onerror = () => { console.error(`프레임 ${i} 로드 실패`); imgRes(); }; // 에러나도 넘어가게
-                        img.src = frameSrc;
+                        img.onerror = imgRes; img.src = frameSrc;
                     });
                 }
-
                 return new Promise((resolve, reject) => {
-                    // 계산에 필요한 데이터 준비
                     const avgDuration = drawingData.frames.reduce((acc, f) => acc + (f.duration || 500), 0) / totalFrames;
-
-                    // gifshot 생성 호출
                     gifshot.createGIF({
-                        images: opaqueFrames, // 흰색 배경이 합성된 불투명한 이미지들을 전달!
-                        gifWidth: 960,  // 관리자용은 용량과 속도를 위해 절반 크기로 생성
-                        gifHeight: 540,
-                        interval: avgDuration / 1000,
-                        numWorkers: 4
+                        images: opaqueFrames, gifWidth: 960, gifHeight: 540,
+                        interval: avgDuration / 1000, numWorkers: 4
                     }, function (obj) {
-                        if (!obj.error) {
-                            resolve(obj.image); // GIF DataURL 반환
-                        } else {
-                            reject(new Error("GIF 생성 실패: " + obj.error));
-                        }
+                        if (!obj.error) resolve(obj.image);
+                        else reject(new Error("GIF 생성 실패: " + obj.error));
                     });
                 });
             }
 
-            // 2. 일반 드로잉 데이터(정지 화면)인 경우 -> PNG 생성 (배경 흰색으로 합성)
-            const canvas = document.createElement('canvas');
-            canvas.width = 1920; canvas.height = 1080;
-            const ctx = canvas.getContext('2d');
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round'; // 펜 터치 부드럽게 설정
-
+            // [정지 이미지 모드 처리] - 레이어, 블렌딩, 채우기 완벽 복원
             const items = Array.isArray(drawingData) ? drawingData : [];
+            const layerContexts = {};
+            const layerOrder = []; // z-index 순서 기록
+
+            // 1) 초기 레이어 구성 설정
+            const initItem = items.find(i => i.type === 'init_layers');
+            if (initItem) {
+                initItem.layers.forEach((l, index) => {
+                    const cvs = document.createElement('canvas');
+                    cvs.width = 1920; cvs.height = 1080;
+                    cvs.style.zIndex = index + 1;
+                    cvs.style.opacity = l.opacity !== undefined ? l.opacity : 1;
+                    cvs.style.mixBlendMode = l.blendMode || 'normal';
+                    
+                    layerContexts[l.id] = { canvasNode: cvs, ctx: cvs.getContext('2d') };
+                    layerOrder.push(l.id);
+                });
+            }
+
+            function getTargetLayer(layerId) {
+                if (layerId && layerContexts[layerId]) return layerContexts[layerId];
+                if (layerOrder.length === 0) { // 구버전 데이터를 위한 예외처리
+                    const cvs = document.createElement('canvas');
+                    cvs.width = 1920; cvs.height = 1080; cvs.style.zIndex = 1;
+                    layerContexts['default'] = { canvasNode: cvs, ctx: cvs.getContext('2d') };
+                    layerOrder.push('default');
+                }
+                return layerContexts[layerOrder[0]];
+            }
+
+            // 2) 그림 내역 순차적 그리기
             for (let item of items) {
+                if (item.type === 'init_layers') continue;
+
+                const targetLayer = getTargetLayer(item.layerId);
+                const ctx = targetLayer.ctx;
+
                 if (item.type === 'raster_image') {
                     await new Promise(res => {
                         const img = new Image();
@@ -527,9 +636,14 @@
                         };
                         img.onerror = res; img.src = item.src;
                     });
+                } else if (item.type === 'fill') {
+                    const px = item.point ? item.point.x : item.x;
+                    const py = item.point ? item.point.y : item.y;
+                    const tol = item.tolerance !== undefined ? item.tolerance : 50;
+                    const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
+                    doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
                 } else if (item.type === 'path' || !item.type) {
                     if(!item.points || item.points.length === 0) continue;
-                    // 지우개면 배경을 뚫어야 하므로 복합 연산 사용
                     ctx.globalCompositeOperation = item.color === 'erase' ? 'destination-out' : 'source-over';
                     ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
                     ctx.fillStyle = item.color === 'erase' ? 'rgba(0,0,0,1)' : item.color;
@@ -545,6 +659,7 @@
                             ctx.beginPath(); ctx.arc(cx, cy, cw/2, 0, Math.PI*2); ctx.fill();
                         }
                     }
+                    ctx.globalAlpha = 1.0;
                 } else if (['line', 'rect', 'circle', 'text', 'draw_shape'].includes(item.type)) {
                     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1.0;
                     ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
@@ -552,21 +667,23 @@
                     if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
                     else if (shape === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
                     else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
-                    else if (shape === 'text') {
-                         ctx.font = `bold ${item.width}px 'Malgun Gothic', sans-serif`;
-                         ctx.fillStyle = item.color; ctx.textBaseline = 'top';
-                         const lines = item.end.text.split('\n'); let curY = item.start.y;
-                         for(let line of lines) { ctx.fillText(line, item.start.x, curY); curY += item.width * 1.2; }
-                    }
                 }
             }
 
-            // 다운로드 시 지우개로 뚫린 구멍이 까맣게 보이지 않도록 뒤에 흰색 배경 최종 합성
+            // 3) 분리된 모든 레이어들을 z-index 순서에 맞게 최종 합성 (Baking)
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = 1920; finalCanvas.height = 1080;
             const fCtx = finalCanvas.getContext('2d');
-            fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 1920, 1080); // 배경 흰색
-            fCtx.drawImage(canvas, 0, 0); // 그린 그림 그 위에 얹기
+            fCtx.fillStyle = '#ffffff'; 
+            fCtx.fillRect(0, 0, 1920, 1080); // 최하단 흰색 배경
+
+            layerOrder.forEach(id => {
+                const l = layerContexts[id];
+                fCtx.globalAlpha = l.canvasNode.style.opacity || 1;
+                let mode = l.canvasNode.style.mixBlendMode || 'normal';
+                fCtx.globalCompositeOperation = mode === 'normal' ? 'source-over' : mode;
+                fCtx.drawImage(l.canvasNode, 0, 0);
+            });
 
             return finalCanvas.toDataURL('image/png');
         }
