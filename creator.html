@@ -451,15 +451,50 @@
         }
         // ✨ [핵심 기능] 서버의 그리기 데이터를 해석하여 보이지 않는 캔버스에 그린 후 PNG로 반환하는 엔진
         // ✨ [업그레이드] PNG와 GIF를 모두 지원하는 렌더링 엔진
+        // ✨ [고스트 현상 해결 버전] PNG와 GIF를 모두 지원하며 잔상을 방지하는 렌더링 엔진
         async function renderDrawingToDataURL(drawingData) {
-            // 1. 다중 프레임(움짤) 모드인 경우 -> GIF 생성
+            // 1. 다중 프레임(움짤) 모드인 경우 -> 잔상 방지 처리 후 GIF 생성
             if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
-                return new Promise((resolve, reject) => {
-                    const images = drawingData.frames.map(f => f.src);
-                    const avgDuration = drawingData.frames.reduce((acc, f) => acc + (f.duration || 500), 0) / drawingData.frames.length;
+                // gifshot 내부에서도 Image 객체가 필요하므로 async/await로 순차 처리
+                const totalFrames = drawingData.frames.length;
+                const opaqueFrames = []; // 흰색 배경이 합성된 DataURL들을 담을 배열
+                
+                // 임시로 그릴 오프스크린 캔버스 생성
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = 1920;  // 데이터 원본 크기
+                tempCanvas.height = 1080;
+                const tempCtx = tempCanvas.getContext('2d');
 
+                // 🚨 핵심: 모든 프레임을 돌면서 흰색 배경을 강제로 합성합니다.
+                for (let i = 0; i < totalFrames; i++) {
+                    const frameSrc = drawingData.frames[i].src;
+                    
+                    // 캔버스 초기화 및 배경 칠하기
+                    tempCtx.globalCompositeOperation = 'source-over'; // 기본값
+                    tempCtx.fillStyle = '#ffffff'; // 불투명한 흰색 배경
+                    tempCtx.fillRect(0, 0, 1920, 1080); // 캔버스 전체를 흰색으로 칠함
+                    
+                    // 배경 위에 투명 프레임을 그립니다.
+                    await new Promise((imgRes) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            tempCtx.drawImage(img, 0, 0); // 흰색 배경 위에 이미지 그리기
+                            // 최종적으로 흰색 배경과 합쳐진 불투명 PNG 데이터 추출
+                            opaqueFrames.push(tempCanvas.toDataURL('image/png'));
+                            imgRes();
+                        };
+                        img.onerror = () => { console.error(`프레임 ${i} 로드 실패`); imgRes(); }; // 에러나도 넘어가게
+                        img.src = frameSrc;
+                    });
+                }
+
+                return new Promise((resolve, reject) => {
+                    // 계산에 필요한 데이터 준비
+                    const avgDuration = drawingData.frames.reduce((acc, f) => acc + (f.duration || 500), 0) / totalFrames;
+
+                    // gifshot 생성 호출
                     gifshot.createGIF({
-                        images: images,
+                        images: opaqueFrames, // 흰색 배경이 합성된 불투명한 이미지들을 전달!
                         gifWidth: 960,  // 관리자용은 용량과 속도를 위해 절반 크기로 생성
                         gifHeight: 540,
                         interval: avgDuration / 1000,
@@ -474,10 +509,11 @@
                 });
             }
 
-            // 2. 일반 드로잉 데이터(정지 화면)인 경우 -> PNG 생성
+            // 2. 일반 드로잉 데이터(정지 화면)인 경우 -> PNG 생성 (배경 흰색으로 합성)
             const canvas = document.createElement('canvas');
             canvas.width = 1920; canvas.height = 1080;
             const ctx = canvas.getContext('2d');
+            ctx.lineCap = 'round'; ctx.lineJoin = 'round'; // 펜 터치 부드럽게 설정
 
             const items = Array.isArray(drawingData) ? drawingData : [];
             for (let item of items) {
@@ -489,10 +525,11 @@
                             ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height);
                             ctx.restore(); res();
                         };
-                        img.src = item.src;
+                        img.onerror = res; img.src = item.src;
                     });
                 } else if (item.type === 'path' || !item.type) {
                     if(!item.points || item.points.length === 0) continue;
+                    // 지우개면 배경을 뚫어야 하므로 복합 연산 사용
                     ctx.globalCompositeOperation = item.color === 'erase' ? 'destination-out' : 'source-over';
                     ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
                     ctx.fillStyle = item.color === 'erase' ? 'rgba(0,0,0,1)' : item.color;
@@ -524,12 +561,12 @@
                 }
             }
 
-            // 흰색 배경 합성
+            // 다운로드 시 지우개로 뚫린 구멍이 까맣게 보이지 않도록 뒤에 흰색 배경 최종 합성
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = 1920; finalCanvas.height = 1080;
             const fCtx = finalCanvas.getContext('2d');
-            fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 1920, 1080);
-            fCtx.drawImage(canvas, 0, 0);
+            fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 1920, 1080); // 배경 흰색
+            fCtx.drawImage(canvas, 0, 0); // 그린 그림 그 위에 얹기
 
             return finalCanvas.toDataURL('image/png');
         }
