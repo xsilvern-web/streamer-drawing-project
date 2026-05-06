@@ -2725,20 +2725,18 @@
                 isDrawing = false; const pos = getPointerPos(e);
                 // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
                 if (currentTool.startsWith('liq_')) {
-                    if (isDrawing) {
-                        isDrawing = false;
-                        const layer = layers.find(ly => ly.id === activeLayerId);
-                        if (layer && layer.type === 'canvas') {
-                            history.push({
-                                type: 'raster_image', layerId: activeLayerId,
-                                src: layer.canvas.toDataURL('image/png'),
-                                cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
-                                width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
-                            });
-                        }
-                    }
-                    return;
+                const layer = layers.find(ly => ly.id === activeLayerId);
+                if (layer && layer.type === 'canvas') {
+                    history.push({
+                        type: 'raster_image', layerId: activeLayerId,
+                        src: layer.canvas.toDataURL('image/png'),
+                        cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                        width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                    });
                 }
+                redoStack = []; // 💡 뒤로가기/앞으로가기 꼬임 방지를 위해 재실행 스택 초기화 추가
+                return;
+            }
                 if (currentTool === 'lasso') {
                     if (currentSelectionPath.length > 2) {
                         const ctx = getSelectionLayer();
@@ -2791,20 +2789,18 @@
                 isDrawing = false;
                 // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
                 if (currentTool.startsWith('liq_')) {
-                    if (isDrawing) {
-                        isDrawing = false;
-                        const layer = layers.find(ly => ly.id === activeLayerId);
-                        if (layer && layer.type === 'canvas') {
-                            history.push({
-                                type: 'raster_image', layerId: activeLayerId,
-                                src: layer.canvas.toDataURL('image/png'),
-                                cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
-                                width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
-                            });
-                        }
-                    }
-                    return;
+                const layer = layers.find(ly => ly.id === activeLayerId);
+                if (layer && layer.type === 'canvas') {
+                    history.push({
+                        type: 'raster_image', layerId: activeLayerId,
+                        src: layer.canvas.toDataURL('image/png'),
+                        cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                        width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
+                    });
                 }
+                redoStack = []; // 💡 뒤로가기/앞으로가기 꼬임 방지를 위해 재실행 스택 초기화 추가
+                return;
+            }
                 if (currentTool === 'lasso') {
                     if (currentSelectionPath.length > 2) {
                         const ctx = getSelectionLayer();
@@ -2901,12 +2897,6 @@
                     ctx.globalAlpha = 1.0;
 
                     if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
-                    else if (item.type === 'raster_image') {
-                        const img = new Image(); img.src = item.src;
-                        await new Promise(r => { img.onload = r; img.onerror = r; });
-                        ctx.save(); ctx.translate(item.cx, item.cy); ctx.rotate(item.angle);
-                        ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height); ctx.restore();
-                    }
                     else if (item.type === 'fill') {
                         // 이전 버전과의 호환성 유지 및 오타 대응
                         const px = item.point ? item.point.x : item.x;
