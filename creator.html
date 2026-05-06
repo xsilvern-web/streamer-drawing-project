@@ -566,8 +566,9 @@
         }
 
         // ✨ 2. [draw.html 완벽 호환] 레이어, 채우기, 투명도 버퍼링을 모두 지원하는 최적화 렌더링 엔진
+        // ✨ [draw.html 완벽 호환] 레이어, 채우기, 투명도 버퍼링, 변형/유동화 호환 및 렌더링 속도 최적화 엔진
         async function renderDrawingToDataURL(drawingData) {
-            // [움짤(GIF) 모드 처리] - 잔상 방지 포함
+            // [움짤(GIF) 모드 처리]
             if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
                 const totalFrames = drawingData.frames.length;
                 const opaqueFrames = [];
@@ -603,12 +604,12 @@
                 });
             }
 
-            // [정지 이미지 모드 처리] - 레이어, 블렌딩, 채우기 완벽 복원
+            // [정지 이미지 모드 처리]
             const items = Array.isArray(drawingData) ? drawingData : [];
             const layerContexts = {};
             const layerOrder = []; 
 
-            // ✨ 투명도 겹침(애벌레 현상)을 방지하고 속도를 높이기 위한 임시 버퍼 캔버스 추가
+            // ✨ 투명도 겹침(애벌레 현상) 방지 및 속도 향상을 위한 버퍼 캔버스
             const tmpCvs = document.createElement('canvas');
             tmpCvs.width = 1920; tmpCvs.height = 1080;
             const tmpCtx = tmpCvs.getContext('2d');
@@ -639,61 +640,93 @@
                 return layerContexts[layerOrder[0]];
             }
 
-            // 2) 그림 내역 순차적 그리기
+            // 2) 그림 내역 순차적 그리기 (draw.html과 1:1 매칭)
             for (let item of items) {
                 if (item.type === 'init_layers') continue;
 
                 const targetLayer = getTargetLayer(item.layerId);
                 const ctx = targetLayer.ctx;
 
-                if (item.type === 'raster_image') {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1.0;
+
+                // ✨ [오류 수정] 변형/이동 시 기존 객체를 지우는 로직 복원 (찌꺼기 및 이중 렌더링 방지)
+                if (item.type === 'clear' || (item.type === 'draw_shape' && item.shape === 'clear')) {
+                    ctx.clearRect(0, 0, 1920, 1080);
+                }
+                else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
                     await new Promise(res => {
                         const img = new Image();
                         img.onload = () => {
-                            ctx.save(); ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                            ctx.save(); 
+                            // ✨ [오류 수정] 유동화/병합 등 전체 덮어쓰기 시 잔상 제거 로직 복원
+                            if (item.width >= 1920 && item.height >= 1080) {
+                                ctx.clearRect(0, 0, 1920, 1080);
+                            }
+                            ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
                             ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height);
                             ctx.restore(); res();
                         };
                         img.onerror = res; img.src = item.src;
                     });
-                } else if (item.type === 'fill') {
+                } 
+                else if (item.type === 'fill') {
                     const px = item.point ? item.point.x : item.x;
                     const py = item.point ? item.point.y : item.y;
                     const tol = item.tolerance !== undefined ? item.tolerance : 50;
                     const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
                     doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
-                } else if (item.type === 'path' || !item.type) {
+                } 
+                else if (item.type === 'path' || !item.type) {
                     if(!item.points || item.points.length === 0) continue;
                     
-                    // ✨ draw.html과 완전히 동일한 버퍼링 렌더링 로직 적용 (속도 개선 및 투명도 버그 픽스)
+                    // ✨ [속도 최적화] 함수 호출 오버헤드를 제거하고 루프 내에서 직접 처리하여 다운로드 속도 폭증
                     if (item.color === 'erase') {
+                        ctx.globalCompositeOperation = 'destination-out';
+                        ctx.fillStyle = 'rgba(0,0,0,1)';
+                        
                         if (item.points.length === 1) {
                             const p = item.points[0];
-                            renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true);
+                            ctx.beginPath(); ctx.arc(p.x, p.y, p.w/2, 0, Math.PI * 2); ctx.fill();
                         } else {
                             for (let i = 1; i < item.points.length; i++) {
-                                renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
+                                const p1 = item.points[i-1], p2 = item.points[i];
+                                const dx = p2.x - p1.x, dy = p2.y - p1.y, distance = Math.hypot(dx, dy);
+                                const spacing = Math.max(1, Math.min(p1.w, p2.w) * 0.1); 
+                                const steps = Math.max(1, Math.floor(distance / spacing));
+                                for (let j = 0; j <= steps; j++) {
+                                    const ratio = steps === 0 ? 1 : j / steps;
+                                    const cx = p1.x + dx * ratio; const cy = p1.y + dy * ratio; const cw = p1.w + (p2.w - p1.w) * ratio;
+                                    ctx.beginPath(); ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); ctx.fill();
+                                }
                             }
                         }
                     } else {
                         tmpCtx.clearRect(0, 0, 1920, 1080);
                         const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
-                        const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
-
+                        tmpCtx.fillStyle = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
+                        
                         if (item.points.length === 1) {
                             const p = item.points[0];
-                            renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false);
+                            tmpCtx.beginPath(); tmpCtx.arc(p.x, p.y, p.w/2, 0, Math.PI * 2); tmpCtx.fill();
                         } else {
                             for (let i = 1; i < item.points.length; i++) {
-                                renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false);
+                                const p1 = item.points[i-1], p2 = item.points[i];
+                                const dx = p2.x - p1.x, dy = p2.y - p1.y, distance = Math.hypot(dx, dy);
+                                const spacing = Math.max(1, Math.min(p1.w, p2.w) * 0.1); 
+                                const steps = Math.max(1, Math.floor(distance / spacing));
+                                for (let j = 0; j <= steps; j++) {
+                                    const ratio = steps === 0 ? 1 : j / steps;
+                                    const cx = p1.x + dx * ratio; const cy = p1.y + dy * ratio; const cw = p1.w + (p2.w - p1.w) * ratio;
+                                    tmpCtx.beginPath(); tmpCtx.arc(cx, cy, cw / 2, 0, Math.PI * 2); tmpCtx.fill();
+                                }
                             }
                         }
                         ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
                         ctx.drawImage(tmpCvs, 0, 0);
-                        ctx.globalAlpha = 1.0;
                     }
-                } else if (['line', 'rect', 'circle', 'text', 'draw_shape'].includes(item.type)) {
-                    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1.0;
+                } 
+                else if (['line', 'rect', 'circle', 'text', 'draw_shape'].includes(item.type)) {
                     ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
                     let shape = item.shape || item.type;
                     if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
