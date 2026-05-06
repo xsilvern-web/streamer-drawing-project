@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <title>방송 관리자 대시보드</title>
-    <!-- ✨ 추가: 일괄 다운로드를 위한 압축 라이브러리 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.4.5/gifshot.min.js"></script>
     <style>
         body {
             font-family: 'Malgun Gothic', sans-serif;
@@ -450,21 +450,35 @@
             }
         }
         // ✨ [핵심 기능] 서버의 그리기 데이터를 해석하여 보이지 않는 캔버스에 그린 후 PNG로 반환하는 엔진
+        // ✨ [업그레이드] PNG와 GIF를 모두 지원하는 렌더링 엔진
         async function renderDrawingToDataURL(drawingData) {
+            // 1. 다중 프레임(움짤) 모드인 경우 -> GIF 생성
+            if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
+                return new Promise((resolve, reject) => {
+                    const images = drawingData.frames.map(f => f.src);
+                    const avgDuration = drawingData.frames.reduce((acc, f) => acc + (f.duration || 500), 0) / drawingData.frames.length;
+
+                    gifshot.createGIF({
+                        images: images,
+                        gifWidth: 960,  // 관리자용은 용량과 속도를 위해 절반 크기로 생성
+                        gifHeight: 540,
+                        interval: avgDuration / 1000,
+                        numWorkers: 4
+                    }, function (obj) {
+                        if (!obj.error) {
+                            resolve(obj.image); // GIF DataURL 반환
+                        } else {
+                            reject(new Error("GIF 생성 실패: " + obj.error));
+                        }
+                    });
+                });
+            }
+
+            // 2. 일반 드로잉 데이터(정지 화면)인 경우 -> PNG 생성
             const canvas = document.createElement('canvas');
             canvas.width = 1920; canvas.height = 1080;
             const ctx = canvas.getContext('2d');
 
-            // 1. 다중 프레임(움짤) 모드인 경우, 첫 프레임만 추출
-            if (drawingData.isAnimation && drawingData.frames && drawingData.frames.length > 0) {
-                return await new Promise(res => {
-                    const img = new Image();
-                    img.onload = () => { ctx.drawImage(img, 0, 0); res(canvas.toDataURL('image/png')); };
-                    img.src = drawingData.frames[0].src;
-                });
-            }
-
-            // 2. 일반 드로잉 데이터 해석 및 렌더링
             const items = Array.isArray(drawingData) ? drawingData : [];
             for (let item of items) {
                 if (item.type === 'raster_image') {
@@ -510,7 +524,7 @@
                 }
             }
 
-            // 다운로드 시 지우개로 뚫린 구멍이 까맣게 보이지 않도록 뒤에 흰색 배경 합성
+            // 흰색 배경 합성
             const finalCanvas = document.createElement('canvas');
             finalCanvas.width = 1920; finalCanvas.height = 1080;
             const fCtx = finalCanvas.getContext('2d');
@@ -524,18 +538,20 @@
         async function downloadSingleDrawing(id, name, time) {
             try {
                 const res = await fetch(`${API_BASE}/api/donation/${id}`);
-                if (!res.ok) throw new Error("데이터를 찾을 수 없습니다.");
                 const data = await res.json();
                 
                 const dataUrl = await renderDrawingToDataURL(data.data);
                 
+                // ✨ 파일 확장자 자동 결정 (GIF인지 PNG인지)
+                const isGif = dataUrl.startsWith("data:image/gif");
+                const ext = isGif ? "gif" : "png";
+
                 const link = document.createElement('a');
-                // 저장될 파일 이름 규칙: 닉네임_날짜.png
-                link.download = `drawing_${name}_${time.split(' ')[0]}.png`;
+                link.download = `drawing_${name}_${time.split(' ')[0]}.${ext}`;
                 link.href = dataUrl;
                 link.click();
             } catch (e) {
-                alert("이미지 다운로드 실패: " + e.message);
+                alert("다운로드 실패: " + e.message);
             }
         }
 
@@ -585,9 +601,14 @@
                         const detailData = await detailRes.json();
 
                         const dataUrl = await renderDrawingToDataURL(detailData.data);
-                        const base64Data = dataUrl.replace(/^data:image\/(png|jpg);base64,/, "");
-                        const safeName = item.name.replace(/[^a-z0-9가-힣]/gi, '_'); // 파일명 오류 방지
-                        folder.file(`[${item.id}]_${safeName}.png`, base64Data, {base64: true});
+                        const base64Data = dataUrl.split(',')[1]; // 헤더 제거 후 순수 데이터만 추출
+                        
+                        // ✨ 확장자 결정
+                        const isGif = dataUrl.startsWith("data:image/gif");
+                        const ext = isGif ? "gif" : "png";
+
+                        const safeName = item.name.replace(/[^a-z0-9가-힣]/gi, '_');
+                        folder.file(`[${item.id}]_${safeName}.${ext}`, base64Data, {base64: true});
                     } catch(err) {
                         console.error(`ID ${item.id} 변환 실패:`, err);
                     }
