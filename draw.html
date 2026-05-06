@@ -1889,13 +1889,17 @@
                 reader.readAsDataURL(file); e.target.value = '';
             });
 
-            function applyTransform(layerId) {
+            async function applyTransform(layerId) {
                 const layer = layers.find(l => l.id === layerId);
                 if (!layer) return;
 
                 if (layer.type === 'text') {
                     const contentDiv = layer.element.querySelector('.content');
-                    if (!contentDiv.innerText.trim() || contentDiv.innerText === '텍스트 입력...') { deleteLayer(layerId); return; }
+                    // 🚨 삭제 팝업 대신 경고 메시지 띄우기로 변경
+                    if (!contentDiv.innerText.trim() || contentDiv.innerText === '텍스트 입력...') { 
+                        alert('텍스트 내용을 입력한 후 확정해주세요.\n(삭제를 원하시면 우측 패널의 [레이어 삭제]를 이용하세요.)'); 
+                        return; 
+                    }
 
                     const w = contentDiv.offsetWidth; const h = contentDiv.offsetHeight;
                     const style = window.getComputedStyle(contentDiv);
@@ -3347,7 +3351,42 @@
 
             const naverLogin = new naver.LoginWithNaverId({ clientId: "vvc6338uO8TYXNMje6Dj", callbackUrl: window.location.origin + "/draw", isPopup: false, loginButton: { color: "green", type: 3, height: 40 } });
             naverLogin.init();
+            // ✨ 서버에서 폰트 목록을 가져와 자동으로 스타일과 드롭다운을 세팅하는 함수
+            async function loadCustomFonts() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/fonts`);
+                    const fonts = await res.json();
+                    
+                    if (fonts.length > 0) {
+                        let styleHtml = '';
+                        // 1. 받아온 폰트 갯수만큼 @font-face CSS를 자동으로 생성합니다.
+                        fonts.forEach(font => {
+                            styleHtml += `@font-face { font-family: '${font}'; src: url('/Fonts/${font}.ttf') format('truetype'); }\n`;
+                        });
+                        
+                        // 생성된 CSS를 화면 머리말(head)에 몰래 집어넣습니다.
+                        const styleTag = document.createElement('style');
+                        styleTag.innerHTML = styleHtml;
+                        document.head.appendChild(styleTag);
+                        
+                        // 2. 상단바와 플로팅 툴바에 있는 폰트 선택 드롭다운(select) 두 곳에 옵션을 자동 추가합니다.
+                        const fontSelects = document.querySelectorAll('#tb-fontfamily');
+                        fontSelects.forEach(select => {
+                            fonts.forEach(font => {
+                                const option = document.createElement('option');
+                                option.value = font;
+                                option.innerText = font; // 파일명이 그대로 표시됩니다 (예: CookieRun)
+                                select.appendChild(option);
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.error("커스텀 폰트 목록을 불러오는 중 오류가 발생했습니다.", e);
+                }
+            }
 
+            // 스크립트가 실행될 때 위 함수를 곧바로 작동시킵니다.
+            loadCustomFonts();
             window.addEventListener('load', function () {
                 naverLogin.getLoginStatus(function (status) {
                     if (status) {

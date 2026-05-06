@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 
@@ -19,7 +20,7 @@ CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD", "streamer777!")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 app = FastAPI()
-
+app.mount("/Fonts", StaticFiles(directory="Fonts"), name="Fonts")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
@@ -125,7 +126,16 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
 # ✨ test.html 서빙 라우터 추가
 @app.get("/test")
 async def serve_test_page(): return FileResponse("test.html")
-
+@app.get("/api/fonts")
+async def get_font_list():
+    font_dir = "Fonts"
+    # 폴더가 없으면 빈 목록 반환
+    if not os.path.exists(font_dir):
+        return []
+    
+    # 확장자가 .ttf 인 파일만 골라내서 확장자를 뗀 이름만 리스트로 만듭니다.
+    fonts = [os.path.splitext(f)[0] for f in os.listdir(font_dir) if f.lower().endswith('.ttf')]
+    return fonts
 # ✨ 테스트 데이터 수신 엔드포인트
 @app.post("/api/submit-test")
 async def submit_test(request: Request):
