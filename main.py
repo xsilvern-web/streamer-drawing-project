@@ -429,10 +429,6 @@ async def process_drawing_queue():
                             for connection in target_connections:
                                 try: await connection.send_json(payload_msg)
                                 except: pass
-                        
-                        # ✨ 설정한 배속(batch_size)만큼 명령을 쏟아낸 뒤에야 한 번씩 짧게 대기합니다.
-                        if idx % batch_size == 0:
-                            await asyncio.sleep(sleep_time)
                 
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)
