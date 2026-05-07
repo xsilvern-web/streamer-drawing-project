@@ -631,6 +631,7 @@
             border-color: #007acc;
             z-index: 999 !important;
         }
+
         /* ✨ 변형 박스 반전 버튼 스타일 */
         .flip-controls {
             position: absolute;
@@ -641,16 +642,29 @@
             gap: 5px;
             z-index: 50;
         }
+
         .transform-box.active .flip-controls {
             display: flex;
         }
+
         .flip-btn {
-            background: #333; color: white; border: 1px solid #555;
-            border-radius: 4px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
             white-space: nowrap;
         }
-        .flip-btn:hover { background: #555; color: #4fc3f7; border-color: #4fc3f7; }
+
+        .flip-btn:hover {
+            background: #555;
+            color: #4fc3f7;
+            border-color: #4fc3f7;
+        }
 
         .transform-box:hover {
             border-color: rgba(0, 122, 204, 0.5);
@@ -1033,6 +1047,17 @@
                 title="스포이드">스포이드</button>
             <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range"
                     id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
+            
+            <div class="control-group">
+                <label style="width:100%; text-align:left; font-size:11px; margin-bottom:2px;">브러시 선택</label>
+                <select id="brush-select" style="width: 100%; background: #444; color: white; border: 1px solid #555; padding: 4px; border-radius: 3px; font-size: 11px;">
+                    <option value="default">기본 둥근 펜</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label style="display:flex; justify-content:space-between; width:100%;">간격 <span id="spacing-val">10%</span></label>
+                <input type="range" id="brush-spacing" min="0.01" max="1" step="0.01" value="0.1">
+            </div>
             <div class="control-group">
                 <label style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                     굵기
@@ -1206,6 +1231,42 @@
         </div>
 
         <script>
+
+            // 브러시 이미지를 담아둘 캐시 메모리
+            const brushImageCache = {};
+
+            // 흑백 브러시 이미지를 유저가 선택한 색상으로 물들이는 마법의 함수
+            function colorizeBrush(brushName, colorHex) {
+                const cacheKey = `${brushName}_${colorHex}`;
+                if (brushImageCache[cacheKey]) return brushImageCache[cacheKey]; // 이미 칠해둔 게 있으면 재사용 (성능 극대화)
+
+                const offCvs = document.createElement('canvas');
+                // 전문 브러시 규격 (보통 256x256 또는 512x512)
+                offCvs.width = 256;
+                offCvs.height = 256;
+                const offCtx = offCvs.getContext('2d');
+
+                const img = new Image();
+                img.src = `/Brushes/${brushName}.png`;
+
+                // 이미지가 아직 로드되지 않았을 때를 대비한 프로미스(Promise) 객체 저장
+                brushImageCache[cacheKey] = new Promise((resolve) => {
+                    img.onload = () => {
+                        // 1. 원본 흑백 브러시 그리기
+                        offCtx.drawImage(img, 0, 0, 256, 256);
+                        // 2. 색상 덮어씌우기 (이미지가 있는 곳에만 색이 칠해지는 포토샵의 클리핑 마스크 원리)
+                        offCtx.globalCompositeOperation = "source-in";
+                        offCtx.fillStyle = colorHex;
+                        offCtx.fillRect(0, 0, 256, 256);
+
+                        resolve(offCvs); // 물들여진 캔버스 자체를 브러시 팁으로 반환
+                    };
+                    img.onerror = () => resolve(null); // 파일이 없으면 기본 브러시로 작동하게 처리
+                });
+
+                return brushImageCache[cacheKey];
+            }
+
             const CANVAS_WIDTH = 1920; const CANVAS_HEIGHT = 1080;
             const CHZZK_CHANNEL_ID = 'bc2dbff369307b5c446224cce192c8b1';
             const API_BASE = window.location.origin;
@@ -1322,7 +1383,7 @@
             let history = []; let redoStack = [];
 
             let isDrawing = false; let currentWidth = 5; let currentTool = 'cursor';
-
+            let currentBrushType = 'default';
 
             let isDraggingBg = false;
             let dragStartBgX = 0, dragStartBgY = 0;
@@ -2582,13 +2643,44 @@
             }
             document.getElementById('btn-add-layer').onclick = createLayer;
 
-            function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser) {
-                ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over'; ctx.fillStyle = isEraser ? "rgba(0,0,0,1)" : color;
-                const dx = x2 - x1; const dy = y2 - y1; const distance = Math.hypot(dx, dy);
-                const spacing = Math.max(1, Math.min(w1, w2) * 0.1); const steps = Math.max(1, Math.floor(distance / spacing));
+            // ✨ 업그레이드된 브러시 렌더링 엔진
+            async function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser, brushType = null, spacingPercent = 0.1) {
+                ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
+
+                const dx = x2 - x1; 
+                const dy = y2 - y1; 
+                const distance = Math.hypot(dx, dy);
+
+                // 간격(Spacing) 계산: 굵기 대비 퍼센트 (기본 0.1 = 10% 겹치게 촘촘히 찍음)
+                // 데이터에 간격 값이 없으면 0.1을 기본으로 사용하여 기존 그림 완벽 호환
+                const spacing = spacingPercent || 0.1;
+                const step = Math.max(1, ((w1 + w2) / 2) * spacing); 
+                const steps = Math.floor(distance / step);
+
+                let coloredBrushImg = null;
+                
+                // 지우개가 아니고, 유저가 특정 브러시를 선택했다면 색이 입혀진 이미지를 가져옵니다.
+                if (!isEraser && brushType && brushType !== 'default') {
+                    const rgbColor = color.startsWith('#') ? color : '#ffffff'; // 헥스 코드 보정
+                    coloredBrushImg = await colorizeBrush(brushType, rgbColor);
+                }
+
                 for (let i = 0; i <= steps; i++) {
-                    const ratio = steps === 0 ? 1 : i / steps; const cx = x1 + dx * ratio; const cy = y1 + dy * ratio; const cw = w1 + (w2 - w1) * ratio;
-                    ctx.beginPath(); ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); ctx.fill();
+                    const ratio = steps === 0 ? 1 : i / steps;
+                    const cx = x1 + dx * ratio; 
+                    const cy = y1 + dy * ratio; 
+                    const cw = w1 + (w2 - w1) * ratio;
+
+                    if (coloredBrushImg) {
+                        // [커스텀 브러시] 도장 찍기
+                        ctx.drawImage(coloredBrushImg, cx - cw / 2, cy - cw / 2, cw, cw);
+                    } else {
+                        // [기본 브러시 및 지우개] 기존의 둥근 브러시 (하위 호환)
+                        ctx.fillStyle = isEraser ? "rgba(0,0,0,1)" : color;
+                        ctx.beginPath(); 
+                        ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); 
+                        ctx.fill();
+                    }
                 }
             }
 
@@ -3053,12 +3145,14 @@
                     smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor;
 
                     if (currentTool === 'pen') {
-                        const draftCtx = getDraftLayer().getContext('2d');
-                        const opaqueColor = `rgba(${parseInt(currentColorHex.slice(1, 3), 16)}, ${parseInt(currentColorHex.slice(3, 5), 16)}, ${parseInt(currentColorHex.slice(5, 7), 16)}, 1)`;
-                        renderBrushStroke(draftCtx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, opaqueColor, false);
-                    } else {
-                        renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, currentColor, true);
-                    }
+    const draftCtx = getDraftLayer().getContext('2d');
+    const opaqueColor = `rgba(${parseInt(currentColorHex.slice(1, 3), 16)}, ${parseInt(currentColorHex.slice(3, 5), 16)}, ${parseInt(currentColorHex.slice(5, 7), 16)}, 1)`;
+    // ✨ 변경됨
+    renderBrushStroke(draftCtx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, opaqueColor, false, currentBrushType);
+} else {
+    // ✨ 변경됨
+    renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, currentColor, true, currentBrushType);
+}
 
                     lastX = smX; lastY = smY; currentPath.push({ x: smX, y: smY, w: smW });
                 } else if (currentTool !== 'fill') {
@@ -3115,22 +3209,24 @@
                     return;
                 }
                 if (currentTool === 'pen' || currentTool === 'eraser') {
-                    if (currentPath.length > 0) {
-                        if (currentTool === 'pen') {
-                            const activeLayer = layers.find(l => l.id === activeLayerId);
-                            const draftLayer = getDraftLayer();
-                            activeLayer.ctx.globalAlpha = currentOpacity;
-                            activeLayer.ctx.globalCompositeOperation = 'source-over';
-                            activeLayer.ctx.drawImage(draftLayer, 0, 0);
-                            activeLayer.ctx.globalAlpha = 1.0;
-                            draftLayer.style.display = 'none';
+    if (currentPath.length > 0) {
+        if (currentTool === 'pen') {
+            const activeLayer = layers.find(l => l.id === activeLayerId);
+            const draftLayer = getDraftLayer();
+            activeLayer.ctx.globalAlpha = currentOpacity;
+            activeLayer.ctx.globalCompositeOperation = 'source-over';
+            activeLayer.ctx.drawImage(draftLayer, 0, 0);
+            activeLayer.ctx.globalAlpha = 1.0;
+            draftLayer.style.display = 'none';
 
-                            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath });
-                        } else {
-                            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath });
-                        }
-                    }
-                } else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
+            // ✨ 펜일 때 brushType 추가
+            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType });
+        } else {
+            // ✨ 지우개(eraser)일 때 brushType 추가
+            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType });
+        }
+    }
+} else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
                 redoStack = []; canvasSnapshot = null;
             });
 
@@ -3179,24 +3275,26 @@
                     return;
                 }
                 if (currentTool === 'pen' || currentTool === 'eraser') {
-                    if (currentPath.length > 0) {
-                        if (currentTool === 'pen') {
-                            const activeLayer = layers.find(l => l.id === activeLayerId);
-                            const draftLayer = getDraftLayer();
+    if (currentPath.length > 0) {
+        if (currentTool === 'pen') {
+            const activeLayer = layers.find(l => l.id === activeLayerId);
+            const draftLayer = getDraftLayer();
 
-                            activeLayer.ctx.globalAlpha = currentOpacity;
-                            activeLayer.ctx.globalCompositeOperation = 'source-over';
-                            activeLayer.ctx.drawImage(draftLayer, 0, 0);
-                            activeLayer.ctx.globalAlpha = 1.0;
-                            draftLayer.style.display = 'none';
+            activeLayer.ctx.globalAlpha = currentOpacity;
+            activeLayer.ctx.globalCompositeOperation = 'source-over';
+            activeLayer.ctx.drawImage(draftLayer, 0, 0);
+            activeLayer.ctx.globalAlpha = 1.0;
+            draftLayer.style.display = 'none';
 
-                            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath });
-                        } else {
-                            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath });
-                        }
-                        redoStack = [];
-                    }
-                } else if (currentTool !== 'fill') {
+            // ✨ 펜일 때 brushType 추가
+            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType });
+        } else {
+            // ✨ 지우개(eraser)일 때 brushType 추가
+            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType });
+        }
+        redoStack = [];
+    }
+} else if (currentTool !== 'fill') {
                     if (canvasSnapshot && activeLayerId) {
                         const activeLayer = layers.find(l => l.id === activeLayerId);
                         activeLayer.ctx.putImageData(canvasSnapshot, 0, 0);
@@ -3291,26 +3389,26 @@
 
                         if (item.color === 'erase') {
                             if (item.points.length === 1) {
-                                const p = item.points[0];
-                                renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true);
-                            } else {
-                                for (let i = 1; i < item.points.length; i++) {
-                                    renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true);
-                                }
-                            }
+    const p = item.points[0];
+    renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true, item.brushType);
+} else {
+    for (let i = 1; i < item.points.length; i++) {
+        renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, item.brushType);
+    }
+}
                         } else {
                             tmpCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                             const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
                             const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
 
                             if (item.points.length === 1) {
-                                const p = item.points[0];
-                                renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false);
-                            } else {
-                                for (let i = 1; i < item.points.length; i++) {
-                                    renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false);
-                                }
-                            }
+    const p = item.points[0];
+    renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false, item.brushType);
+} else {
+    for (let i = 1; i < item.points.length; i++) {
+        renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, item.brushType);
+    }
+}
                             ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
                             ctx.drawImage(tmpCvs, 0, 0);
                             ctx.globalAlpha = 1;
@@ -3355,7 +3453,7 @@
                     currentWidth = val;
                     document.getElementById('width-input').value = val;
                     document.getElementById('line-width').value = val;
-                    
+
                     // 마우스 커서가 있다면 화면 커서 크기도 즉각 반영
                     const cursor = document.getElementById('custom-cursor');
                     if (cursor && (currentTool === 'pen' || currentTool === 'eraser')) {
@@ -3370,7 +3468,7 @@
                     currentWidth = val;
                     document.getElementById('width-input').value = val;
                     document.getElementById('line-width').value = val;
-                    
+
                     // 마우스 커서가 있다면 화면 커서 크기도 즉각 반영
                     const cursor = document.getElementById('custom-cursor');
                     if (cursor && (currentTool === 'pen' || currentTool === 'eraser')) {
@@ -3763,7 +3861,32 @@
                     console.error("커스텀 폰트 목록을 불러오는 중 오류가 발생했습니다.", e);
                 }
             }
+            async function loadBrushList() {
+    try {
+        const res = await fetch(`${API_BASE}/api/brushes`);
+        const brushes = await res.json();
+        const brushSelect = document.getElementById('brush-select');
 
+        if (brushes.length > 0) {
+            brushes.forEach(brush => {
+                const option = document.createElement('option');
+                option.value = brush;
+                option.innerText = brush; // 폴더 내 파일명이 그대로 표시됩니다.
+                brushSelect.appendChild(option);
+            });
+        }
+
+        // 브러시가 변경될 때마다 변수 업데이트
+        brushSelect.addEventListener('change', (e) => {
+            currentBrushType = e.target.value;
+        });
+    } catch (e) {
+        console.error("브러시 목록 로드 실패", e);
+    }
+}
+
+// 스크립트 실행 시 폰트와 함께 브러시 목록도 로드합니다.
+loadBrushList();
             // 스크립트가 실행될 때 위 함수를 곧바로 작동시킵니다.
             loadCustomFonts();
             window.addEventListener('load', function () {

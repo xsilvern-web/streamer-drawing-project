@@ -21,6 +21,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 app = FastAPI()
 app.mount("/Fonts", StaticFiles(directory="Fonts"), name="Fonts")
+app.mount("/Brushes", StaticFiles(directory="Brushes"), name="Brushes")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
 )
@@ -136,6 +137,14 @@ async def get_font_list():
     # 확장자가 .ttf 인 파일만 골라내서 확장자를 뗀 이름만 리스트로 만듭니다.
     fonts = [os.path.splitext(f)[0] for f in os.listdir(font_dir) if f.lower().endswith('.ttf')]
     return fonts
+@app.get("/api/brushes")
+async def get_brush_list():
+    brush_dir = "Brushes"
+    if not os.path.exists(brush_dir):
+        return []
+    # 확장자가 .png 인 파일만 이름 추출
+    brushes = [os.path.splitext(f)[0] for f in os.listdir(brush_dir) if f.lower().endswith('.png')]
+    return brushes
 # ✨ 테스트 데이터 수신 엔드포인트
 @app.post("/api/submit-test")
 async def submit_test(request: Request):
