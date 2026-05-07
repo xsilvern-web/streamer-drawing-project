@@ -337,6 +337,137 @@
                 alertContainer.classList.remove('show');
                 if (loadingIndicator) loadingIndicator.style.display = 'none';
             }
+            // ---------- [여기에 코드 추가] ----------
+            else if (data.type === 'play_timelapse') {
+                const history = data.history;
+                const totalItems = history.length;
+                if (totalItems === 0) return;
+
+                // 🌟 여기서 재생 시간을 조절하세요! (예: 3000 = 3초 만에 모든 그림 과정 고속 재생)
+                const playbackDurationMs = 3000; 
+                const fps = 60;
+                const totalFramesToRender = (playbackDurationMs / 1000) * fps;
+                const itemsPerFrame = Math.max(1, Math.ceil(totalItems / totalFramesToRender));
+
+                let currentIndex = 0;
+                
+                // 투명도 겹침 현상을 방지하기 위한 오프스크린 버퍼 캔버스
+                const tmpCvs = document.createElement('canvas');
+                tmpCvs.width = 1920; tmpCvs.height = 1080;
+                const tmpCtx = tmpCvs.getContext('2d');
+
+                function drawNextBatch() {
+                    if (isAnimationSkipped) return;
+
+                    const limit = Math.min(currentIndex + itemsPerFrame, totalItems);
+
+                    for (; currentIndex < limit; currentIndex++) {
+                        const item = history[currentIndex];
+                        if (item.type === 'init_layers') continue; 
+
+                        // 타겟 레이어 찾기
+                        let ctx;
+                        if (item.layerId && layerContexts[item.layerId]) {
+                            ctx = layerContexts[item.layerId];
+                        } else {
+                            ctx = layerContexts['default'];
+                        }
+
+                        ctx.globalCompositeOperation = 'source-over';
+                        ctx.globalAlpha = 1.0;
+
+                        // 1. 초기화
+                        if (item.type === 'clear' || (item.type === 'draw_shape' && item.shape === 'clear')) {
+                            ctx.clearRect(0, 0, 1920, 1080);
+                        }
+                        // 2. 확정된 이미지 / 텍스트 변형 래스터
+                        else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
+                            const img = new Image();
+                            img.onload = () => {
+                                ctx.save();
+                                if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
+                                ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                                ctx.drawImage(img, -item.width/2, -item.height/2, item.width, item.height);
+                                ctx.restore();
+                            };
+                            img.src = item.src;
+                        }
+                        // 3. 채우기(버킷)
+                        else if (item.type === 'fill') {
+                            const px = item.point ? item.point.x : item.x;
+                            const py = item.point ? item.point.y : item.y;
+                            const tol = item.tolerance !== undefined ? item.tolerance : 50;
+                            const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
+                            doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
+                        }
+                        // 4. 일반 브러시 및 지우개 (초고속 렌더링 최적화)
+                        else if (item.type === 'path' || !item.type) {
+                            if (!item.points || item.points.length === 0) continue;
+
+                            if (item.color === 'erase') {
+                                ctx.globalCompositeOperation = 'destination-out';
+                                ctx.fillStyle = 'rgba(0,0,0,1)';
+                                if (item.points.length === 1) {
+                                    const p = item.points[0];
+                                    ctx.beginPath(); ctx.arc(p.x, p.y, p.w/2, 0, Math.PI * 2); ctx.fill();
+                                } else {
+                                    for (let i = 1; i < item.points.length; i++) {
+                                        const p1 = item.points[i-1], p2 = item.points[i];
+                                        const dx = p2.x - p1.x, dy = p2.y - p1.y, distance = Math.hypot(dx, dy);
+                                        const spacing = Math.max(1, Math.min(p1.w, p2.w) * 0.1);
+                                        const steps = Math.max(1, Math.floor(distance / spacing));
+                                        for (let j = 0; j <= steps; j++) {
+                                            const ratio = steps === 0 ? 1 : j / steps;
+                                            const cx = p1.x + dx * ratio; const cy = p1.y + dy * ratio; const cw = p1.w + (p2.w - p1.w) * ratio;
+                                            ctx.beginPath(); ctx.arc(cx, cy, cw / 2, 0, Math.PI * 2); ctx.fill();
+                                        }
+                                    }
+                                }
+                            } else {
+                                tmpCtx.clearRect(0, 0, 1920, 1080);
+                                const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
+                                tmpCtx.fillStyle = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
+
+                                if (item.points.length === 1) {
+                                    const p = item.points[0];
+                                    tmpCtx.beginPath(); tmpCtx.arc(p.x, p.y, p.w/2, 0, Math.PI * 2); tmpCtx.fill();
+                                } else {
+                                    for (let i = 1; i < item.points.length; i++) {
+                                        const p1 = item.points[i-1], p2 = item.points[i];
+                                        const dx = p2.x - p1.x, dy = p2.y - p1.y, distance = Math.hypot(dx, dy);
+                                        const spacing = Math.max(1, Math.min(p1.w, p2.w) * 0.1);
+                                        const steps = Math.max(1, Math.floor(distance / spacing));
+                                        for (let j = 0; j <= steps; j++) {
+                                            const ratio = steps === 0 ? 1 : j / steps;
+                                            const cx = p1.x + dx * ratio; const cy = p1.y + dy * ratio; const cw = p1.w + (p2.w - p1.w) * ratio;
+                                            tmpCtx.beginPath(); tmpCtx.arc(cx, cy, cw / 2, 0, Math.PI * 2); tmpCtx.fill();
+                                        }
+                                    }
+                                }
+                                ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
+                                ctx.drawImage(tmpCvs, 0, 0);
+                            }
+                        }
+                        // 5. 도형 (선, 네모, 원 등)
+                        else if (['line', 'rect', 'circle', 'text'].includes(item.type) || item.type === 'draw_shape') {
+                            ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
+                            let shape = item.shape || item.type;
+                            if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
+                            else if (shape === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                            else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
+                        }
+                    }
+
+                    // 다음 프레임 예약
+                    if (currentIndex < totalItems) {
+                        requestAnimationFrame(drawNextBatch);
+                    }
+                }
+
+                // 타임랩스 엔진 가동 시작
+                requestAnimationFrame(drawNextBatch);
+            }
+            // ---------- [여기까지 코드 추가] ----------
             else {
                 if (data.shape === 'init_layers') {
                     canvasContainer.innerHTML = '';

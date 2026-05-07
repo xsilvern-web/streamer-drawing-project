@@ -362,73 +362,21 @@ async def process_drawing_queue():
                         await asyncio.sleep(total_sleep_time % 0.1)
             else:
                 if drawing_data and isinstance(drawing_data, list):
-                    total_items = len(drawing_data)
-                    
-                    # ✨ 획수(아이템)에 비례해서 배속(Batch) 크기를 기하급수적으로 늘립니다.
-                    batch_size = 1
-                    sleep_time = 0.01
-                    
-                    if total_items > 300:
-                        batch_size = 20
-                        sleep_time = 0.005
-                    if total_items > 800:
-                        batch_size = 50
-                        sleep_time = 0.001
-                    if total_items > 1500:
-                        batch_size = 100
-                        sleep_time = 0
-                    if total_items > 3000:
-                        batch_size = 200   # 80배속
-                        sleep_time = 0
-                    if total_items > 5000:
-                        batch_size = 200  # 200배속 (거의 스킵 수준의 속도)
+                    # 1. 레이어 초기화 세팅만 먼저 전송
+                    init_item = next((item for item in drawing_data if item.get("type") == "init_layers"), None)
+                    if init_item:
+                        for connection in target_connections:
+                            try: await connection.send_json(init_item)
+                            except: pass
 
-                    for idx, item in enumerate(drawing_data):
-                        if skip_current_drawing: break
-                        item_type = item.get("type", "path")
-                        color = item.get("color")
-                        
-                        if item_type == "path":
-                            points = item.get("points", [])
-                            layer_id = item.get("layerId")
-                            opacity = item.get("opacity", 1.0) 
-
-                            if not points: continue
-                            for connection in target_connections:
-                                try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
-                                except: pass
-                            
-                            # ✨ 선 하나를 그릴 때도 데이터가 크면 뭉텅이(Chunk)로 전송하여 속도 대폭 향상
-                            chunk_size = (50 if len(points) < 500 else 200) * batch_size
-                            
-                            for i in range(1, len(points), chunk_size):
-                                if skip_current_drawing: break 
-                                chunk = points[i:i+chunk_size]
-                                for connection in target_connections:
-                                    try: await connection.send_json({"type": "draw_lines", "points": chunk, "color": color, "layerId": layer_id, "opacity": opacity})
-                                    except: pass
-                                
-                                # 선 내부에서도 너무 잦은 대기를 방지
-                                if i % (chunk_size * 2) == 0 and sleep_time > 0:
-                                    await asyncio.sleep(sleep_time)
-                            
-                            if not skip_current_drawing:
-                                for connection in target_connections:
-                                    try: await connection.send_json({"type": "end_path", "layerId": layer_id, "opacity": opacity})
-                                    except: pass
-                        
-                        elif item_type == "fill":
-                            for connection in target_connections:
-                                try: await connection.send_json(item)
-                                except: pass
-                        
-                        else:
-                            payload_msg = item.copy()
-                            payload_msg["type"] = "draw_shape"
-                            payload_msg["shape"] = item_type
-                            for connection in target_connections:
-                                try: await connection.send_json(payload_msg)
-                                except: pass
+                    # 2. 수천 개의 선 데이터를 쪼개지 않고 '통째로' 한 번에 전송 (클라이언트 자체 초고속 재생용)
+                    for connection in target_connections:
+                        try: 
+                            await connection.send_json({
+                                "type": "play_timelapse",
+                                "history": drawing_data
+                            })
+                        except: pass
                 
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)
