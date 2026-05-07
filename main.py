@@ -363,12 +363,27 @@ async def process_drawing_queue():
             else:
                 if drawing_data and isinstance(drawing_data, list):
                     total_items = len(drawing_data)
-                    base_delay = 0.01
-                    if total_items > 300: base_delay = 0.005 
-                    if total_items > 800: base_delay = 0.001 
-                    if total_items > 1500: base_delay = 0    
+                    
+                    # ✨ 획수(아이템)에 비례해서 배속(Batch) 크기를 기하급수적으로 늘립니다.
+                    batch_size = 1
+                    sleep_time = 0.01
+                    
+                    if total_items > 300:
+                        batch_size = 2
+                        sleep_time = 0.005
+                    if total_items > 800:
+                        batch_size = 5
+                        sleep_time = 0.001
+                    if total_items > 1500:
+                        batch_size = 20
+                        sleep_time = 0
+                    if total_items > 3000:
+                        batch_size = 80   # 80배속
+                        sleep_time = 0
+                    if total_items > 5000:
+                        batch_size = 200  # 200배속 (거의 스킵 수준의 속도)
 
-                    for item in drawing_data:
+                    for idx, item in enumerate(drawing_data):
                         if skip_current_drawing: break
                         item_type = item.get("type", "path")
                         color = item.get("color")
@@ -383,7 +398,8 @@ async def process_drawing_queue():
                                 try: await connection.send_json({"type": "start_path", "point": points[0], "color": color, "layerId": layer_id, "opacity": opacity})
                                 except: pass
                             
-                            chunk_size = 50 if len(points) < 500 else 200
+                            # ✨ 선 하나를 그릴 때도 데이터가 크면 뭉텅이(Chunk)로 전송하여 속도 대폭 향상
+                            chunk_size = (50 if len(points) < 500 else 200) * batch_size
                             
                             for i in range(1, len(points), chunk_size):
                                 if skip_current_drawing: break 
@@ -391,7 +407,10 @@ async def process_drawing_queue():
                                 for connection in target_connections:
                                     try: await connection.send_json({"type": "draw_lines", "points": chunk, "color": color, "layerId": layer_id, "opacity": opacity})
                                     except: pass
-                                await asyncio.sleep(base_delay) 
+                                
+                                # 선 내부에서도 너무 잦은 대기를 방지
+                                if i % (chunk_size * 2) == 0 and sleep_time > 0:
+                                    await asyncio.sleep(sleep_time)
                             
                             if not skip_current_drawing:
                                 for connection in target_connections:
@@ -399,11 +418,9 @@ async def process_drawing_queue():
                                     except: pass
                         
                         elif item_type == "fill":
-                            payload_msg = item.copy()
                             for connection in target_connections:
-                                try: await connection.send_json(payload_msg)
+                                try: await connection.send_json(item)
                                 except: pass
-                            await asyncio.sleep(base_delay)
                         
                         else:
                             payload_msg = item.copy()
@@ -412,7 +429,10 @@ async def process_drawing_queue():
                             for connection in target_connections:
                                 try: await connection.send_json(payload_msg)
                                 except: pass
-                            await asyncio.sleep(base_delay)
+                        
+                        # ✨ 설정한 배속(batch_size)만큼 명령을 쏟아낸 뒤에야 한 번씩 짧게 대기합니다.
+                        if idx % batch_size == 0:
+                            await asyncio.sleep(sleep_time)
                 
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)
