@@ -124,36 +124,58 @@
         const brushImageCache = {};
 
         // 흑백 브러시 이미지를 유저가 선택한 색상으로 물들이는 마법의 함수
-        function colorizeBrush(brushName, colorHex) {
-            const cacheKey = `${brushName}_${colorHex}`;
-            if (brushImageCache[cacheKey]) return brushImageCache[cacheKey]; // 이미 칠해둔 게 있으면 재사용 (성능 극대화)
+        // 흑백/흰색 배경 브러시 이미지를 투명화하고 선택한 색상으로 물들이는 함수
+function colorizeBrush(brushName, colorHex) {
+    const cacheKey = `${brushName}_${colorHex}`;
+    if (brushImageCache[cacheKey]) return brushImageCache[cacheKey]; // 캐시 재사용
 
-            const offCvs = document.createElement('canvas');
-            // 전문 브러시 규격 (보통 256x256 또는 512x512)
-            offCvs.width = 256;
-            offCvs.height = 256;
-            const offCtx = offCvs.getContext('2d');
+    const offCvs = document.createElement('canvas');
+    const offCtx = offCvs.getContext('2d');
 
-            const img = new Image();
-            img.src = `/Brushes/${brushName}.png`;
+    const img = new Image();
+    img.src = `/Brushes/${brushName}.png`;
 
-            // 이미지가 아직 로드되지 않았을 때를 대비한 프로미스(Promise) 객체 저장
-            brushImageCache[cacheKey] = new Promise((resolve) => {
-                img.onload = () => {
-                    // 1. 원본 흑백 브러시 그리기
-                    offCtx.drawImage(img, 0, 0, 256, 256);
-                    // 2. 색상 덮어씌우기 (이미지가 있는 곳에만 색이 칠해지는 포토샵의 클리핑 마스크 원리)
-                    offCtx.globalCompositeOperation = "source-in";
-                    offCtx.fillStyle = colorHex;
-                    offCtx.fillRect(0, 0, 256, 256);
+    brushImageCache[cacheKey] = new Promise((resolve) => {
+        img.onload = () => {
+            // 1. 하드코딩된 256을 버리고, 이미지의 실제 원본 크기를 자동으로 감지하여 적용
+            const w = img.width;
+            const h = img.height;
+            offCvs.width = w;
+            offCvs.height = h;
 
-                    resolve(offCvs); // 물들여진 캔버스 자체를 브러시 팁으로 반환
-                };
-                img.onerror = () => resolve(null); // 파일이 없으면 기본 브러시로 작동하게 처리
-            });
+            // 2. 캔버스에 원본 브러시(흰 배경+검은 무늬) 그리기
+            offCtx.drawImage(img, 0, 0, w, h);
 
-            return brushImageCache[cacheKey];
-        }
+            // 3. 픽셀 데이터를 분석하여 흰색 배경을 투명하게 날려버리기 (루미넌스-알파 반전)
+            const imgData = offCtx.getImageData(0, 0, w, h);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                // 픽셀의 밝기(Luminance) 계산 (0: 검은색 ~ 255: 흰색)
+                const luminance = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+                
+                // 어두울수록 불투명하게, 밝을(흰색)수록 투명하게 알파값 반전
+                // (이미 투명한 PNG일 경우를 대비해 기존 알파 비율도 곱해줌)
+                const alpha = (255 - luminance) * (data[i+3] / 255);
+                
+                data[i] = 0;       // R (모양을 검은색으로 통일)
+                data[i+1] = 0;     // G
+                data[i+2] = 0;     // B
+                data[i+3] = alpha; // A (계산된 투명도 적용)
+            }
+            offCtx.putImageData(imgData, 0, 0);
+
+            // 4. 투명해진 브러시 위에 유저가 선택한 색상 덮어씌우기 (클리핑 마스크)
+            offCtx.globalCompositeOperation = "source-in";
+            offCtx.fillStyle = colorHex;
+            offCtx.fillRect(0, 0, w, h);
+
+            resolve(offCvs); // 완성된 브러시 팁 반환
+        };
+        img.onerror = () => resolve(null); // 파일 로드 실패 방어
+    });
+
+    return brushImageCache[cacheKey];
+}
 
         const canvasContainer = document.getElementById('canvas-container');
         const alertContainer = document.getElementById("alert-container");
@@ -205,10 +227,10 @@ async function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser, b
     let coloredBrushImg = null;
     
     // 지우개가 아니고, 유저가 특정 브러시를 선택했다면 색이 입혀진 이미지를 가져옵니다.
-    if (!isEraser && brushType && brushType !== 'default') {
-        const rgbColor = color.startsWith('#') ? color : '#ffffff'; // 헥스 코드 보정
-        coloredBrushImg = await colorizeBrush(brushType, rgbColor);
-    }
+   if (!isEraser && brushType && brushType !== 'default') {
+    // 헥스 보정 코드를 삭제하고, 넘겨받은 color를 그대로 사용합니다. (rgba 포맷 완벽 지원)
+    coloredBrushImg = await colorizeBrush(brushType, color);
+}
 
     for (let i = 0; i <= steps; i++) {
         const ratio = steps === 0 ? 1 : i / steps;
