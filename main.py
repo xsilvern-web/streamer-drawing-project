@@ -369,13 +369,13 @@ async def process_drawing_queue():
                     sleep_time = 0.01
                     
                     if total_items > 300:
-                        batch_size = 2
+                        batch_size = 20
                         sleep_time = 0.005
                     if total_items > 800:
-                        batch_size = 5
+                        batch_size = 50
                         sleep_time = 0.001
                     if total_items > 1500:
-                        batch_size = 80
+                        batch_size = 100
                         sleep_time = 0
                     if total_items > 3000:
                         batch_size = 200   # 80배속
