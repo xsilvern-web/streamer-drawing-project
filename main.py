@@ -296,7 +296,7 @@ async def process_drawing_queue():
             payload = await drawing_queue.get()
             skip_current_drawing = False 
             
-            # ✨ 목적지 분기 처리 (테스트 플래그 확인)
+            # 목적지 분기 처리 (테스트 플래그 확인)
             target_connections = test_connections if payload.get("is_test") else active_connections
             
             settings = get_db_settings()
@@ -306,22 +306,26 @@ async def process_drawing_queue():
             title = payload.get("title", "제목없음")
             profile_image = payload.get("profileImage", "")
             
-            # 여기서부터 아래의 모든 통신은 target_connections로 발송됩니다.
+            # 1. 화면 정리(clear)만 먼저 즉각 보냅니다.
             for connection in target_connections:
-                try: 
-                    await connection.send_json({"type": "clear"})
-                    await connection.send_json({
-                        "type": "alert", 
-                        "name": name, 
-                        "title": title, 
-                        "profileImage": profile_image
-                    })
+                try: await connection.send_json({"type": "clear"})
                 except: pass
             
             drawing_data = payload.get("drawingData", [])
             is_animation = isinstance(drawing_data, dict) and drawing_data.get("isAnimation")
 
             if is_animation:
+                # 움짤(GIF) 모드일 때는 다운로드 인디케이터가 있으므로 알림을 먼저 띄웁니다.
+                for connection in target_connections:
+                    try: 
+                        await connection.send_json({
+                            "type": "alert", 
+                            "name": name, 
+                            "title": title, 
+                            "profileImage": profile_image
+                        })
+                    except: pass
+
                 frames = drawing_data.get("frames", [])
                 repeat_count = drawing_data.get("repeatCount", 5)
                 total_loops = min(20, max(1, int(repeat_count)))
@@ -360,20 +364,22 @@ async def process_drawing_queue():
                     
                     if not skip_current_drawing:
                         await asyncio.sleep(total_sleep_time % 0.1)
+            
             else:
+                # 타임랩스 (일반 그림) 모드
                 if drawing_data and isinstance(drawing_data, list):
-                    # 1. 레이어 초기화 세팅만 먼저 전송
                     init_item = next((item for item in drawing_data if item.get("type") == "init_layers"), None)
                     if init_item:
                         for connection in target_connections:
                             try: await connection.send_json(init_item)
                             except: pass
 
-                    # 2. 수천 개의 선 데이터를 쪼개지 않고 '통째로' 한 번에 전송 (클라이언트 자체 초고속 재생용)
+                    # 2. 알림 데이터를 타임랩스 그림 데이터에 '포함' 시켜서 하나의 보따리로 보냅니다!
                     for connection in target_connections:
                         try: 
                             await connection.send_json({
                                 "type": "play_timelapse",
+                                "alert": { "name": name, "title": title, "profileImage": profile_image },
                                 "history": drawing_data
                             })
                         except: pass

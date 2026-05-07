@@ -339,10 +339,24 @@
             // ---------- [여기에 코드 추가] ----------
             // ---------- [교체할 코드 시작] ----------
             else if (data.type === 'play_timelapse') {
-                isAnimationSkipped = false;
+                isAnimationSkipped = false; 
+
+                // ✨ 데이터가 무사히 모두 도착한 이 순간에 알림과 소리를 터뜨립니다!
+                if (data.alert) {
+                    document.getElementById('donor-name-display').innerText = data.alert.name;
+                    document.getElementById('drawing-title-display').innerText = data.alert.title;
+                    if (data.alert.profileImage) { 
+                        profileImgDiv.style.backgroundImage = `url('${data.alert.profileImage}')`; 
+                    } else { 
+                        profileImgDiv.style.backgroundImage = 'none'; 
+                    }
+                    alertContainer.classList.add('show');
+                    const audio = new Audio(`${API_BASE}/coin.mp3`);
+                    audio.play().catch(e => console.log("오디오 재생 에러:", e));
+                }
+
                 const history = data.history;
                 const totalItems = history.length;
-                console.log("타임랩스 데이터 확인:", data.history);
                 if (totalItems === 0) return;
 
                 // 1. 화면을 확실하게 보여주도록 강제 설정
@@ -371,7 +385,7 @@
                 }
 
                 // 3. 타임랩스 재생 속도 조절 (예: 3000 = 3초 만에 그리기)
-                const playbackDurationMs = 3000; 
+                const playbackDurationMs = 10000; 
                 const fps = 60;
                 const totalFramesToRender = (playbackDurationMs / 1000) * fps;
                 const itemsPerFrame = Math.max(1, Math.ceil(totalItems / totalFramesToRender));
