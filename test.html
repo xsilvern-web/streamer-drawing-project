@@ -339,8 +339,10 @@
             // ---------- [여기에 코드 추가] ----------
             // ---------- [교체할 코드 시작] ----------
             else if (data.type === 'play_timelapse') {
+                isAnimationSkipped = false;
                 const history = data.history;
                 const totalItems = history.length;
+                console.log("타임랩스 데이터 확인:", data.history);
                 if (totalItems === 0) return;
 
                 // 1. 화면을 확실하게 보여주도록 강제 설정
