@@ -378,7 +378,7 @@ async def process_drawing_queue():
                         batch_size = 20
                         sleep_time = 0
                     if total_items > 3000:
-                        batch_size = 80   # 80배속
+                        batch_size = 200   # 80배속
                         sleep_time = 0
                     if total_items > 5000:
                         batch_size = 200  # 200배속 (거의 스킵 수준의 속도)
