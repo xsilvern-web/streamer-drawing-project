@@ -337,12 +337,38 @@
                 if (loadingIndicator) loadingIndicator.style.display = 'none';
             }
             // ---------- [여기에 코드 추가] ----------
+            // ---------- [교체할 코드 시작] ----------
             else if (data.type === 'play_timelapse') {
                 const history = data.history;
                 const totalItems = history.length;
                 if (totalItems === 0) return;
 
-                // 🌟 여기서 재생 시간을 조절하세요! (예: 3000 = 3초 만에 모든 그림 과정 고속 재생)
+                // 1. 화면을 확실하게 보여주도록 강제 설정
+                canvasContainer.style.opacity = '1';
+
+                // 2. 도화지(레이어) 초기화 에러 방지 완벽 처리
+                const initItem = history.find(i => i.type === 'init_layers');
+                if (initItem) {
+                    canvasContainer.innerHTML = '';
+                    layerContexts = {};
+                    initItem.layers.forEach((lInfo, index) => {
+                        const cvs = document.createElement('canvas');
+                        cvs.width = 1920; cvs.height = 1080;
+                        cvs.style.position = 'absolute';
+                        cvs.style.top = '0'; cvs.style.left = '0';
+                        cvs.style.zIndex = index + 1; 
+                        cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1; 
+                        cvs.style.mixBlendMode = lInfo.blendMode || 'normal'; 
+                        canvasContainer.appendChild(cvs);
+                        layerContexts[lInfo.id] = Object.assign(cvs.getContext('2d'), { canvasNode: cvs });
+                    });
+                } else if (Object.keys(layerContexts).length === 0) {
+                    // 레이어 정보가 아예 없을 경우를 대비한 최후의 안전장치
+                    canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
+                    layerContexts['default'] = Object.assign(document.getElementById('default-canvas').getContext('2d'), { canvasNode: document.getElementById('default-canvas') });
+                }
+
+                // 3. 타임랩스 재생 속도 조절 (예: 3000 = 3초 만에 그리기)
                 const playbackDurationMs = 3000; 
                 const fps = 60;
                 const totalFramesToRender = (playbackDurationMs / 1000) * fps;
@@ -350,7 +376,6 @@
 
                 let currentIndex = 0;
                 
-                // 투명도 겹침 현상을 방지하기 위한 오프스크린 버퍼 캔버스
                 const tmpCvs = document.createElement('canvas');
                 tmpCvs.width = 1920; tmpCvs.height = 1080;
                 const tmpCtx = tmpCvs.getContext('2d');
@@ -364,22 +389,22 @@
                         const item = history[currentIndex];
                         if (item.type === 'init_layers') continue; 
 
-                        // 타겟 레이어 찾기
+                        // 안전하게 그림 그릴 대상 도화지 찾기
                         let ctx;
                         if (item.layerId && layerContexts[item.layerId]) {
                             ctx = layerContexts[item.layerId];
-                        } else {
-                            ctx = layerContexts['default'];
+                        } else if (Object.keys(layerContexts).length > 0) {
+                            ctx = layerContexts[Object.keys(layerContexts)[0]]; 
                         }
+
+                        if (!ctx) continue; // 에러 방어
 
                         ctx.globalCompositeOperation = 'source-over';
                         ctx.globalAlpha = 1.0;
 
-                        // 1. 초기화
                         if (item.type === 'clear' || (item.type === 'draw_shape' && item.shape === 'clear')) {
                             ctx.clearRect(0, 0, 1920, 1080);
                         }
-                        // 2. 확정된 이미지 / 텍스트 변형 래스터
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
                             const img = new Image();
                             img.onload = () => {
@@ -391,7 +416,6 @@
                             };
                             img.src = item.src;
                         }
-                        // 3. 채우기(버킷)
                         else if (item.type === 'fill') {
                             const px = item.point ? item.point.x : item.x;
                             const py = item.point ? item.point.y : item.y;
@@ -399,10 +423,8 @@
                             const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
                             doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
                         }
-                        // 4. 일반 브러시 및 지우개 (초고속 렌더링 최적화)
                         else if (item.type === 'path' || !item.type) {
                             if (!item.points || item.points.length === 0) continue;
-
                             if (item.color === 'erase') {
                                 ctx.globalCompositeOperation = 'destination-out';
                                 ctx.fillStyle = 'rgba(0,0,0,1)';
@@ -447,7 +469,6 @@
                                 ctx.drawImage(tmpCvs, 0, 0);
                             }
                         }
-                        // 5. 도형 (선, 네모, 원 등)
                         else if (['line', 'rect', 'circle', 'text'].includes(item.type) || item.type === 'draw_shape') {
                             ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
                             let shape = item.shape || item.type;
@@ -457,15 +478,14 @@
                         }
                     }
 
-                    // 다음 프레임 예약
                     if (currentIndex < totalItems) {
                         requestAnimationFrame(drawNextBatch);
                     }
                 }
-
-                // 타임랩스 엔진 가동 시작
+                
                 requestAnimationFrame(drawNextBatch);
             }
+            // ---------- [교체할 코드 끝] ----------
             // ---------- [여기까지 코드 추가] ----------
             else {
                 if (data.shape === 'init_layers') {
