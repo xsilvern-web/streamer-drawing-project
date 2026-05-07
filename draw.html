@@ -3347,6 +3347,37 @@
                 // ✨ 텍스트 입력 중일 때는 단축키 오작동 방지
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
 
+                // 👇👇👇 여기서부터 추가해 주세요 👇👇👇
+                // ✨ 브러시 크기 축소 (-) 단축키 (꾹 누르기 지원)
+                if (e.key === '-' || e.key === '_') {
+                    let val = currentWidth - 1;
+                    if (val < 1) val = 1; // 최소 굵기 1 제한
+                    currentWidth = val;
+                    document.getElementById('width-input').value = val;
+                    document.getElementById('line-width').value = val;
+                    
+                    // 마우스 커서가 있다면 화면 커서 크기도 즉각 반영
+                    const cursor = document.getElementById('custom-cursor');
+                    if (cursor && (currentTool === 'pen' || currentTool === 'eraser')) {
+                        cursor.style.width = `${currentWidth * zoomLevel}px`;
+                        cursor.style.height = `${currentWidth * zoomLevel}px`;
+                    }
+                }
+                // ✨ 브러시 크기 확대 (+) 단축키 (꾹 누르기 지원)
+                if (e.key === '+' || e.key === '=') {
+                    let val = currentWidth + 1;
+                    if (val > 100) val = 100; // 최대 굵기 100 제한
+                    currentWidth = val;
+                    document.getElementById('width-input').value = val;
+                    document.getElementById('line-width').value = val;
+                    
+                    // 마우스 커서가 있다면 화면 커서 크기도 즉각 반영
+                    const cursor = document.getElementById('custom-cursor');
+                    if (cursor && (currentTool === 'pen' || currentTool === 'eraser')) {
+                        cursor.style.width = `${currentWidth * zoomLevel}px`;
+                        cursor.style.height = `${currentWidth * zoomLevel}px`;
+                    }
+                }
                 // ✨ B (브러시/펜), E (지우개) 단축키
                 if (e.key.toLowerCase() === 'b') {
                     e.preventDefault();
