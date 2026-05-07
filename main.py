@@ -383,6 +383,10 @@ async def process_drawing_queue():
                                 "history": drawing_data
                             })
                         except: pass
+                    if not skip_current_drawing:
+                        # 클라이언트의 playbackDurationMs(6000)와 동일하게 6초 동안 
+                        # 그림이 다 그려질 때까지 서버도 먼저 기다립니다.
+                        await asyncio.sleep(8)
                 
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)

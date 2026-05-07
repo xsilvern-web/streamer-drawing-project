@@ -385,21 +385,33 @@
                 }
 
                 // 3. 타임랩스 재생 속도 조절 (예: 3000 = 3초 만에 그리기)
-                const playbackDurationMs = 10000; 
+                const playbackDurationMs = 8000; 
                 const fps = 60;
                 const totalFramesToRender = (playbackDurationMs / 1000) * fps;
                 const itemsPerFrame = Math.max(1, Math.ceil(totalItems / totalFramesToRender));
 
                 let currentIndex = 0;
+                let exactFloatIndex = 0; // 프레임 제약을 없애고 소수점까지 갯수를 누적하기 위한 변수
+                let lastTime = null;
                 
                 const tmpCvs = document.createElement('canvas');
                 tmpCvs.width = 1920; tmpCvs.height = 1080;
                 const tmpCtx = tmpCvs.getContext('2d');
 
-                function drawNextBatch() {
+                function drawNextBatch(currentTime) {
                     if (isAnimationSkipped) return;
 
-                    const limit = Math.min(currentIndex + itemsPerFrame, totalItems);
+                    // 애니메이션 시작 시간 기록
+                    if (!lastTime) lastTime = currentTime;
+                    
+                    const deltaTime = currentTime - lastTime;
+                    lastTime = currentTime;
+
+                    // 흐른 시간(ms)에 비례해서 정확한 갯수만큼 그리기 인덱스 증가
+                    exactFloatIndex += (totalItems / playbackDurationMs) * deltaTime;
+                    
+                    // 누적된 값이 정수 1 이상이 될 때만 그리기 진행 (아주 느린 속도 완벽 지원)
+                    const limit = Math.min(Math.floor(exactFloatIndex), totalItems);
 
                     for (; currentIndex < limit; currentIndex++) {
                         const item = history[currentIndex];
