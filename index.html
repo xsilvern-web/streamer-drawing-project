@@ -243,10 +243,27 @@
             if (isProcessingQueue) return;
             isProcessingQueue = true;
 
-            // 큐에 쌓인 명령들을 하나가 완전히 끝날 때까지 기다렸다가(await) 다음으로 넘어갑니다.
+            let processedCount = 0;
+
             while (messageQueue.length > 0) {
                 const data = messageQueue.shift();
                 await handleSocketMessage(data);
+                processedCount++;
+
+                // ✨ [핵심 최적화] 데이터가 쏟아져 들어올 때 브라우저 멈춤(프리징) 현상 방지
+                let batchLimit = 2; // 평소에는 실시간으로 그리기
+                
+                // 대기열에 데이터가 많이 쌓여있을수록 모아서 한 번에 그리고 화면을 넘깁니다.
+                if (messageQueue.length > 100) batchLimit = 10;
+                if (messageQueue.length > 500) batchLimit = 50;
+                if (messageQueue.length > 1000) batchLimit = 150;
+                if (messageQueue.length > 3000) batchLimit = 300;
+
+                // 정해진 개수만큼 명령을 처리했으면, 화면을 새로고침 할 시간(requestAnimationFrame)을 줍니다.
+                if (processedCount >= batchLimit) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    processedCount = 0;
+                }
             }
 
             isProcessingQueue = false;
