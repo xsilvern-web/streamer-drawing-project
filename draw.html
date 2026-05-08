@@ -854,6 +854,52 @@
             border-radius: 6px 6px 0 0;
             border-bottom: none;
         }
+        /* ✨ 브러시 선택 팝업 UI 스타일 */
+#brush-picker-panel {
+    display: none;
+    position: absolute;
+    left: 65px; /* 좌측 사이드바 옆으로 튀어나오게 */
+    top: 0;
+    width: 250px;
+    background: #252526;
+    border: 1px solid #555;
+    border-radius: 6px;
+    padding: 10px;
+    z-index: 3000;
+    box-shadow: 2px 4px 15px rgba(0,0,0,0.8);
+    flex-direction: column;
+    gap: 10px;
+}
+
+.brush-item {
+    width: 40px;
+    height: 40px;
+    background: #fff; /* 브러시 무늬(검은색)가 잘 보이도록 흰 배경 */
+    border: 2px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    transition: 0.1s;
+}
+
+.brush-item:hover {
+    border-color: #007acc;
+    transform: scale(1.05);
+}
+
+.brush-item.active {
+    border-color: #ff9800;
+    box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+}
+
+.brush-item img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+}
     </style>
 </head>
 
@@ -1048,13 +1094,30 @@
             <div class="control-group"><label>투명도 <span id="opacity-val">100%</span></label><input type="range"
                     id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
 
-            <div class="control-group">
-                <label style="width:100%; text-align:left; font-size:11px; margin-bottom:2px;">브러시 선택</label>
-                <select id="brush-select"
-                    style="width: 100%; background: #444; color: white; border: 1px solid #555; padding: 4px; border-radius: 3px; font-size: 11px;">
-                    <option value="default">기본 둥근 펜</option>
-                </select>
-            </div>
+            <div class="control-group" style="position: relative;">
+    <label style="width:100%; text-align:left; font-size:11px; margin-bottom:2px;">브러시 선택</label>
+    <button id="btn-brush-picker" class="sys-btn" style="width: 100%; height: 35px; display: flex; align-items: center; justify-content: center; gap: 5px; background: #333;">
+        <img id="current-brush-icon" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" style="width: 20px; height: 20px; background: white; border-radius: 2px;">
+        <span id="current-brush-name" style="font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">기본 둥근 펜</span>
+    </button>
+    
+    <div id="brush-picker-panel">
+        <div>
+            <div style="font-size: 11px; color: #ff9800; font-weight: bold; margin-bottom: 5px;">⭐ 최근 사용한 브러시</div>
+            <div id="recent-brushes-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px;"></div>
+        </div>
+        <div style="height: 1px; background: #444;"></div>
+        <div>
+            <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">전체 브러시</div>
+            <div id="all-brushes-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; min-height: 220px; align-content: start;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; background: #1e1e1e; padding: 5px; border-radius: 4px;">
+            <button id="brush-prev-page" class="sys-btn" style="width: 40px; padding: 2px;">◀</button>
+            <span id="brush-page-indicator" style="font-size: 11px; color: #ccc; font-weight: bold;">1 / 1</span>
+            <button id="brush-next-page" class="sys-btn" style="width: 40px; padding: 2px;">▶</button>
+        </div>
+    </div>
+</div>
             <div class="control-group">
                 <label style="display:flex; justify-content:space-between; width:100%;">간격 <span
                         id="spacing-val">10%</span></label>
@@ -3896,32 +3959,132 @@
                     console.error("커스텀 폰트 목록을 불러오는 중 오류가 발생했습니다.", e);
                 }
             }
-            async function loadBrushList() {
-                try {
-                    const res = await fetch(`${API_BASE}/api/brushes`);
-                    const brushes = await res.json();
-                    const brushSelect = document.getElementById('brush-select');
+            // ✨ 브러시 선택기 전역 상태 변수
+let allBrushes = ['default'];
+let recentBrushes = ['default'];
+let currentBrushPage = 0;
+const BRUSHES_PER_PAGE = 25; // 5x5 그리드
 
-                    if (brushes.length > 0) {
-                        brushes.forEach(brush => {
-                            const option = document.createElement('option');
-                            option.value = brush;
-                            option.innerText = brush; // 폴더 내 파일명이 그대로 표시됩니다.
-                            brushSelect.appendChild(option);
-                        });
-                    }
+// 서버에서 브러시 목록 가져오기
+async function loadBrushList() {
+    try {
+        const res = await fetch(`${API_BASE}/api/brushes`);
+        const brushes = await res.json();
+        
+        if (brushes.length > 0) {
+            allBrushes = ['default', ...brushes];
+        }
+        renderBrushPicker();
+    } catch (e) {
+        console.error("브러시 목록 로드 실패", e);
+    }
+}
 
-                    // 브러시가 변경될 때마다 변수 업데이트
-                    brushSelect.addEventListener('change', (e) => {
-                        currentBrushType = e.target.value;
-                    });
-                } catch (e) {
-                    console.error("브러시 목록 로드 실패", e);
-                }
-            }
+// 브러시를 클릭했을 때 실행되는 함수
+function selectBrush(brushName) {
+    currentBrushType = brushName;
+    
+    // 최근 사용 목록에 추가 (중복 제거 후 맨 앞에 삽입)
+    recentBrushes = recentBrushes.filter(b => b !== brushName);
+    recentBrushes.unshift(brushName);
+    if (recentBrushes.length > 5) recentBrushes.pop(); // 최대 5개 유지
 
-            // 스크립트 실행 시 폰트와 함께 브러시 목록도 로드합니다.
-            loadBrushList();
+    // 좌측 사이드바의 현재 브러시 버튼 UI 업데이트
+    document.getElementById('current-brush-name').innerText = brushName === 'default' ? '기본 둥근 펜' : brushName;
+    document.getElementById('current-brush-icon').src = brushName === 'default' 
+        ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" 
+        : `/Brushes/${brushName}.png`;
+    
+    renderBrushPicker();
+}
+
+// 하나의 브러시 네모 박스(DOM)를 생성하는 함수
+function createBrushElement(brushName) {
+    const div = document.createElement('div');
+    div.className = `brush-item ${currentBrushType === brushName ? 'active' : ''}`;
+    div.title = brushName === 'default' ? '기본 둥근 펜' : brushName;
+    
+    const img = document.createElement('img');
+    img.src = brushName === 'default' 
+        ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" 
+        : `/Brushes/${brushName}.png`;
+    
+    div.appendChild(img);
+    
+    div.onclick = (e) => {
+        e.stopPropagation();
+        selectBrush(brushName);
+    };
+    return div;
+}
+
+// 그리드 화면을 그리는 메인 함수
+function renderBrushPicker() {
+    // 1. 최근 사용 브러시 렌더링
+    const recentGrid = document.getElementById('recent-brushes-grid');
+    recentGrid.innerHTML = '';
+    recentBrushes.forEach(brush => recentGrid.appendChild(createBrushElement(brush)));
+
+    // 2. 전체 브러시 페이지네이션 계산
+    const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE) || 1;
+    if (currentBrushPage >= totalPages) currentBrushPage = totalPages - 1;
+    if (currentBrushPage < 0) currentBrushPage = 0;
+
+    const startIdx = currentBrushPage * BRUSHES_PER_PAGE;
+    const endIdx = startIdx + BRUSHES_PER_PAGE;
+    const pageBrushes = allBrushes.slice(startIdx, endIdx);
+
+    // 3. 전체 브러시 렌더링
+    const allGrid = document.getElementById('all-brushes-grid');
+    allGrid.innerHTML = '';
+    pageBrushes.forEach(brush => allGrid.appendChild(createBrushElement(brush)));
+
+    // 4. 페이지 번호 업데이트
+    document.getElementById('brush-page-indicator').innerText = `${currentBrushPage + 1} / ${totalPages}`;
+}
+
+// ✨ 브러시 선택 UI 이벤트 리스너 등록
+document.getElementById('btn-brush-picker').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const panel = document.getElementById('brush-picker-panel');
+    // 패널 열기/닫기 토글
+    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+    
+    // 열릴 때 현재 메뉴 위치를 버튼 높이에 맞게 보정
+    const rect = e.currentTarget.getBoundingClientRect();
+    panel.style.top = `${rect.top - 100}px`; 
+});
+
+// 화면 다른 곳을 클릭하면 브러시 팝업창 닫기
+document.addEventListener('click', (e) => {
+    const panel = document.getElementById('brush-picker-panel');
+    const btn = document.getElementById('btn-brush-picker');
+    if (panel && !panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.style.display = 'none';
+    }
+});
+
+// 이전 페이지 버튼
+document.getElementById('brush-prev-page').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (currentBrushPage > 0) { 
+        currentBrushPage--; 
+        renderBrushPicker(); 
+    }
+});
+
+// 다음 페이지 버튼
+document.getElementById('brush-next-page').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE);
+    if (currentBrushPage < totalPages - 1) { 
+        currentBrushPage++; 
+        renderBrushPicker(); 
+    }
+});
+
+// 스크립트 실행 시 폰트와 함께 브러시 목록도 로드
+loadBrushList();
             // 스크립트가 실행될 때 위 함수를 곧바로 작동시킵니다.
             loadCustomFonts();
             window.addEventListener('load', function () {
