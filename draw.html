@@ -855,11 +855,10 @@
             border-bottom: none;
         }
         /* ✨ 브러시 선택 팝업 UI 스타일 */
+/* ✨ 브러시 선택 팝업 UI 스타일 */
 #brush-picker-panel {
     display: none;
-    position: absolute;
-    left: 65px; /* 좌측 사이드바 옆으로 튀어나오게 */
-    top: 0;
+    position: fixed; /* 💡 absolute에서 fixed로 변경 (사이드바에 잘리는 현상 방지) */
     width: 250px;
     background: #252526;
     border: 1px solid #555;
@@ -4043,16 +4042,25 @@ function renderBrushPicker() {
     document.getElementById('brush-page-indicator').innerText = `${currentBrushPage + 1} / ${totalPages}`;
 }
 
-// ✨ 브러시 선택 UI 이벤트 리스너 등록
 document.getElementById('btn-brush-picker').addEventListener('click', (e) => {
     e.stopPropagation();
     const panel = document.getElementById('brush-picker-panel');
-    // 패널 열기/닫기 토글
-    panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
     
-    // 열릴 때 현재 메뉴 위치를 버튼 높이에 맞게 보정
-    const rect = e.currentTarget.getBoundingClientRect();
-    panel.style.top = `${rect.top - 100}px`; 
+    // 💡 열림/닫힘 상태를 정확히 가져와서 토글 (첫 클릭 시 안 열리는 문제 해결)
+    const isHidden = window.getComputedStyle(panel).display === 'none';
+    panel.style.display = isHidden ? 'flex' : 'none';
+    
+    // 💡 열릴 때 화면에서 버튼의 실제 위치를 계산하여 팝업창 띄우기
+    if (isHidden) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        
+        let topPos = rect.top - 100;
+        // 팝업창이 화면 위로 넘어가지 않도록 방어
+        if (topPos < 10) topPos = 10; 
+        
+        panel.style.top = `${topPos}px`; 
+        panel.style.left = `${rect.right + 10}px`; // 버튼 우측에 딱 붙여서 렌더링
+    }
 });
 
 // 화면 다른 곳을 클릭하면 브러시 팝업창 닫기
