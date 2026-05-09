@@ -854,51 +854,54 @@
             border-radius: 6px 6px 0 0;
             border-bottom: none;
         }
+
         /* ✨ 브러시 선택 팝업 UI 스타일 */
-/* ✨ 브러시 선택 팝업 UI 스타일 */
-#brush-picker-panel {
-    display: none;
-    position: fixed; /* 💡 absolute에서 fixed로 변경 (사이드바에 잘리는 현상 방지) */
-    width: 250px;
-    background: #252526;
-    border: 1px solid #555;
-    border-radius: 6px;
-    padding: 10px;
-    z-index: 3000;
-    box-shadow: 2px 4px 15px rgba(0,0,0,0.8);
-    flex-direction: column;
-    gap: 10px;
-}
+        /* ✨ 브러시 선택 팝업 UI 스타일 */
+        #brush-picker-panel {
+            display: none;
+            position: fixed;
+            /* 💡 absolute에서 fixed로 변경 (사이드바에 잘리는 현상 방지) */
+            width: 250px;
+            background: #252526;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 10px;
+            z-index: 3000;
+            box-shadow: 2px 4px 15px rgba(0, 0, 0, 0.8);
+            flex-direction: column;
+            gap: 10px;
+        }
 
-.brush-item {
-    width: 40px;
-    height: 40px;
-    background: #fff; /* 브러시 무늬(검은색)가 잘 보이도록 흰 배경 */
-    border: 2px solid transparent;
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    transition: 0.1s;
-}
+        .brush-item {
+            width: 40px;
+            height: 40px;
+            background: #fff;
+            /* 브러시 무늬(검은색)가 잘 보이도록 흰 배경 */
+            border: 2px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            transition: 0.1s;
+        }
 
-.brush-item:hover {
-    border-color: #007acc;
-    transform: scale(1.05);
-}
+        .brush-item:hover {
+            border-color: #007acc;
+            transform: scale(1.05);
+        }
 
-.brush-item.active {
-    border-color: #ff9800;
-    box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
-}
+        .brush-item.active {
+            border-color: #ff9800;
+            box-shadow: 0 0 8px rgba(255, 152, 0, 0.6);
+        }
 
-.brush-item img {
-    width: 34px;
-    height: 34px;
-    object-fit: contain;
-}
+        .brush-item img {
+            width: 34px;
+            height: 34px;
+            object-fit: contain;
+        }
     </style>
 </head>
 
@@ -1094,29 +1097,40 @@
                     id="brush-opacity" min="0.05" max="1" step="0.05" value="1"></div>
 
             <div class="control-group" style="position: relative;">
-    <label style="width:100%; text-align:left; font-size:11px; margin-bottom:2px;">브러시 선택</label>
-    <button id="btn-brush-picker" class="sys-btn" style="width: 100%; height: 35px; display: flex; align-items: center; justify-content: center; gap: 5px; background: #333;">
-        <img id="current-brush-icon" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" style="width: 20px; height: 20px; background: white; border-radius: 2px;">
-        <span id="current-brush-name" style="font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">기본 둥근 펜</span>
-    </button>
-    
-    <div id="brush-picker-panel">
-        <div>
-            <div style="font-size: 11px; color: #ff9800; font-weight: bold; margin-bottom: 5px;">⭐ 최근 사용한 브러시</div>
-            <div id="recent-brushes-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px;"></div>
-        </div>
-        <div style="height: 1px; background: #444;"></div>
-        <div>
-            <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">전체 브러시</div>
-            <div id="all-brushes-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; min-height: 220px; align-content: start;"></div>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; background: #1e1e1e; padding: 5px; border-radius: 4px;">
-            <button id="brush-prev-page" class="sys-btn" style="width: 40px; padding: 2px;">◀</button>
-            <span id="brush-page-indicator" style="font-size: 11px; color: #ccc; font-weight: bold;">1 / 1</span>
-            <button id="brush-next-page" class="sys-btn" style="width: 40px; padding: 2px;">▶</button>
-        </div>
-    </div>
-</div>
+                <label style="width:100%; text-align:left; font-size:11px; margin-bottom:2px;">브러시 선택</label>
+                <button id="btn-brush-picker" class="sys-btn"
+                    style="width: 100%; height: 35px; display: flex; align-items: center; justify-content: center; gap: 5px; background: #333;">
+                    <img id="current-brush-icon"
+                        src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>"
+                        style="width: 20px; height: 20px; background: white; border-radius: 2px;">
+                    <span id="current-brush-name"
+                        style="font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">기본 둥근
+                        펜</span>
+                </button>
+
+                <div id="brush-picker-panel">
+                    <div>
+                        <div style="font-size: 11px; color: #ff9800; font-weight: bold; margin-bottom: 5px;">⭐ 최근 사용한
+                            브러시</div>
+                        <div id="recent-brushes-grid"
+                            style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px;"></div>
+                    </div>
+                    <div style="height: 1px; background: #444;"></div>
+                    <div>
+                        <div style="font-size: 11px; color: #ccc; margin-bottom: 5px;">전체 브러시</div>
+                        <div id="all-brushes-grid"
+                            style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; min-height: 220px; align-content: start;">
+                        </div>
+                    </div>
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px; background: #1e1e1e; padding: 5px; border-radius: 4px;">
+                        <button id="brush-prev-page" class="sys-btn" style="width: 40px; padding: 2px;">◀</button>
+                        <span id="brush-page-indicator" style="font-size: 11px; color: #ccc; font-weight: bold;">1 /
+                            1</span>
+                        <button id="brush-next-page" class="sys-btn" style="width: 40px; padding: 2px;">▶</button>
+                    </div>
+                </div>
+            </div>
             <div class="control-group">
                 <label style="display:flex; justify-content:space-between; width:100%;">간격 <span
                         id="spacing-val">10%</span></label>
@@ -1467,7 +1481,7 @@
             let layers = []; let layerCounter = 0; let activeLayerId = null;
             let selectedLayerIds = new Set();
             let history = []; let redoStack = [];
-
+            let fullPlaybackRecord = [];
             let isDrawing = false;
             let currentWidth = 5; let currentTool = 'cursor';
             let currentBrushType = 'default';
@@ -1484,6 +1498,73 @@
             let selectionCanvas = null;
             let selectionCtx = null;
             let currentSelectionPath = [];
+            // ✨ 굽기 전용 베이스 캔버스 생성 (눈에 보이지 않음)
+            const baseCanvas = document.createElement('canvas');
+            baseCanvas.width = CANVAS_WIDTH;
+            baseCanvas.height = CANVAS_HEIGHT;
+            const baseCtx = baseCanvas.getContext('2d');
+            baseCtx.lineCap = 'round';
+            baseCtx.lineJoin = 'round';
+
+
+            // --- 2. 선을 긋고 마우스를 뗄 때 실행되는 통합 저장 함수 ---
+            async function finalizePath(item) {
+                history.push(item);             // 로컬 작업용 배열에 저장
+                fullPlaybackRecord.push(item);  // 방송 전송용 배열에 원본 저장
+                redoStack = [];                 // 새로운 작업을 했으므로 앞으로 가기(Redo) 스택 초기화
+
+                // ✨ 마법의 최적화: 로컬 배열이 100개를 초과하면 가장 오래된 선을 빼서 바닥에 굽습니다.
+                if (history.length > 100) {
+                    const oldestItem = history.shift();
+                    await renderToTarget(oldestItem, baseCtx);
+                }
+            }
+
+            // --- 3. 특정 아이템을 캔버스(ctx)에 그려주는 헬퍼 함수 ---
+            async function renderToTarget(item, ctx) {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1.0;
+
+                if (item.type === 'clear') {
+                    ctx.clearRect(0, 0, 1920, 1080);
+                } else if (item.type === 'raster_image') {
+                    await new Promise(resolve => {
+                        const img = new Image();
+                        img.onload = () => {
+                            ctx.save();
+                            ctx.translate(item.cx, item.cy);
+                            ctx.rotate(item.angle || 0);
+                            ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                            ctx.restore();
+                            resolve();
+                        };
+                        img.onerror = resolve; img.src = item.src;
+                    });
+                } else if (item.type === 'path' || !item.type) {
+                    if (!item.points || item.points.length === 0) return;
+                    const brushType = item.brushType || 'default';
+                    const spacing = item.spacing || 0.1;
+
+                    if (item.color === 'erase') {
+                        for (let i = 1; i < item.points.length; i++) {
+                            await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, brushType, spacing);
+                        }
+                    } else {
+                        const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
+                        const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
+                        ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
+                        for (let i = 1; i < item.points.length; i++) {
+                            await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
+                        }
+                        ctx.globalAlpha = 1;
+                    }
+                } else if (['line', 'rect', 'circle'].includes(item.type)) {
+                    ctx.beginPath(); ctx.strokeStyle = item.color; ctx.lineWidth = item.width;
+                    if (item.type === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
+                    else if (item.type === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                    else if (item.type === 'circle') { let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                }
+            }
 
             function getSelectionLayer() {
                 if (!selectionCanvas) {
@@ -3254,22 +3335,21 @@
             });
 
             layerWrapper.addEventListener('pointerup', (e) => {
-                if (currentTool === 'bg_control') { isDraggingBg = false; return; } // ✨ 추가
+                if (currentTool === 'bg_control') { isDraggingBg = false; return; }
                 if (transformState) { transformState = null; return; }
                 if (!isDrawing) return;
                 isDrawing = false; const pos = getPointerPos(e);
-                // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
+
                 if (currentTool.startsWith('liq_')) {
                     const layer = layers.find(ly => ly.id === activeLayerId);
                     if (layer && layer.type === 'canvas') {
-                        history.push({
+                        finalizePath({
                             type: 'raster_image', layerId: activeLayerId,
                             src: layer.canvas.toDataURL('image/png'),
                             cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
                             width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
                         });
                     }
-                    redoStack = []; // 💡 뒤로가기/앞으로가기 꼬임 방지를 위해 재실행 스택 초기화 추가
                     return;
                 }
                 if (currentTool === 'lasso') {
@@ -3281,7 +3361,7 @@
                         for (let i = 1; i < currentSelectionPath.length; i++) {
                             ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
                         }
-                        ctx.closePath(); // 시작점과 끝점 연결
+                        ctx.closePath();
 
                         ctx.lineWidth = 1.5 / zoomLevel;
                         ctx.strokeStyle = 'white';
@@ -3308,34 +3388,33 @@
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
 
-                            // ✨ 펜일 때 brushType 추가
-                            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         } else {
-                            // ✨ 지우개(eraser)일 때 brushType 추가
-                            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         }
                     }
-                } else if (currentTool !== 'fill') { history.push({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } }); }
-                redoStack = []; canvasSnapshot = null;
+                } else if (currentTool !== 'fill') {
+                    finalizePath({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } });
+                }
+                canvasSnapshot = null;
             });
 
             layerWrapper.addEventListener('pointerleave', () => {
-                if (currentTool === 'bg_control') { isDraggingBg = false; return; } // ✨ 추가
+                if (currentTool === 'bg_control') { isDraggingBg = false; return; }
                 if (transformState) transformState = null;
                 if (!isDrawing) return;
                 isDrawing = false;
-                // ✨ 4. 마우스를 뗐을 때 최종 결과물을 History(뒤로가기용)에 저장
+
                 if (currentTool.startsWith('liq_')) {
                     const layer = layers.find(ly => ly.id === activeLayerId);
                     if (layer && layer.type === 'canvas') {
-                        history.push({
+                        finalizePath({
                             type: 'raster_image', layerId: activeLayerId,
                             src: layer.canvas.toDataURL('image/png'),
                             cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
                             width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
                         });
                     }
-                    redoStack = []; // 💡 뒤로가기/앞으로가기 꼬임 방지를 위해 재실행 스택 초기화 추가
                     return;
                 }
                 if (currentTool === 'lasso') {
@@ -3347,7 +3426,7 @@
                         for (let i = 1; i < currentSelectionPath.length; i++) {
                             ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
                         }
-                        ctx.closePath(); // 시작점과 끝점 연결
+                        ctx.closePath();
 
                         ctx.lineWidth = 1.5 / zoomLevel;
                         ctx.strokeStyle = 'white';
@@ -3368,20 +3447,16 @@
                         if (currentTool === 'pen') {
                             const activeLayer = layers.find(l => l.id === activeLayerId);
                             const draftLayer = getDraftLayer();
-
                             activeLayer.ctx.globalAlpha = currentOpacity;
                             activeLayer.ctx.globalCompositeOperation = 'source-over';
                             activeLayer.ctx.drawImage(draftLayer, 0, 0);
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
 
-                            // ✨ 펜일 때 brushType 추가
-                            history.push({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         } else {
-                            // ✨ 지우개(eraser)일 때 brushType 추가
-                            history.push({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         }
-                        redoStack = [];
                     }
                 } else if (currentTool !== 'fill') {
                     if (canvasSnapshot && activeLayerId) {
@@ -3396,146 +3471,56 @@
             let needsRedraw = false;
 
             async function redrawCanvas() {
-                if (isRedrawing) {
-                    needsRedraw = true;
-                    return;
-                }
+                if (isRedrawing) return;
                 isRedrawing = true;
 
-                const buffers = {};
+                // 1. 모든 레이어를 깨끗이 지우고 시작
                 layers.forEach(l => {
-                    if (l.type === 'canvas' && l.canvas && l.ctx) {
-                        const bufferCvs = document.createElement('canvas');
-                        bufferCvs.width = CANVAS_WIDTH;
-                        bufferCvs.height = CANVAS_HEIGHT;
-                        const bufferCtx = bufferCvs.getContext('2d');
-                        bufferCtx.lineCap = 'round';
-                        bufferCtx.lineJoin = 'round';
-                        buffers[l.id] = { cvs: bufferCvs, ctx: bufferCtx };
-                    }
-                });
-
-                let tmpCvs = document.getElementById('redraw-tmp-layer');
-                if (!tmpCvs) {
-                    tmpCvs = document.createElement('canvas');
-                    tmpCvs.id = 'redraw-tmp-layer';
-                    tmpCvs.width = CANVAS_WIDTH;
-                    tmpCvs.height = CANVAS_HEIGHT;
-                    tmpCvs.style.display = 'none';
-                    document.body.appendChild(tmpCvs);
-                }
-                const tmpCtx = tmpCvs.getContext('2d');
-
-                for (let item of history) {
-                    const targetLayer = layers.find(l => l.id === item.layerId);
-                    if (!targetLayer || targetLayer.type !== 'canvas' || !buffers[targetLayer.id]) continue;
-
-                    const ctx = buffers[targetLayer.id].ctx;
-
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.globalAlpha = 1.0;
-
-                    if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
-                    else if (item.type === 'fill') {
-                        // 이전 버전과의 호환성 유지 및 오타 대응
-                        const px = item.point ? item.point.x : item.x;
-                        const py = item.point ? item.point.y : item.y;
-                        const gapVal = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
-
-                        // ✨ 버그 수정: 재현(Redraw) 중에는 실제 텅 빈 레이어가 아닌, 현재까지 복구된 '임시 버퍼(buffers)'를 참조하도록 가짜 레이어 목록 생성
-                        const bufferLayers = layers.map(l => {
-                            if (l.type === 'canvas' && buffers[l.id]) {
-                                buffers[l.id].cvs.style.zIndex = l.canvas.style.zIndex; // z-index 정렬 기준 복사
-                                return { ...l, canvas: buffers[l.id].cvs };
-                            }
-                            return l;
-                        });
-
-                        // 기존 layers 대신 bufferLayers를 전달
-                        doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, bufferLayers);
-                    }
-                    else if (item.type === 'raster_image') {
-                        await new Promise(resolve => {
-                            const img = new Image();
-                            img.onload = () => {
-                                ctx.save();
-                                // 핵심: 전체 화면 크기의 데이터(유동화, 병합 등)라면 기존 선이 겹치지 않게 캔버스를 먼저 깨끗이 지웁니다.
-                                if (item.width >= CANVAS_WIDTH && item.height >= CANVAS_HEIGHT) {
-                                    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                                }
-                                ctx.translate(item.cx, item.cy);
-                                ctx.rotate(item.angle || 0);
-                                ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
-                                ctx.restore();
-                                resolve();
-                            };
-                            img.onerror = resolve;
-                            img.src = item.src;
-                        });
-                    }
-                    else if (item.type === 'path' || !item.type) {
-                        if (item.points.length === 0) continue;
-
-                        // ✨ 데이터에 저장된 브러시 타입 불러오기 (없으면 기본 펜)
-                        const brushType = item.brushType || 'default';
-                        const spacing = item.spacing || 0.1;
-
-                        if (item.color === 'erase') {
-                            if (item.points.length === 1) {
-                                const p = item.points[0];
-                                // ✨ await 추가 및 brushType 전달
-                                await renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true, brushType, spacing);
-                            } else {
-                                for (let i = 1; i < item.points.length; i++) {
-                                    // ✨ await 추가 및 brushType 전달
-                                    await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, brushType, spacing);
-                                }
-                            }
-                        } else {
-                            tmpCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                            const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
-                            const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
-
-                            if (item.points.length === 1) {
-                                const p = item.points[0];
-                                // ✨ await 추가 및 brushType 전달
-                                await renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false, brushType, spacing);
-                            } else {
-                                for (let i = 1; i < item.points.length; i++) {
-                                    // ✨ await 추가 및 brushType 전달
-                                    await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
-                                }
-                            }
-                            ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
-                            ctx.drawImage(tmpCvs, 0, 0); // 💡 이제 브러시가 다 그려진 후(await)에 화면에 합쳐집니다!
-                            ctx.globalAlpha = 1;
-                        }
-                    } else {
-                        ctx.beginPath(); ctx.strokeStyle = item.color;
-                        if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-                        else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-                        else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
-                    }
-                }
-
-                layers.forEach(l => {
-                    if (l.type === 'canvas' && l.canvas && l.ctx && buffers[l.id]) {
+                    if (l.type === 'canvas' && l.ctx) {
                         l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                         l.ctx.globalCompositeOperation = 'source-over';
                         l.ctx.globalAlpha = 1.0;
-                        l.ctx.drawImage(buffers[l.id].cvs, 0, 0);
                     }
                 });
 
+                // 2. ✨ 최하단 레이어(보통 첫 번째 레이어)에 구워진 baseCanvas를 먼저 복사
+                if (layers.length > 0) {
+                    const bottomLayer = layers[0]; // 레이어 순서에 따라 변경 가능
+                    if (bottomLayer.ctx) {
+                        bottomLayer.ctx.drawImage(baseCanvas, 0, 0);
+                    }
+                }
+
+                // 3. 그 위에 현재 history(최대 100개)만 순서대로 다시 그리기
+                for (let item of history) {
+                    const targetLayer = layers.find(l => l.id === item.layerId);
+                    if (targetLayer && targetLayer.ctx) {
+                        await renderToTarget(item, targetLayer.ctx);
+                    }
+                }
+
                 isRedrawing = false;
-                if (needsRedraw) {
-                    needsRedraw = false;
-                    await redrawCanvas();
+            }
+
+            function undo() {
+                if (history.length > 0) {
+                    redoStack.push(history.pop());
+                    redrawCanvas();
+                } else {
+                    alert("최근 100개까지만 되돌릴 수 있습니다. (그 이전은 바닥에 구워짐)");
                 }
             }
 
-            function undo() { if (history.length > 0) { redoStack.push(history.pop()); redrawCanvas(); } }
-            function redo() { if (redoStack.length > 0) { history.push(redoStack.pop()); redrawCanvas(); } }
+            // 다시 실행(Redo): redoStack에서 다시 가져옴
+            function redo() {
+                if (redoStack.length > 0) {
+                    const item = redoStack.pop();
+                    history.push(item);
+                    // redo 시에도 기록소에 추가하여 방송 송출에 문제없게 함
+                    fullPlaybackRecord.push(item);
+                    redrawCanvas();
+                }
+            }
             document.getElementById('btn-undo').onclick = undo; document.getElementById('btn-redo').onclick = redo;
 
             window.addEventListener('keydown', (e) => {
@@ -3667,44 +3652,27 @@
 
             // ✨ 파일 저장 로직을 Blob 방식으로 변경하여 대용량 데이터(기가바이트 급)도 거뜬하게 저장 가능하도록 수정
             document.getElementById('btn-save').onclick = () => {
-                syncToFrame();
+                syncToFrame(); // 현재 프레임 데이터 동기화
 
-                const framesData = frames.map(f => {
-                    const savedTransformObjects = [];
-                    f.layers.forEach(l => {
-                        if (l.type === 'text' || l.type === 'transform_box') {
-                            const box = l.element;
-                            let angle = 0; const transform = window.getComputedStyle(box).transform;
-                            if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                            const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' };
-                            if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; }
-                            else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
-                            savedTransformObjects.push(obj);
-                        }
-                    });
+                const saveData = {
+                    version: "2.0",
+                    baseRaster: baseCanvas.toDataURL('image/png'), // 구워진 이미지
+                    liveHistory: history,                         // 최근 100개
+                    fullPlaybackRecord: fullPlaybackRecord,       // ✨ 방송용 전체 기록
+                    framesData: frames.map(f => ({
+                        id: f.id, duration: f.duration,
+                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({
+                            id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode
+                        }))
+                    }))
+                };
 
-                    return {
-                        id: f.id, duration: f.duration, layerCounter: f.layerCounter, history: f.history,
-                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' })),
-                        transformObjects: savedTransformObjects
-                    };
-                });
-
-                const saveData = { isMultiFrame: true, framesData: framesData };
-
-                // 기존의 encodeURIComponent 방식(글자 수 제한 발생)을 제거하고 Blob + URL.createObjectURL 조합 사용
-                const jsonString = JSON.stringify(saveData);
-                const blob = new Blob([jsonString], { type: "application/json;charset=utf-8" });
+                const blob = new Blob([JSON.stringify(saveData)], { type: "application/json" });
                 const blobUrl = URL.createObjectURL(blob);
-
                 const a = document.createElement('a');
                 a.href = blobUrl;
-                a.download = "drawing_advanced_anim.json";
-                document.body.appendChild(a);
+                a.download = "drawing_optimized.json";
                 a.click();
-                a.remove();
-
-                // 메모리 누수 방지를 위해 URL 해제
                 URL.revokeObjectURL(blobUrl);
             };
 
@@ -3749,94 +3717,44 @@
                 alert("작업 내역이 압축되어 용량이 최적화되었습니다!");
             };
             document.getElementById('file-input').addEventListener('change', (e) => {
-                const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
-                reader.onload = (event) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (event) => {
                     try {
                         const data = JSON.parse(event.target.result);
 
-                        const elementsToRemove = Array.from(layerWrapper.querySelectorAll('.drawing-layer, .transform-box'));
-                        elementsToRemove.forEach(c => c.remove());
+                        // 모든 캔버스 및 데이터 초기화
+                        baseCtx.clearRect(0, 0, 1920, 1080);
 
-                        frames = []; currentFrameId = null;
+                        if (data.version === "2.0") {
+                            // ✨ 신버전 로드
+                            history = data.liveHistory || [];
+                            fullPlaybackRecord = data.fullPlaybackRecord || [];
+                            const img = new Image();
+                            img.onload = () => {
+                                baseCtx.drawImage(img, 0, 0);
+                                redrawCanvas();
+                            };
+                            img.src = data.baseRaster;
+                        } else {
+                            // ✨ 구버전 호환: 모든 내역이 history에만 있던 시절
+                            fullPlaybackRecord = data.history || (data.framesData ? data.framesData[0].history : []);
+                            history = [...fullPlaybackRecord];
 
-                        if (data.isMultiFrame && data.framesData) {
-                            data.framesData.forEach(fData => {
-                                const newF = { id: fData.id, duration: fData.duration || 500, layers: [], layerCounter: fData.layerCounter, history: fData.history || [], redoStack: [], activeLayerId: null };
-
-                                fData.layersInfo.forEach(lInfo => {
-                                    const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
-                                    cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
-                                    cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1;
-                                    cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
-                                    layerWrapper.appendChild(cvs);
-                                    newF.layers.push({ id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, blendMode: lInfo.blendMode || 'normal', type: 'canvas' });
-                                });
-
-                                fData.transformObjects.forEach(obj => {
-                                    let customContent = null;
-                                    if (obj.type === 'transform_box') {
-                                        customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
-                                        const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
-                                        customContent.className = 'content';
-                                    }
-                                    const wrapper = document.createElement('div');
-                                    wrapper.className = `transform-box type-${obj.type}`;
-                                    wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
-                                    wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none';
-                                    wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1;
-                                    wrapper.style.mixBlendMode = obj.blendMode || 'normal';
-
-                                    let content;
-                                    if (customContent) { content = customContent; content.classList.add('content'); }
-                                    else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
-
-                                    ['nw', 'ne', 'sw', 'se'].forEach(dir => {
-                                        const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h);
-                                        const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r);
-                                    });
-                                    wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                                    newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
-                                });
-
-                                if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
-                                frames.push(newF);
-                            });
-
-                            if (data.roughObjects) {
-                                data.roughObjects.forEach(obj => {
-                                    const customContent = document.createElement('canvas');
-                                    customContent.width = obj.width; customContent.height = obj.height;
-                                    const ctx = customContent.getContext('2d');
-                                    const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
-
-                                    const wrapper = createTransformObject('transform_box', obj.x, obj.y, obj.width, obj.height, customContent);
-                                    wrapper.style.transform = `rotate(${obj.angle}rad)`;
-                                    wrapper.style.opacity = 0.5;
-
-                                    const newLayer = layers.find(l => l.element === wrapper);
-                                    if (newLayer) {
-                                        newLayer.name = "참고이미지 (구버전)";
-                                        newLayer.opacity = 0.5;
-                                    }
-                                });
+                            // 불러오면서 100개가 넘으면 자동으로 구워버림
+                            if (history.length > 100) {
+                                const toBake = history.splice(0, history.length - 100);
+                                for (const item of toBake) {
+                                    await renderToTarget(item, baseCtx);
+                                }
                             }
-
-                            if (frames.length > 0) {
-                                // ✨ [수정됨] 불러오기 완료 전까지 안전하게 순차 대기하도록 수정
-                                (async () => {
-                                    document.body.style.pointerEvents = 'none';
-                                    for (let f of frames) {
-                                        selectFrame(f.id);
-                                        await redrawCanvas();
-                                    }
-                                    selectFrame(frames[0].id);
-                                    document.body.style.pointerEvents = 'auto';
-                                })();
-                            }
+                            redrawCanvas();
                         }
-                        e.target.value = '';
-                    } catch (err) { alert("잘못된 형식의 파일입니다."); }
-                }; reader.readAsText(file);
+                        alert("파일을 성공적으로 불러왔습니다.");
+                    } catch (err) { alert("파일 형식 오류"); console.error(err); }
+                };
+                reader.readAsText(file);
             });
 
             let activeTextContent = null;
@@ -3959,140 +3877,140 @@
                 }
             }
             // ✨ 브러시 선택기 전역 상태 변수
-let allBrushes = ['default'];
-let recentBrushes = ['default'];
-let currentBrushPage = 0;
-const BRUSHES_PER_PAGE = 25; // 5x5 그리드
+            let allBrushes = ['default'];
+            let recentBrushes = ['default'];
+            let currentBrushPage = 0;
+            const BRUSHES_PER_PAGE = 25; // 5x5 그리드
 
-// 서버에서 브러시 목록 가져오기
-async function loadBrushList() {
-    try {
-        const res = await fetch(`${API_BASE}/api/brushes`);
-        const brushes = await res.json();
-        
-        if (brushes.length > 0) {
-            allBrushes = ['default', ...brushes];
-        }
-        renderBrushPicker();
-    } catch (e) {
-        console.error("브러시 목록 로드 실패", e);
-    }
-}
+            // 서버에서 브러시 목록 가져오기
+            async function loadBrushList() {
+                try {
+                    const res = await fetch(`${API_BASE}/api/brushes`);
+                    const brushes = await res.json();
 
-// 브러시를 클릭했을 때 실행되는 함수
-function selectBrush(brushName) {
-    currentBrushType = brushName;
-    
-    // 최근 사용 목록에 추가 (중복 제거 후 맨 앞에 삽입)
-    recentBrushes = recentBrushes.filter(b => b !== brushName);
-    recentBrushes.unshift(brushName);
-    if (recentBrushes.length > 5) recentBrushes.pop(); // 최대 5개 유지
+                    if (brushes.length > 0) {
+                        allBrushes = ['default', ...brushes];
+                    }
+                    renderBrushPicker();
+                } catch (e) {
+                    console.error("브러시 목록 로드 실패", e);
+                }
+            }
 
-    // 좌측 사이드바의 현재 브러시 버튼 UI 업데이트
-    document.getElementById('current-brush-name').innerText = brushName === 'default' ? '기본 둥근 펜' : brushName;
-    document.getElementById('current-brush-icon').src = brushName === 'default' 
-        ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" 
-        : `/Brushes/${brushName}.png`;
-    
-    renderBrushPicker();
-}
+            // 브러시를 클릭했을 때 실행되는 함수
+            function selectBrush(brushName) {
+                currentBrushType = brushName;
 
-// 하나의 브러시 네모 박스(DOM)를 생성하는 함수
-function createBrushElement(brushName) {
-    const div = document.createElement('div');
-    div.className = `brush-item ${currentBrushType === brushName ? 'active' : ''}`;
-    div.title = brushName === 'default' ? '기본 둥근 펜' : brushName;
-    
-    const img = document.createElement('img');
-    img.src = brushName === 'default' 
-        ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>" 
-        : `/Brushes/${brushName}.png`;
-    
-    div.appendChild(img);
-    
-    div.onclick = (e) => {
-        e.stopPropagation();
-        selectBrush(brushName);
-    };
-    return div;
-}
+                // 최근 사용 목록에 추가 (중복 제거 후 맨 앞에 삽입)
+                recentBrushes = recentBrushes.filter(b => b !== brushName);
+                recentBrushes.unshift(brushName);
+                if (recentBrushes.length > 5) recentBrushes.pop(); // 최대 5개 유지
 
-// 그리드 화면을 그리는 메인 함수
-function renderBrushPicker() {
-    // 1. 최근 사용 브러시 렌더링
-    const recentGrid = document.getElementById('recent-brushes-grid');
-    recentGrid.innerHTML = '';
-    recentBrushes.forEach(brush => recentGrid.appendChild(createBrushElement(brush)));
+                // 좌측 사이드바의 현재 브러시 버튼 UI 업데이트
+                document.getElementById('current-brush-name').innerText = brushName === 'default' ? '기본 둥근 펜' : brushName;
+                document.getElementById('current-brush-icon').src = brushName === 'default'
+                    ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>"
+                    : `/Brushes/${brushName}.png`;
 
-    // 2. 전체 브러시 페이지네이션 계산
-    const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE) || 1;
-    if (currentBrushPage >= totalPages) currentBrushPage = totalPages - 1;
-    if (currentBrushPage < 0) currentBrushPage = 0;
+                renderBrushPicker();
+            }
 
-    const startIdx = currentBrushPage * BRUSHES_PER_PAGE;
-    const endIdx = startIdx + BRUSHES_PER_PAGE;
-    const pageBrushes = allBrushes.slice(startIdx, endIdx);
+            // 하나의 브러시 네모 박스(DOM)를 생성하는 함수
+            function createBrushElement(brushName) {
+                const div = document.createElement('div');
+                div.className = `brush-item ${currentBrushType === brushName ? 'active' : ''}`;
+                div.title = brushName === 'default' ? '기본 둥근 펜' : brushName;
 
-    // 3. 전체 브러시 렌더링
-    const allGrid = document.getElementById('all-brushes-grid');
-    allGrid.innerHTML = '';
-    pageBrushes.forEach(brush => allGrid.appendChild(createBrushElement(brush)));
+                const img = document.createElement('img');
+                img.src = brushName === 'default'
+                    ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>"
+                    : `/Brushes/${brushName}.png`;
 
-    // 4. 페이지 번호 업데이트
-    document.getElementById('brush-page-indicator').innerText = `${currentBrushPage + 1} / ${totalPages}`;
-}
+                div.appendChild(img);
 
-document.getElementById('btn-brush-picker').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const panel = document.getElementById('brush-picker-panel');
-    
-    // 💡 열림/닫힘 상태를 정확히 가져와서 토글 (첫 클릭 시 안 열리는 문제 해결)
-    const isHidden = window.getComputedStyle(panel).display === 'none';
-    panel.style.display = isHidden ? 'flex' : 'none';
-    
-    // 💡 열릴 때 화면에서 버튼의 실제 위치를 계산하여 팝업창 띄우기
-    if (isHidden) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        
-        let topPos = rect.top - 100;
-        // 팝업창이 화면 위로 넘어가지 않도록 방어
-        if (topPos < 10) topPos = 10; 
-        
-        panel.style.top = `${topPos}px`; 
-        panel.style.left = `${rect.right + 10}px`; // 버튼 우측에 딱 붙여서 렌더링
-    }
-});
+                div.onclick = (e) => {
+                    e.stopPropagation();
+                    selectBrush(brushName);
+                };
+                return div;
+            }
 
-// 화면 다른 곳을 클릭하면 브러시 팝업창 닫기
-document.addEventListener('click', (e) => {
-    const panel = document.getElementById('brush-picker-panel');
-    const btn = document.getElementById('btn-brush-picker');
-    if (panel && !panel.contains(e.target) && !btn.contains(e.target)) {
-        panel.style.display = 'none';
-    }
-});
+            // 그리드 화면을 그리는 메인 함수
+            function renderBrushPicker() {
+                // 1. 최근 사용 브러시 렌더링
+                const recentGrid = document.getElementById('recent-brushes-grid');
+                recentGrid.innerHTML = '';
+                recentBrushes.forEach(brush => recentGrid.appendChild(createBrushElement(brush)));
 
-// 이전 페이지 버튼
-document.getElementById('brush-prev-page').addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (currentBrushPage > 0) { 
-        currentBrushPage--; 
-        renderBrushPicker(); 
-    }
-});
+                // 2. 전체 브러시 페이지네이션 계산
+                const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE) || 1;
+                if (currentBrushPage >= totalPages) currentBrushPage = totalPages - 1;
+                if (currentBrushPage < 0) currentBrushPage = 0;
 
-// 다음 페이지 버튼
-document.getElementById('brush-next-page').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE);
-    if (currentBrushPage < totalPages - 1) { 
-        currentBrushPage++; 
-        renderBrushPicker(); 
-    }
-});
+                const startIdx = currentBrushPage * BRUSHES_PER_PAGE;
+                const endIdx = startIdx + BRUSHES_PER_PAGE;
+                const pageBrushes = allBrushes.slice(startIdx, endIdx);
 
-// 스크립트 실행 시 폰트와 함께 브러시 목록도 로드
-loadBrushList();
+                // 3. 전체 브러시 렌더링
+                const allGrid = document.getElementById('all-brushes-grid');
+                allGrid.innerHTML = '';
+                pageBrushes.forEach(brush => allGrid.appendChild(createBrushElement(brush)));
+
+                // 4. 페이지 번호 업데이트
+                document.getElementById('brush-page-indicator').innerText = `${currentBrushPage + 1} / ${totalPages}`;
+            }
+
+            document.getElementById('btn-brush-picker').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const panel = document.getElementById('brush-picker-panel');
+
+                // 💡 열림/닫힘 상태를 정확히 가져와서 토글 (첫 클릭 시 안 열리는 문제 해결)
+                const isHidden = window.getComputedStyle(panel).display === 'none';
+                panel.style.display = isHidden ? 'flex' : 'none';
+
+                // 💡 열릴 때 화면에서 버튼의 실제 위치를 계산하여 팝업창 띄우기
+                if (isHidden) {
+                    const rect = e.currentTarget.getBoundingClientRect();
+
+                    let topPos = rect.top - 100;
+                    // 팝업창이 화면 위로 넘어가지 않도록 방어
+                    if (topPos < 10) topPos = 10;
+
+                    panel.style.top = `${topPos}px`;
+                    panel.style.left = `${rect.right + 10}px`; // 버튼 우측에 딱 붙여서 렌더링
+                }
+            });
+
+            // 화면 다른 곳을 클릭하면 브러시 팝업창 닫기
+            document.addEventListener('click', (e) => {
+                const panel = document.getElementById('brush-picker-panel');
+                const btn = document.getElementById('btn-brush-picker');
+                if (panel && !panel.contains(e.target) && !btn.contains(e.target)) {
+                    panel.style.display = 'none';
+                }
+            });
+
+            // 이전 페이지 버튼
+            document.getElementById('brush-prev-page').addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (currentBrushPage > 0) {
+                    currentBrushPage--;
+                    renderBrushPicker();
+                }
+            });
+
+            // 다음 페이지 버튼
+            document.getElementById('brush-next-page').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const totalPages = Math.ceil(allBrushes.length / BRUSHES_PER_PAGE);
+                if (currentBrushPage < totalPages - 1) {
+                    currentBrushPage++;
+                    renderBrushPicker();
+                }
+            });
+
+            // 스크립트 실행 시 폰트와 함께 브러시 목록도 로드
+            loadBrushList();
             // 스크립트가 실행될 때 위 함수를 곧바로 작동시킵니다.
             loadCustomFonts();
             window.addEventListener('load', function () {
@@ -4559,8 +4477,9 @@ loadBrushList();
                         return zA - zB;
                     });
 
-                    let singleHistoryPayload = [];
+                   let singleHistoryPayload = [];
 
+                    // 1. 레이어 초기화 정보 (그대로 유지)
                     singleHistoryPayload.push({
                         type: 'init_layers',
                         layers: validLayers.map(l => ({
@@ -4572,9 +4491,10 @@ loadBrushList();
 
                     const skipProcess = document.getElementById('chk-skip-process').checked;
 
-                    validLayers.forEach(l => {
-                        if (l.type === 'canvas') {
-                            if (skipProcess) {
+                    if (skipProcess) {
+                        // 2-A. 과정 생략 모드: 결과물만 래스터(이미지)로 구워서 전송
+                        validLayers.forEach(l => {
+                            if (l.type === 'canvas') {
                                 singleHistoryPayload.push({
                                     type: 'raster_image',
                                     layerId: l.id,
@@ -4585,21 +4505,12 @@ loadBrushList();
                                     height: CANVAS_HEIGHT,
                                     angle: 0
                                 });
-                            } else {
-                                const layerHistory = history.filter(item => item.layerId === l.id);
-                                singleHistoryPayload.push(...layerHistory);
                             }
-                        } else if (l.type === 'raster_image' || l.type === 'transform_box') {
-                            const box = l.element; const contentCvs = box.querySelector('canvas.content');
-                            if (contentCvs) {
-                                const w = box.offsetWidth; const h = box.offsetHeight;
-                                const cx = parseFloat(box.style.left) + w / 2; const cy = parseFloat(box.style.top) + h / 2;
-                                let angle = 0; const transform = window.getComputedStyle(box).transform;
-                                if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                                singleHistoryPayload.push({ type: 'raster_image', layerId: l.id, src: contentCvs.toDataURL('image/png'), cx: cx, cy: cy, width: w, height: h, angle: angle });
-                            }
-                        }
-                    });
+                        });
+                    } else {
+                        // 2-B. ✨ 타임랩스 모드: history 대신 굽기 전의 전체 원본 기록 전송
+                        singleHistoryPayload.push(...fullPlaybackRecord);
+                    }
 
                     if (singleHistoryPayload.length <= 1) return alert("그림을 그려주세요!");
                     finalPayload = singleHistoryPayload;
