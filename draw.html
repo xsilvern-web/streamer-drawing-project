@@ -3810,27 +3810,35 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             elementsToRemove.forEach(c => c.remove());
 
             frames = []; currentFrameId = null; 
-            document.body.style.pointerEvents = 'none'; // 로딩 중 조작 방지
+            document.body.style.pointerEvents = 'none';
 
             if (data.isMultiFrame && data.framesData) {
                 for (let i = 0; i < data.framesData.length; i++) {
                     let fData = data.framesData[i];
 
-                    // ✨ [호환성 핵심 픽스] 
-                    // 레이어 핫픽스 직전 버전(전체 굽기)은 history가 fData 안이 아니라 최상위(data)에 있었습니다.
-                    const fallbackHistory = (i === 0 && data.liveHistory) ? data.liveHistory : [];
-                    const fallbackFullRecord = (i === 0 && data.fullPlaybackRecord) ? data.fullPlaybackRecord : [];
+                    // ✨ [핵심 1] 핫픽스 전(v2.0) 파일의 바깥에 버려진 데이터를 끈질기게 추적해서 가져옵니다.
+                    let extractedHistory = [];
+                    if (fData.history && fData.history.length > 0) extractedHistory = fData.history;
+                    else if (i === 0 && data.liveHistory && data.liveHistory.length > 0) extractedHistory = data.liveHistory;
+                    else if (i === 0 && data.history && data.history.length > 0) extractedHistory = data.history;
+
+                    let extractedRecord = [];
+                    if (fData.fullPlaybackRecord && fData.fullPlaybackRecord.length > 0) extractedRecord = fData.fullPlaybackRecord;
+                    else if (i === 0 && data.fullPlaybackRecord && data.fullPlaybackRecord.length > 0) extractedRecord = data.fullPlaybackRecord;
+                    else extractedRecord = [...extractedHistory];
 
                     const newF = {
                         id: fData.id, 
                         duration: fData.duration || 500, 
                         layers: [], 
                         layerCounter: fData.layerCounter || 10,
-                        history: fData.history || fallbackHistory,
+                        history: extractedHistory,
                         redoStack: fData.redoStack || [], 
                         activeLayerId: null,
-                        fullPlaybackRecord: fData.fullPlaybackRecord || fData.history || fallbackFullRecord
+                        fullPlaybackRecord: extractedRecord
                     };
+
+                    let globalBaseRasterUsed = false;
 
                     // --- 레이어 복구 루프 ---
                     for (let j = 0; j < fData.layersInfo.length; j++) {
@@ -3849,8 +3857,12 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                             blendMode: lInfo.blendMode || 'normal', type: 'canvas' 
                         };
                         
-                        // ✨ 구워진 바닥 이미지 호환 로직 (직전 버전은 최하단 1번 레이어에 배정)
-                        let targetRaster = lInfo.baseRaster || (j === 0 ? (fData.baseRaster || data.baseRaster) : null);
+                        // ✨ [핵심 2] 핫픽스 전의 거대한 공용 바닥 이미지가 발견되면, 안전하게 1번 레이어에 주입합니다.
+                        let targetRaster = lInfo.baseRaster;
+                        if (!targetRaster && j === 0 && (fData.baseRaster || data.baseRaster)) {
+                            targetRaster = fData.baseRaster || data.baseRaster;
+                            globalBaseRasterUsed = true;
+                        }
 
                         if (targetRaster) {
                             layerObj.baseCanvas = document.createElement('canvas'); 
@@ -3864,6 +3876,16 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                             });
                         }
                         newF.layers.push(layerObj);
+                    }
+
+                    // ✨ [핵심 3] 압축된 내역(raster_image)이 기존 바닥을 지워버리는 충돌 현상 방지
+                    if (globalBaseRasterUsed) {
+                        newF.history.forEach(item => {
+                            if (item.type === 'raster_image' && item.width >= CANVAS_WIDTH) {
+                                // 화면을 덮는 크기일 경우 기존 바닥을 지우지 않도록 크기를 1px 줄여서 우회 처리
+                                item.width = CANVAS_WIDTH - 1; 
+                            }
+                        });
                     }
 
                     // --- 이미지/텍스트 오브젝트 복구 ---
@@ -3895,7 +3917,6 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (frames.length > 0) {
                     for (let f of frames) { 
                         selectFrame(f.id); 
-                        
                         // 구버전(v1) 호환: 굽기 데이터가 아예 없는 옛날 파일인 경우
                         if (history.length > 100 && !layers.some(l => l.baseCanvas)) {
                              const toBake = history.splice(0, history.length - 100);
