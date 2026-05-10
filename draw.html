@@ -3125,16 +3125,17 @@
 
                     doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers);
 
-                    history.push({
+                    // ✨ 핵심 해결: history.push 대신 finalizePath를 사용하여 송출용 기록(fullPlaybackRecord)에도 정상적으로 쌓이도록 수정
+                    finalizePath({
                         type: 'fill',
                         layerId: activeLayer.id,
-                        point: { x: pos.x, y: pos.y }, // index.html과 호환되게 객체화
+                        point: { x: pos.x, y: pos.y }, 
                         color: currentColor,
                         tolerance: tol,
                         gap: gap,
-                        sampleAllLayers: sampleAll // 데이터 전송
+                        sampleAllLayers: sampleAll 
                     });
-                    redoStack = [];
+                    
                     return;
                 }
 
@@ -3864,9 +3865,12 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 let extractedHistory = fData.history || [];
                 let extractedRecord = fData.fullPlaybackRecord || [...extractedHistory];
+                if (extractedRecord.length < extractedHistory.length) {
+                    extractedRecord = [...extractedHistory];
+                }
 
                 const newF = {
-                    id: fData.id || `frame_${Date.now()}_${i}`, 
+                    id: fData.id || `frame_${Date.now()}_${i}`,
                     duration: fData.duration || 500, 
                     layers: [], 
                     layerCounter: fData.layerCounter || 10,
