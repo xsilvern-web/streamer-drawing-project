@@ -475,7 +475,6 @@
             else if (data.type === 'play_timelapse') {
                 isAnimationSkipped = false;
 
-                // ✨ 데이터가 무사히 모두 도착한 이 순간에 알림과 소리를 터뜨립니다!
                 if (data.alert) {
                     document.getElementById('donor-name-display').innerText = data.alert.name;
                     document.getElementById('drawing-title-display').innerText = data.alert.title;
@@ -493,13 +492,9 @@
                 const totalItems = history.length;
                 if (totalItems === 0) return;
 
-                // 1. 화면을 확실하게 보여주도록 강제 설정
                 canvasContainer.style.opacity = '1';
 
-                // 2. 도화지(레이어) 초기화 에러 방지 완벽 처리 및 꼬리표 확인
                 const initItem = history.find(i => i.type === 'init_layers');
-                const isSkipProcess = initItem ? initItem.skipProcess : false; // ✨ 과정 생략 꼬리표 확인!
-
                 if (initItem) {
                     canvasContainer.innerHTML = '';
                     layerContexts = {};
@@ -519,9 +514,17 @@
                     layerContexts['default'] = Object.assign(document.getElementById('default-canvas').getContext('2d'), { canvasNode: document.getElementById('default-canvas') });
                 }
 
-                // 3. 타임랩스 재생 속도 조절
-                // ✨ 과정 생략 모드일 경우 재생 시간을 0으로 설정하여 즉시 그려내게 만듭니다.
-                const playbackDurationMs = isSkipProcess ? 0 : 8000;
+                // ✨ [핵심 수정] 타임랩스인지 즉시 표시인지 "자동 감지"
+                // history 안에 'path'(선 긋기)나 'fill'(채우기) 데이터가 있는지 검사합니다.
+                const hasDrawingProcess = history.some(item => 
+                    item.type !== 'init_layers' && 
+                    item.type !== 'raster_image' && 
+                    item.shape !== 'raster_image' &&
+                    item.type !== 'clear'
+                );
+
+                // ✨ 과정이 없으면 0초(즉시 표시), 과정이 있으면 8000ms(8초)
+                const playbackDurationMs = hasDrawingProcess ? 8000 : 0;
                 
                 let currentIndex = 0;
                 let exactFloatIndex = 0;
@@ -538,7 +541,7 @@
                     const deltaTime = currentTime - lastTime;
                     lastTime = currentTime;
 
-                    // ✨ 과정 생략일 경우 인덱스를 즉시 맨 끝(totalItems)으로 밀어버림
+                    // ✨ 재생 시간이 0초면 그리기 진행 인덱스를 끝까지 올려버림 (즉시 렌더링)
                     if (playbackDurationMs === 0) {
                         exactFloatIndex = totalItems;
                     } else {
@@ -557,7 +560,6 @@
                         } else if (Object.keys(layerContexts).length > 0) {
                             ctx = layerContexts[Object.keys(layerContexts)[0]];
                         }
-
                         if (!ctx) continue;
 
                         ctx.globalCompositeOperation = 'source-over';
@@ -567,30 +569,19 @@
                             ctx.clearRect(0, 0, 1920, 1080);
                         }
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
-                            const img = new Image();
-                            // ✨ 과정 생략(즉시 렌더링)일 때는 이미지가 로드될 때까지 완벽하게 기다렸다가 그립니다.
-                            if (playbackDurationMs === 0) {
-                                await new Promise(res => {
-                                    img.onload = () => {
-                                        ctx.save();
-                                        if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
-                                        ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
-                                        ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
-                                        ctx.restore();
-                                        res();
-                                    };
-                                    img.src = item.src;
-                                });
-                            } else {
+                            // ✨ 이미지가 로드될 때까지 기다렸다가 완벽하게 한 번에 그리기
+                            await new Promise(res => {
+                                const img = new Image();
                                 img.onload = () => {
                                     ctx.save();
                                     if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
                                     ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
                                     ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
                                     ctx.restore();
+                                    res();
                                 };
                                 img.src = item.src;
-                            }
+                            });
                         }
                         else if (item.type === 'fill') {
                             const px = item.point ? item.point.x : item.x;
@@ -601,13 +592,11 @@
                         }
                         else if (item.type === 'path' || !item.type) {
                             if (!item.points || item.points.length === 0) continue;
-
                             const brushType = item.brushType || 'default';
                             const spacing = item.spacing || 0.1;
                             if (item.color === 'erase') {
                                 if (item.points.length === 1) {
-                                    const p = item.points[0];
-                                    await renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true, brushType, spacing);
+                                    await renderBrushStroke(ctx, item.points[0].x, item.points[0].y, item.points[0].w, item.points[0].x, item.points[0].y, item.points[0].w, item.color, true, brushType, spacing);
                                 } else {
                                     for (let i = 1; i < item.points.length; i++) {
                                         await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, brushType, spacing);
@@ -617,10 +606,8 @@
                                 tmpCtx.clearRect(0, 0, 1920, 1080);
                                 const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
                                 const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
-
                                 if (item.points.length === 1) {
-                                    const p = item.points[0];
-                                    await renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false, brushType, spacing);
+                                    await renderBrushStroke(tmpCtx, item.points[0].x, item.points[0].y, item.points[0].w, item.points[0].x, item.points[0].y, item.points[0].w, opaqueColor, false, brushType, spacing);
                                 } else {
                                     for (let i = 1; i < item.points.length; i++) {
                                         await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);

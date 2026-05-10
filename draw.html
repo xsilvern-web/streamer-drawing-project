@@ -4747,17 +4747,27 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     });
 
                     if (skipProcess) {
-                        // 2-A. 과정 생략 모드: 결과물만 래스터(이미지)로 구워서 전송
+                        // 2-A. 과정 생략 모드: 모든 레이어를 1장의 이미지로 완벽히 압축하여 전송 (즉시 팝업 보장)
+                        const offCanvas = document.createElement('canvas');
+                        offCanvas.width = CANVAS_WIDTH; offCanvas.height = CANVAS_HEIGHT;
+                        const offCtx = offCanvas.getContext('2d');
+                        
                         validLayers.forEach(l => {
                             if (l.type === 'canvas') {
-                                singleHistoryPayload.push({
-                                    type: 'raster_image',
-                                    layerId: l.id,
-                                    src: l.canvas.toDataURL('image/png'),
-                                    cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
-                                    width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
-                                });
+                                offCtx.globalAlpha = l.opacity !== undefined ? l.opacity : 1;
+                                let mode = l.blendMode || 'normal';
+                                if (mode === 'normal') mode = 'source-over';
+                                offCtx.globalCompositeOperation = mode;
+                                offCtx.drawImage(l.canvas, 0, 0);
                             }
+                        });
+                        
+                        singleHistoryPayload.push({
+                            type: 'raster_image',
+                            layerId: validLayers[0].id, // 캔버스를 합쳤으므로 첫 번째 레이어 기준
+                            src: offCanvas.toDataURL('image/png'),
+                            cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
+                            width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
                         });
                     } else {
                         // 2-B. ✨ 타임랩스 모드: 구워진 바닥과 유효한 기록만 정제해서 전송
