@@ -3812,133 +3812,182 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             frames = []; currentFrameId = null; 
             document.body.style.pointerEvents = 'none';
 
+            // ✨ [핵심 해결] 데이터 정규화: V1, V2(과도기), V3 포맷을 모두 V3(배열) 형태로 변환
+            let normalizedFramesData = [];
+
             if (data.isMultiFrame && data.framesData) {
-                for (let i = 0; i < data.framesData.length; i++) {
-                    let fData = data.framesData[i];
+                // 1. 최신 버전
+                normalizedFramesData = data.framesData;
+            } else if (data.version === "2.0" || data.liveHistory || data.baseRaster) {
+                // 2. 과도기 버전 (글로벌 baseRaster 및 liveHistory 사용)
+                normalizedFramesData = [{
+                    id: 'frame_' + Date.now(),
+                    duration: 500,
+                    layerCounter: 10,
+                    history: data.liveHistory || data.history || [],
+                    fullPlaybackRecord: data.fullPlaybackRecord || data.history || [],
+                    baseRaster: data.baseRaster, // 글로벌 래스터 
+                    layersInfo: data.framesData ? data.framesData[0].layersInfo : [
+                        { id: 'layer_1', name: '기본 레이어', visible: true, opacity: 1, blendMode: 'normal' }
+                    ]
+                }];
+            } else {
+                // 3. 완전 구버전 (history 배열만 존재)
+                let oldHistory = [];
+                if (Array.isArray(data)) oldHistory = data;
+                else if (data.history) oldHistory = data.history;
+                else if (data.framesData && data.framesData[0].history) oldHistory = data.framesData[0].history;
 
-                    // ✨ [핵심 1] 핫픽스 전(v2.0) 파일의 바깥에 버려진 데이터를 끈질기게 추적해서 가져옵니다.
-                    let extractedHistory = [];
-                    if (fData.history && fData.history.length > 0) extractedHistory = fData.history;
-                    else if (i === 0 && data.liveHistory && data.liveHistory.length > 0) extractedHistory = data.liveHistory;
-                    else if (i === 0 && data.history && data.history.length > 0) extractedHistory = data.history;
-
-                    let extractedRecord = [];
-                    if (fData.fullPlaybackRecord && fData.fullPlaybackRecord.length > 0) extractedRecord = fData.fullPlaybackRecord;
-                    else if (i === 0 && data.fullPlaybackRecord && data.fullPlaybackRecord.length > 0) extractedRecord = data.fullPlaybackRecord;
-                    else extractedRecord = [...extractedHistory];
-
-                    const newF = {
-                        id: fData.id, 
-                        duration: fData.duration || 500, 
-                        layers: [], 
-                        layerCounter: fData.layerCounter || 10,
-                        history: extractedHistory,
-                        redoStack: fData.redoStack || [], 
-                        activeLayerId: null,
-                        fullPlaybackRecord: extractedRecord
-                    };
-
-                    let globalBaseRasterUsed = false;
-
-                    // --- 레이어 복구 루프 ---
-                    for (let j = 0; j < fData.layersInfo.length; j++) {
-                        const lInfo = fData.layersInfo[j];
-                        const cvs = document.createElement('canvas'); 
-                        cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; 
-                        cvs.className = 'drawing-layer';
-                        cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
-                        cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1; 
-                        cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
-                        layerWrapper.appendChild(cvs);
-
-                        const layerObj = { 
-                            id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), 
-                            visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, 
-                            blendMode: lInfo.blendMode || 'normal', type: 'canvas' 
-                        };
-                        
-                        // ✨ [핵심 2] 핫픽스 전의 거대한 공용 바닥 이미지가 발견되면, 안전하게 1번 레이어에 주입합니다.
-                        let targetRaster = lInfo.baseRaster;
-                        if (!targetRaster && j === 0 && (fData.baseRaster || data.baseRaster)) {
-                            targetRaster = fData.baseRaster || data.baseRaster;
-                            globalBaseRasterUsed = true;
-                        }
-
-                        if (targetRaster) {
-                            layerObj.baseCanvas = document.createElement('canvas'); 
-                            layerObj.baseCanvas.width = CANVAS_WIDTH; 
-                            layerObj.baseCanvas.height = CANVAS_HEIGHT;
-                            layerObj.baseCtx = layerObj.baseCanvas.getContext('2d');
-                            await new Promise(res => {
-                                const img = new Image(); 
-                                img.onload = () => { layerObj.baseCtx.drawImage(img, 0, 0); res(); };
-                                img.src = targetRaster;
-                            });
-                        }
-                        newF.layers.push(layerObj);
-                    }
-
-                    // ✨ [핵심 3] 압축된 내역(raster_image)이 기존 바닥을 지워버리는 충돌 현상 방지
-                    if (globalBaseRasterUsed) {
-                        newF.history.forEach(item => {
-                            if (item.type === 'raster_image' && item.width >= CANVAS_WIDTH) {
-                                // 화면을 덮는 크기일 경우 기존 바닥을 지우지 않도록 크기를 1px 줄여서 우회 처리
-                                item.width = CANVAS_WIDTH - 1; 
-                            }
-                        });
-                    }
-
-                    // --- 이미지/텍스트 오브젝트 복구 ---
-                    if (fData.transformObjects) {
-                        fData.transformObjects.forEach(obj => {
-                            let customContent = null;
-                            if (obj.type === 'transform_box') {
-                                customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
-                                const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
-                                customContent.className = 'content';
-                            }
-                            const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
-                            wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
-                            wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none'; wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1; wrapper.style.mixBlendMode = obj.blendMode || 'normal';
-                            let content;
-                            if (customContent) { content = customContent; content.classList.add('content'); }
-                            else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
-                            ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
-                            wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                            newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
-                        });
-                    }
-
-                    if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
-                    frames.push(newF);
-                }
-
-                // --- 화면 초기 렌더링 ---
-                if (frames.length > 0) {
-                    for (let f of frames) { 
-                        selectFrame(f.id); 
-                        // 구버전(v1) 호환: 굽기 데이터가 아예 없는 옛날 파일인 경우
-                        if (history.length > 100 && !layers.some(l => l.baseCanvas)) {
-                             const toBake = history.splice(0, history.length - 100);
-                             for(const item of toBake) {
-                                 const target = layers.find(l => l.id === item.layerId) || layers[0];
-                                 if (target) {
-                                     if(!target.baseCtx) {
-                                         target.baseCanvas = document.createElement('canvas');
-                                         target.baseCanvas.width = 1920; target.baseCanvas.height = 1080;
-                                         target.baseCtx = target.baseCanvas.getContext('2d');
-                                     }
-                                     await renderToTarget(item, target.baseCtx);
-                                 }
-                             }
-                        }
-                        await redrawCanvas(); 
-                    }
-                    selectFrame(frames[0].id);
-                }
+                normalizedFramesData = [{
+                    id: 'frame_' + Date.now(),
+                    duration: 500,
+                    layerCounter: 10,
+                    history: oldHistory,
+                    fullPlaybackRecord: oldHistory,
+                    layersInfo: [
+                        { id: 'layer_1', name: '기본 레이어', visible: true, opacity: 1, blendMode: 'normal' }
+                    ]
+                }];
             }
-            document.body.style.pointerEvents = 'auto'; e.target.value = ''; alert("성공적으로 복구되었습니다.");
-        } catch (err) { alert("파일 로드 중 오류가 발생했습니다."); document.body.style.pointerEvents = 'auto'; console.error(err); }
+
+            // 정규화된 데이터를 바탕으로 프레임 및 레이어 복구
+            for (let i = 0; i < normalizedFramesData.length; i++) {
+                let fData = normalizedFramesData[i];
+
+                let extractedHistory = fData.history || [];
+                let extractedRecord = fData.fullPlaybackRecord || [...extractedHistory];
+
+                const newF = {
+                    id: fData.id || `frame_${Date.now()}_${i}`, 
+                    duration: fData.duration || 500, 
+                    layers: [], 
+                    layerCounter: fData.layerCounter || 10,
+                    history: extractedHistory,
+                    redoStack: fData.redoStack || [], 
+                    activeLayerId: null,
+                    fullPlaybackRecord: extractedRecord
+                };
+
+                let globalBaseRasterUsed = false;
+                let layersInfoToUse = fData.layersInfo && fData.layersInfo.length > 0 ? fData.layersInfo : [{ id: 'layer_1', name: '기본 레이어', visible: true, opacity: 1, blendMode: 'normal' }];
+
+                for (let j = 0; j < layersInfoToUse.length; j++) {
+                    const lInfo = layersInfoToUse[j];
+                    const cvs = document.createElement('canvas'); 
+                    cvs.id = lInfo.id || `layer_${j+1}`; 
+                    cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; 
+                    cvs.className = 'drawing-layer';
+                    cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
+                    cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1; 
+                    cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
+                    layerWrapper.appendChild(cvs);
+
+                    const layerObj = { 
+                        id: cvs.id, name: lInfo.name || `레이어 ${j+1}`, canvas: cvs, ctx: cvs.getContext('2d'), 
+                        visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, 
+                        blendMode: lInfo.blendMode || 'normal', type: 'canvas' 
+                    };
+                    
+                    // ✨ 1번 레이어에 과거의 거대한 바닥 이미지(baseRaster) 주입
+                    let targetRaster = lInfo.baseRaster;
+                    if (!targetRaster && j === 0 && (fData.baseRaster || data.baseRaster)) {
+                        targetRaster = fData.baseRaster || data.baseRaster;
+                        globalBaseRasterUsed = true;
+                    }
+
+                    if (targetRaster) {
+                        layerObj.baseCanvas = document.createElement('canvas'); 
+                        layerObj.baseCanvas.width = CANVAS_WIDTH; 
+                        layerObj.baseCanvas.height = CANVAS_HEIGHT;
+                        layerObj.baseCtx = layerObj.baseCanvas.getContext('2d');
+                        await new Promise(res => {
+                            const img = new Image(); 
+                            img.onload = () => { layerObj.baseCtx.drawImage(img, 0, 0); res(); };
+                            img.src = targetRaster;
+                        });
+                    }
+                    newF.layers.push(layerObj);
+                }
+
+                // 글로벌 래스터를 썼을 때 기존 바닥을 지워버리는 충돌 현상 방지
+                if (globalBaseRasterUsed || data.version === "2.0") {
+                    newF.history.forEach(item => {
+                        if (item.type === 'raster_image' && item.width >= CANVAS_WIDTH) {
+                            item.width = CANVAS_WIDTH - 1; 
+                        }
+                    });
+                }
+
+                // --- 변형 및 텍스트 오브젝트 복구 ---
+                if (fData.transformObjects) {
+                    fData.transformObjects.forEach(obj => {
+                        let customContent = null;
+                        if (obj.type === 'transform_box') {
+                            customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
+                            const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                            customContent.className = 'content';
+                        }
+                        const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
+                        wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
+                        wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none'; wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1; wrapper.style.mixBlendMode = obj.blendMode || 'normal';
+                        let content;
+                        if (customContent) { content = customContent; content.classList.add('content'); }
+                        else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
+                        ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
+                        wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
+                        newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
+                    });
+                }
+
+                // ✨ [핵심 해결] 구버전 history의 layerId 누락 및 불일치 보정
+                const firstCanvasLayer = newF.layers.find(l => l.type === 'canvas');
+                if (firstCanvasLayer) {
+                     newF.history.forEach(h => {
+                         if (!h.layerId || !newF.layers.some(l => l.id === h.layerId)) {
+                             h.layerId = firstCanvasLayer.id; // 매칭 안 되는 선은 무조건 1번 레이어에 그리기
+                         }
+                     });
+                     newF.fullPlaybackRecord.forEach(h => {
+                         if (!h.layerId || !newF.layers.some(l => l.id === h.layerId)) {
+                             h.layerId = firstCanvasLayer.id;
+                         }
+                     });
+                }
+
+                if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
+                frames.push(newF);
+            }
+
+            // --- 화면 렌더링 ---
+            if (frames.length > 0) {
+                for (let f of frames) { 
+                    selectFrame(f.id); 
+                    // 구버전(v1) 호환: 굽기 데이터가 아예 없는 옛날 파일인 경우
+                    if (history.length > 100 && !layers.some(l => l.baseCanvas)) {
+                         const toBake = history.splice(0, history.length - 100);
+                         for(const item of toBake) {
+                             const target = layers.find(l => l.id === item.layerId) || layers[0];
+                             if (target) {
+                                 if(!target.baseCtx) {
+                                     target.baseCanvas = document.createElement('canvas');
+                                     target.baseCanvas.width = 1920; target.baseCanvas.height = 1080;
+                                     target.baseCtx = target.baseCanvas.getContext('2d');
+                                 }
+                                 await renderToTarget(item, target.baseCtx);
+                             }
+                         }
+                    }
+                    await redrawCanvas(); 
+                }
+                selectFrame(frames[0].id);
+            }
+            
+            document.body.style.pointerEvents = 'auto'; e.target.value = ''; alert("과거 형식 파일을 성공적으로 복구하여 로드했습니다.");
+        } catch (err) { 
+            alert("파일 로드 중 오류가 발생했습니다."); 
+            document.body.style.pointerEvents = 'auto'; 
+            console.error(err); 
+        }
     }; reader.readAsText(file);
 });
 
