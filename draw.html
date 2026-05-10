@@ -1942,6 +1942,8 @@
                 if (f) {
                     f.layers = layers; f.layerCounter = layerCounter;
                     f.history = history; f.redoStack = redoStack; f.activeLayerId = activeLayerId;
+                    // ✨ 추가: 현재까지 누적된 타임랩스 기록을 해당 프레임에 확실히 저장
+                    f.fullPlaybackRecord = fullPlaybackRecord; 
                 }
             }
 
@@ -1964,6 +1966,9 @@
 
                 layers = newF.layers; layerCounter = newF.layerCounter;
                 history = newF.history; redoStack = newF.redoStack; activeLayerId = newF.activeLayerId;
+                
+                // ✨ 추가: 프레임을 바꿀 때 해당 프레임의 타임랩스 기록만 불러오도록 덮어쓰기
+                fullPlaybackRecord = newF.fullPlaybackRecord || [...history];
 
                 layers.forEach(l => {
                     if (l.visible) {
@@ -1984,13 +1989,14 @@
 
             function createNewFrame() {
                 const fId = `frame_${Date.now()}`;
-                // ✨ 입력칸에서 기본 속도 값을 가져옴 (없으면 500)
                 const defaultDurationInput = document.getElementById('default-frame-duration');
                 const defaultDuration = defaultDurationInput ? parseInt(defaultDurationInput.value) || 500 : 500;
 
                 const newFrame = {
                     id: fId, duration: defaultDuration,
-                    layers: [], layerCounter: 0, history: [], redoStack: [], activeLayerId: null
+                    layers: [], layerCounter: 0, history: [], redoStack: [], activeLayerId: null,
+                    // ✨ 추가: 새 프레임을 만들 때는 타임랩스 기록도 깨끗한 빈 배열로 시작
+                    fullPlaybackRecord: [] 
                 };
                 frames.push(newFrame);
                 selectFrame(fId);
@@ -2007,7 +2013,9 @@
                     id: newFId, duration: srcF.duration, layers: [],
                     layerCounter: srcF.layerCounter,
                     history: JSON.parse(JSON.stringify(srcF.history)),
-                    redoStack: [], activeLayerId: null
+                    redoStack: [], activeLayerId: null,
+                    // ✨ 추가: 프레임 복사 시 타임랩스 기록도 함께 복사
+                    fullPlaybackRecord: JSON.parse(JSON.stringify(srcF.fullPlaybackRecord || srcF.history))
                 };
 
                 srcF.layers.forEach(l => {
