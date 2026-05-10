@@ -4735,6 +4735,17 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                     const skipProcess = document.getElementById('chk-skip-process').checked;
 
+                    // 1. 레이어 초기화 정보 데이터 삽입
+                    singleHistoryPayload.push({
+                        type: 'init_layers',
+                        skipProcess: skipProcess, // ✨ 이 줄을 추가하여 과정 생략 여부를 수신기에 전달!
+                        layers: validLayers.map(l => ({
+                            id: l.id,
+                            opacity: l.opacity !== undefined ? l.opacity : 1,
+                            blendMode: l.blendMode || 'normal'
+                        }))
+                    });
+
                     if (skipProcess) {
                         // 2-A. 과정 생략 모드: 결과물만 래스터(이미지)로 구워서 전송
                         validLayers.forEach(l => {

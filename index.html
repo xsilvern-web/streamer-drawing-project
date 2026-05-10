@@ -496,8 +496,10 @@
                 // 1. 화면을 확실하게 보여주도록 강제 설정
                 canvasContainer.style.opacity = '1';
 
-                // 2. 도화지(레이어) 초기화 에러 방지 완벽 처리
+                // 2. 도화지(레이어) 초기화 에러 방지 완벽 처리 및 꼬리표 확인
                 const initItem = history.find(i => i.type === 'init_layers');
+                const isSkipProcess = initItem ? initItem.skipProcess : false; // ✨ 과정 생략 꼬리표 확인!
+
                 if (initItem) {
                     canvasContainer.innerHTML = '';
                     layerContexts = {};
@@ -513,45 +515,42 @@
                         layerContexts[lInfo.id] = Object.assign(cvs.getContext('2d'), { canvasNode: cvs });
                     });
                 } else if (Object.keys(layerContexts).length === 0) {
-                    // 레이어 정보가 아예 없을 경우를 대비한 최후의 안전장치
                     canvasContainer.innerHTML = '<canvas id="default-canvas" width="1920" height="1080" style="position:absolute;top:0;left:0;z-index:1;"></canvas>';
                     layerContexts['default'] = Object.assign(document.getElementById('default-canvas').getContext('2d'), { canvasNode: document.getElementById('default-canvas') });
                 }
 
-                // 3. 타임랩스 재생 속도 조절 (예: 3000 = 3초 만에 그리기)
-                const playbackDurationMs = 8000;
-                const fps = 60;
-                const totalFramesToRender = (playbackDurationMs / 1000) * fps;
-                const itemsPerFrame = Math.max(1, Math.ceil(totalItems / totalFramesToRender));
-
+                // 3. 타임랩스 재생 속도 조절
+                // ✨ 과정 생략 모드일 경우 재생 시간을 0으로 설정하여 즉시 그려내게 만듭니다.
+                const playbackDurationMs = isSkipProcess ? 0 : 8000;
+                
                 let currentIndex = 0;
-                let exactFloatIndex = 0; // 프레임 제약을 없애고 소수점까지 갯수를 누적하기 위한 변수
+                let exactFloatIndex = 0;
                 let lastTime = null;
 
                 const tmpCvs = document.createElement('canvas');
                 tmpCvs.width = 1920; tmpCvs.height = 1080;
                 const tmpCtx = tmpCvs.getContext('2d');
-                async function drawNextBatch(currentTime) {
 
+                async function drawNextBatch(currentTime) {
                     if (isAnimationSkipped) return;
 
-                    // 애니메이션 시작 시간 기록
                     if (!lastTime) lastTime = currentTime;
-
                     const deltaTime = currentTime - lastTime;
                     lastTime = currentTime;
 
-                    // 흐른 시간(ms)에 비례해서 정확한 갯수만큼 그리기 인덱스 증가
-                    exactFloatIndex += (totalItems / playbackDurationMs) * deltaTime;
+                    // ✨ 과정 생략일 경우 인덱스를 즉시 맨 끝(totalItems)으로 밀어버림
+                    if (playbackDurationMs === 0) {
+                        exactFloatIndex = totalItems;
+                    } else {
+                        exactFloatIndex += (totalItems / playbackDurationMs) * deltaTime;
+                    }
 
-                    // 누적된 값이 정수 1 이상이 될 때만 그리기 진행 (아주 느린 속도 완벽 지원)
                     const limit = Math.min(Math.floor(exactFloatIndex), totalItems);
 
                     for (; currentIndex < limit; currentIndex++) {
                         const item = history[currentIndex];
                         if (item.type === 'init_layers') continue;
 
-                        // 안전하게 그림 그릴 대상 도화지 찾기
                         let ctx;
                         if (item.layerId && layerContexts[item.layerId]) {
                             ctx = layerContexts[item.layerId];
@@ -559,7 +558,7 @@
                             ctx = layerContexts[Object.keys(layerContexts)[0]];
                         }
 
-                        if (!ctx) continue; // 에러 방어
+                        if (!ctx) continue;
 
                         ctx.globalCompositeOperation = 'source-over';
                         ctx.globalAlpha = 1.0;
@@ -569,14 +568,29 @@
                         }
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
                             const img = new Image();
-                            img.onload = () => {
-                                ctx.save();
-                                if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
-                                ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
-                                ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
-                                ctx.restore();
-                            };
-                            img.src = item.src;
+                            // ✨ 과정 생략(즉시 렌더링)일 때는 이미지가 로드될 때까지 완벽하게 기다렸다가 그립니다.
+                            if (playbackDurationMs === 0) {
+                                await new Promise(res => {
+                                    img.onload = () => {
+                                        ctx.save();
+                                        if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
+                                        ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                                        ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                                        ctx.restore();
+                                        res();
+                                    };
+                                    img.src = item.src;
+                                });
+                            } else {
+                                img.onload = () => {
+                                    ctx.save();
+                                    if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
+                                    ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                                    ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                                    ctx.restore();
+                                };
+                                img.src = item.src;
+                            }
                         }
                         else if (item.type === 'fill') {
                             const px = item.point ? item.point.x : item.x;
@@ -593,11 +607,9 @@
                             if (item.color === 'erase') {
                                 if (item.points.length === 1) {
                                     const p = item.points[0];
-                                    // ✨ await 추가
                                     await renderBrushStroke(ctx, p.x, p.y, p.w, p.x, p.y, p.w, item.color, true, brushType, spacing);
                                 } else {
                                     for (let i = 1; i < item.points.length; i++) {
-                                        // ✨ await 추가
                                         await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, brushType, spacing);
                                     }
                                 }
@@ -608,11 +620,9 @@
 
                                 if (item.points.length === 1) {
                                     const p = item.points[0];
-                                    // ✨ await 추가
                                     await renderBrushStroke(tmpCtx, p.x, p.y, p.w, p.x, p.y, p.w, opaqueColor, false, brushType, spacing);
                                 } else {
                                     for (let i = 1; i < item.points.length; i++) {
-                                        // ✨ await 추가
                                         await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
                                     }
                                 }
