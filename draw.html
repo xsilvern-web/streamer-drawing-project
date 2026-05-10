@@ -3801,7 +3801,7 @@ async function redrawCanvas() {
 
                 alert("작업 내역이 압축되어 용량이 최적화되었습니다!");
             };
-            document.getElementById('file-input').addEventListener('change', (e) => {
+document.getElementById('file-input').addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
     reader.onload = async (event) => {
         try {
@@ -3813,16 +3813,28 @@ async function redrawCanvas() {
             document.body.style.pointerEvents = 'none'; // 로딩 중 조작 방지
 
             if (data.isMultiFrame && data.framesData) {
-                for (let fData of data.framesData) {
-                    const newF = { 
-                        id: fData.id, duration: fData.duration || 500, layers: [], layerCounter: fData.layerCounter, 
-                        history: fData.history || [], redoStack: fData.redoStack || [], activeLayerId: null,
-                        fullPlaybackRecord: fData.fullPlaybackRecord || fData.history || []
+                for (let i = 0; i < data.framesData.length; i++) {
+                    let fData = data.framesData[i];
+
+                    // ✨ [호환성 핵심 픽스] 
+                    // 레이어 핫픽스 직전 버전(전체 굽기)은 history가 fData 안이 아니라 최상위(data)에 있었습니다.
+                    const fallbackHistory = (i === 0 && data.liveHistory) ? data.liveHistory : [];
+                    const fallbackFullRecord = (i === 0 && data.fullPlaybackRecord) ? data.fullPlaybackRecord : [];
+
+                    const newF = {
+                        id: fData.id, 
+                        duration: fData.duration || 500, 
+                        layers: [], 
+                        layerCounter: fData.layerCounter || 10,
+                        history: fData.history || fallbackHistory,
+                        redoStack: fData.redoStack || [], 
+                        activeLayerId: null,
+                        fullPlaybackRecord: fData.fullPlaybackRecord || fData.history || fallbackFullRecord
                     };
 
                     // --- 레이어 복구 루프 ---
-                    for (let i = 0; i < fData.layersInfo.length; i++) {
-                        const lInfo = fData.layersInfo[i];
+                    for (let j = 0; j < fData.layersInfo.length; j++) {
+                        const lInfo = fData.layersInfo[j];
                         const cvs = document.createElement('canvas'); 
                         cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; 
                         cvs.className = 'drawing-layer';
@@ -3837,10 +3849,8 @@ async function redrawCanvas() {
                             blendMode: lInfo.blendMode || 'normal', type: 'canvas' 
                         };
                         
-                        // ✨ [호환성 핵심] 
-                        // 1. 현재 버전: 레이어마다 baseRaster가 있는 경우
-                        // 2. 직전 버전: 전체 baseRaster가 data(또는 fData)에 있는 경우 -> 첫 번째 레이어에 배정
-                        let targetRaster = lInfo.baseRaster || (i === 0 ? (fData.baseRaster || data.baseRaster) : null);
+                        // ✨ 구워진 바닥 이미지 호환 로직 (직전 버전은 최하단 1번 레이어에 배정)
+                        let targetRaster = lInfo.baseRaster || (j === 0 ? (fData.baseRaster || data.baseRaster) : null);
 
                         if (targetRaster) {
                             layerObj.baseCanvas = document.createElement('canvas'); 
@@ -3857,23 +3867,25 @@ async function redrawCanvas() {
                     }
 
                     // --- 이미지/텍스트 오브젝트 복구 ---
-                    fData.transformObjects.forEach(obj => {
-                        let customContent = null;
-                        if (obj.type === 'transform_box') {
-                            customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
-                            const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
-                            customContent.className = 'content';
-                        }
-                        const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
-                        wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
-                        wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none'; wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1; wrapper.style.mixBlendMode = obj.blendMode || 'normal';
-                        let content;
-                        if (customContent) { content = customContent; content.classList.add('content'); }
-                        else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
-                        ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
-                        wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                        newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
-                    });
+                    if (fData.transformObjects) {
+                        fData.transformObjects.forEach(obj => {
+                            let customContent = null;
+                            if (obj.type === 'transform_box') {
+                                customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
+                                const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                                customContent.className = 'content';
+                            }
+                            const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
+                            wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
+                            wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none'; wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1; wrapper.style.mixBlendMode = obj.blendMode || 'normal';
+                            let content;
+                            if (customContent) { content = customContent; content.classList.add('content'); }
+                            else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
+                            ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
+                            wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
+                            newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
+                        });
+                    }
 
                     if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
                     frames.push(newF);
@@ -3883,17 +3895,20 @@ async function redrawCanvas() {
                 if (frames.length > 0) {
                     for (let f of frames) { 
                         selectFrame(f.id); 
-                        // 구버전(v1) 호환: 굽기 데이터가 아예 없는 경우 history를 굽기 최적화로 전환
-                        if (history.length > 100 && !history.some(h => h.isBaked)) {
+                        
+                        // 구버전(v1) 호환: 굽기 데이터가 아예 없는 옛날 파일인 경우
+                        if (history.length > 100 && !layers.some(l => l.baseCanvas)) {
                              const toBake = history.splice(0, history.length - 100);
                              for(const item of toBake) {
                                  const target = layers.find(l => l.id === item.layerId) || layers[0];
-                                 if(!target.baseCtx) {
-                                     target.baseCanvas = document.createElement('canvas');
-                                     target.baseCanvas.width = 1920; target.baseCanvas.height = 1080;
-                                     target.baseCtx = target.baseCanvas.getContext('2d');
+                                 if (target) {
+                                     if(!target.baseCtx) {
+                                         target.baseCanvas = document.createElement('canvas');
+                                         target.baseCanvas.width = 1920; target.baseCanvas.height = 1080;
+                                         target.baseCtx = target.baseCanvas.getContext('2d');
+                                     }
+                                     await renderToTarget(item, target.baseCtx);
                                  }
-                                 await renderToTarget(item, target.baseCtx);
                              }
                         }
                         await redrawCanvas(); 
