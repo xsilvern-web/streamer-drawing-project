@@ -1498,25 +1498,32 @@
             let selectionCanvas = null;
             let selectionCtx = null;
             let currentSelectionPath = [];
-            // ✨ 굽기 전용 베이스 캔버스 생성 (눈에 보이지 않음)
-            const baseCanvas = document.createElement('canvas');
-            baseCanvas.width = CANVAS_WIDTH;
-            baseCanvas.height = CANVAS_HEIGHT;
-            const baseCtx = baseCanvas.getContext('2d');
-            baseCtx.lineCap = 'round';
-            baseCtx.lineJoin = 'round';
 
 
             // --- 2. 선을 긋고 마우스를 뗄 때 실행되는 통합 저장 함수 ---
+            // --- 2. 선을 긋고 마우스를 뗄 때 실행되는 통합 저장 함수 ---
             async function finalizePath(item) {
-                history.push(item);             // 로컬 작업용 배열에 저장
-                fullPlaybackRecord.push(item);  // 방송 전송용 배열에 원본 저장
-                redoStack = [];                 // 새로운 작업을 했으므로 앞으로 가기(Redo) 스택 초기화
+                history.push(item);             
+                fullPlaybackRecord.push(item);  
+                redoStack = [];                 
 
-                // ✨ 마법의 최적화: 로컬 배열이 100개를 초과하면 가장 오래된 선을 빼서 바닥에 굽습니다.
+                // ✨ 마법의 최적화: 100개가 넘어가면, 해당 선이 속했던 '정확한 레이어'의 바닥에만 굽습니다.
                 if (history.length > 100) {
                     const oldestItem = history.shift();
-                    await renderToTarget(oldestItem, baseCtx);
+                    const targetLayer = layers.find(l => l.id === oldestItem.layerId);
+                    
+                    if (targetLayer && targetLayer.type === 'canvas') {
+                        // 레이어 전용 바닥(Base) 캔버스가 없다면 동적으로 생성
+                        if (!targetLayer.baseCanvas) {
+                            targetLayer.baseCanvas = document.createElement('canvas');
+                            targetLayer.baseCanvas.width = CANVAS_WIDTH; 
+                            targetLayer.baseCanvas.height = CANVAS_HEIGHT;
+                            targetLayer.baseCtx = targetLayer.baseCanvas.getContext('2d');
+                            targetLayer.baseCtx.lineCap = 'round'; 
+                            targetLayer.baseCtx.lineJoin = 'round';
+                        }
+                        await renderToTarget(oldestItem, targetLayer.baseCtx);
+                    }
                 }
             }
 
@@ -3468,39 +3475,109 @@
             });
 
             let isRedrawing = false;
-            let needsRedraw = false;
+let needsRedraw = false; // 타이밍 꼬임 방지
 
-            async function redrawCanvas() {
-                if (isRedrawing) return;
-                isRedrawing = true;
+async function redrawCanvas() {
+    if (isRedrawing) { needsRedraw = true; return; }
+    isRedrawing = true;
 
-                // 1. 모든 레이어를 깨끗이 지우고 시작
-                layers.forEach(l => {
-                    if (l.type === 'canvas' && l.ctx) {
-                        l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                        l.ctx.globalCompositeOperation = 'source-over';
-                        l.ctx.globalAlpha = 1.0;
-                    }
-                });
-
-                // 2. ✨ 최하단 레이어(보통 첫 번째 레이어)에 구워진 baseCanvas를 먼저 복사
-                if (layers.length > 0) {
-                    const bottomLayer = layers[0]; // 레이어 순서에 따라 변경 가능
-                    if (bottomLayer.ctx) {
-                        bottomLayer.ctx.drawImage(baseCanvas, 0, 0);
-                    }
-                }
-
-                // 3. 그 위에 현재 history(최대 100개)만 순서대로 다시 그리기
-                for (let item of history) {
-                    const targetLayer = layers.find(l => l.id === item.layerId);
-                    if (targetLayer && targetLayer.ctx) {
-                        await renderToTarget(item, targetLayer.ctx);
-                    }
-                }
-
-                isRedrawing = false;
+    const buffers = {};
+    
+    // 1. 가상 버퍼 생성 및 각 레이어별 고유 바닥(Base) 깔기
+    layers.forEach(l => {
+        if (l.type === 'canvas' && l.canvas && l.ctx) {
+            const bufferCvs = document.createElement('canvas');
+            bufferCvs.width = CANVAS_WIDTH; bufferCvs.height = CANVAS_HEIGHT;
+            const bufferCtx = bufferCvs.getContext('2d');
+            bufferCtx.lineCap = 'round'; bufferCtx.lineJoin = 'round';
+            
+            // ✨ 핵심: 전체가 아닌, 이 레이어만의 구워진 바닥 이미지를 깐다
+            if (l.baseCanvas) {
+                bufferCtx.drawImage(l.baseCanvas, 0, 0);
             }
+            buffers[l.id] = { cvs: bufferCvs, ctx: bufferCtx };
+        }
+    });
+
+    let tmpCvs = document.getElementById('redraw-tmp-layer');
+    if (!tmpCvs) {
+        tmpCvs = document.createElement('canvas'); tmpCvs.id = 'redraw-tmp-layer';
+        tmpCvs.width = CANVAS_WIDTH; tmpCvs.height = CANVAS_HEIGHT; tmpCvs.style.display = 'none';
+        document.body.appendChild(tmpCvs);
+    }
+    const tmpCtx = tmpCvs.getContext('2d');
+
+    // 2. 현재 히스토리(최대 100개) 덧그리기
+    for (let item of history) {
+        const targetLayer = layers.find(l => l.id === item.layerId);
+        if (!targetLayer || targetLayer.type !== 'canvas' || !buffers[targetLayer.id]) continue;
+        const ctx = buffers[targetLayer.id].ctx;
+
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
+
+        if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
+        else if (item.type === 'fill') {
+            const px = item.point ? item.point.x : item.x; const py = item.point ? item.point.y : item.y;
+            const gapVal = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
+            const bufferLayers = layers.map(l => {
+                if (l.type === 'canvas' && buffers[l.id]) {
+                    buffers[l.id].cvs.style.zIndex = l.canvas.style.zIndex; 
+                    return { ...l, canvas: buffers[l.id].cvs };
+                }
+                return l;
+            });
+            doFloodFill(ctx, px, py, item.color, item.tolerance, gapVal, item.sampleAllLayers, bufferLayers);
+        }
+        else if (item.type === 'raster_image') {
+            await new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => {
+                    ctx.save();
+                    if (item.width >= CANVAS_WIDTH && item.height >= CANVAS_HEIGHT) ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                    ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                    ctx.restore(); resolve();
+                };
+                img.onerror = resolve; img.src = item.src;
+            });
+        }
+        else if (item.type === 'path' || !item.type) {
+            if (item.points.length === 0) continue;
+            const brushType = item.brushType || 'default';
+            const spacing = item.spacing || 0.1;
+
+            if (item.color === 'erase') {
+                for (let i = 1; i < item.points.length; i++) await renderBrushStroke(ctx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, item.color, true, brushType, spacing);
+            } else {
+                tmpCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
+                const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
+                for (let i = 1; i < item.points.length; i++) await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
+                ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
+                ctx.drawImage(tmpCvs, 0, 0); ctx.globalAlpha = 1;
+            }
+        } else {
+            ctx.beginPath(); ctx.strokeStyle = item.color;
+            if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
+            else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+            else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+        }
+    }
+
+    // 3. 완성된 버퍼를 실제 캔버스에 덮어쓰기
+    layers.forEach(l => {
+        if (l.type === 'canvas' && l.canvas && l.ctx && buffers[l.id]) {
+            l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            l.ctx.globalCompositeOperation = 'source-over';
+            l.ctx.globalAlpha = 1.0;
+            l.ctx.drawImage(buffers[l.id].cvs, 0, 0);
+        }
+    });
+
+    isRedrawing = false;
+    if (needsRedraw) { needsRedraw = false; await redrawCanvas(); }
+}
 
             function undo() {
                 if (history.length > 0) {
@@ -3650,31 +3727,39 @@
                 }
             });
 
-            // ✨ 파일 저장 로직을 Blob 방식으로 변경하여 대용량 데이터(기가바이트 급)도 거뜬하게 저장 가능하도록 수정
-            document.getElementById('btn-save').onclick = () => {
-                syncToFrame(); // 현재 프레임 데이터 동기화
+           document.getElementById('btn-save').onclick = () => {
+    syncToFrame();
+    const framesData = frames.map(f => {
+        const savedTransformObjects = [];
+        f.layers.forEach(l => {
+            if (l.type === 'text' || l.type === 'transform_box') {
+                const box = l.element; let angle = 0; const transform = window.getComputedStyle(box).transform;
+                if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
+                const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' };
+                if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; }
+                else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
+                savedTransformObjects.push(obj);
+            }
+        });
 
-                const saveData = {
-                    version: "2.0",
-                    baseRaster: baseCanvas.toDataURL('image/png'), // 구워진 이미지
-                    liveHistory: history,                         // 최근 100개
-                    fullPlaybackRecord: fullPlaybackRecord,       // ✨ 방송용 전체 기록
-                    framesData: frames.map(f => ({
-                        id: f.id, duration: f.duration,
-                        layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({
-                            id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, blendMode: l.blendMode
-                        }))
-                    }))
-                };
+        return {
+            id: f.id, duration: f.duration, layerCounter: f.layerCounter, 
+            history: f.history, redoStack: f.redoStack,
+            fullPlaybackRecord: f.fullPlaybackRecord || f.history, // ✨ 프레임별 전체 기록 저장
+            layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ 
+                id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal',
+                baseRaster: l.baseCanvas ? l.baseCanvas.toDataURL('image/png') : null // ✨ 레이어별 구워진 바닥 저장
+            })),
+            transformObjects: savedTransformObjects
+        };
+    });
 
-                const blob = new Blob([JSON.stringify(saveData)], { type: "application/json" });
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = blobUrl;
-                a.download = "drawing_optimized.json";
-                a.click();
-                URL.revokeObjectURL(blobUrl);
-            };
+    const saveData = { isMultiFrame: true, framesData: framesData };
+    const blob = new Blob([JSON.stringify(saveData)], { type: "application/json;charset=utf-8" });
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = blobUrl; a.download = "drawing_advanced_anim.json";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(blobUrl);
+};
 
             // ✨ 추가된 작업 내역 압축(청소) 기능
             document.getElementById('btn-compress-history').onclick = async () => {
@@ -3717,45 +3802,74 @@
                 alert("작업 내역이 압축되어 용량이 최적화되었습니다!");
             };
             document.getElementById('file-input').addEventListener('change', (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (event) => {
-                    try {
-                        const data = JSON.parse(event.target.result);
+    const file = e.target.files[0]; if (!file) return; const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const data = JSON.parse(event.target.result);
+            const elementsToRemove = Array.from(layerWrapper.querySelectorAll('.drawing-layer, .transform-box'));
+            elementsToRemove.forEach(c => c.remove());
 
-                        // 모든 캔버스 및 데이터 초기화
-                        baseCtx.clearRect(0, 0, 1920, 1080);
+            frames = []; currentFrameId = null; document.body.style.pointerEvents = 'none';
 
-                        if (data.version === "2.0") {
-                            // ✨ 신버전 로드
-                            history = data.liveHistory || [];
-                            fullPlaybackRecord = data.fullPlaybackRecord || [];
-                            const img = new Image();
-                            img.onload = () => {
-                                baseCtx.drawImage(img, 0, 0);
-                                redrawCanvas();
-                            };
-                            img.src = data.baseRaster;
-                        } else {
-                            // ✨ 구버전 호환: 모든 내역이 history에만 있던 시절
-                            fullPlaybackRecord = data.history || (data.framesData ? data.framesData[0].history : []);
-                            history = [...fullPlaybackRecord];
+            if (data.isMultiFrame && data.framesData) {
+                for (let fData of data.framesData) {
+                    const newF = { 
+                        id: fData.id, duration: fData.duration || 500, layers: [], layerCounter: fData.layerCounter, 
+                        history: fData.history || [], redoStack: fData.redoStack || [], activeLayerId: null,
+                        fullPlaybackRecord: fData.fullPlaybackRecord || fData.history || []
+                    };
 
-                            // 불러오면서 100개가 넘으면 자동으로 구워버림
-                            if (history.length > 100) {
-                                const toBake = history.splice(0, history.length - 100);
-                                for (const item of toBake) {
-                                    await renderToTarget(item, baseCtx);
-                                }
-                            }
-                            redrawCanvas();
+                    for (let lInfo of fData.layersInfo) {
+                        const cvs = document.createElement('canvas'); cvs.id = lInfo.id; cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT; cvs.className = 'drawing-layer';
+                        cvs.style.pointerEvents = 'none'; cvs.style.display = 'none';
+                        cvs.style.opacity = lInfo.opacity !== undefined ? lInfo.opacity : 1; cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
+                        layerWrapper.appendChild(cvs);
+
+                        const layerObj = { id: lInfo.id, name: lInfo.name, canvas: cvs, ctx: cvs.getContext('2d'), visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, blendMode: lInfo.blendMode || 'normal', type: 'canvas' };
+                        
+                        // ✨ 레이어별 바닥(Base) 복구
+                        if (lInfo.baseRaster) {
+                            layerObj.baseCanvas = document.createElement('canvas'); layerObj.baseCanvas.width = CANVAS_WIDTH; layerObj.baseCanvas.height = CANVAS_HEIGHT;
+                            layerObj.baseCtx = layerObj.baseCanvas.getContext('2d');
+                            await new Promise(res => {
+                                const img = new Image(); img.onload = () => { layerObj.baseCtx.drawImage(img, 0, 0); res(); };
+                                img.src = lInfo.baseRaster;
+                            });
                         }
-                        alert("파일을 성공적으로 불러왔습니다.");
-                    } catch (err) { alert("파일 형식 오류"); console.error(err); }
-                };
-                reader.readAsText(file);
-            });
+                        newF.layers.push(layerObj);
+                    }
+
+                    fData.transformObjects.forEach(obj => {
+                        let customContent = null;
+                        if (obj.type === 'transform_box') {
+                            customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
+                            const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                            customContent.className = 'content';
+                        }
+                        const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
+                        wrapper.style.left = `${obj.x - obj.width / 2}px`; wrapper.style.top = `${obj.y - obj.height / 2}px`; wrapper.style.width = `${obj.width}px`; wrapper.style.height = `${obj.height}px`;
+                        wrapper.style.transform = `rotate(${obj.angle}rad)`; wrapper.style.zIndex = obj.zIndex; wrapper.style.display = 'none'; wrapper.style.opacity = obj.opacity !== undefined ? obj.opacity : 1; wrapper.style.mixBlendMode = obj.blendMode || 'normal';
+                        let content;
+                        if (customContent) { content = customContent; content.classList.add('content'); }
+                        else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
+                        ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
+                        wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
+                        newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
+                    });
+
+                    if (newF.layers.length > 0) newF.activeLayerId = newF.layers[newF.layers.length - 1].id;
+                    frames.push(newF);
+                }
+
+                if (frames.length > 0) {
+                    for (let f of frames) { selectFrame(f.id); await redrawCanvas(); }
+                    selectFrame(frames[0].id);
+                }
+            }
+            document.body.style.pointerEvents = 'auto'; e.target.value = ''; alert("파일을 성공적으로 불러왔습니다.");
+        } catch (err) { alert("잘못된 형식의 파일입니다."); document.body.style.pointerEvents = 'auto'; console.error(err); }
+    }; reader.readAsText(file);
+});
 
             let activeTextContent = null;
             let savedSelectionRange = null;
