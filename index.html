@@ -512,39 +512,18 @@
                     layerContexts['default'] = Object.assign(document.getElementById('default-canvas').getContext('2d'), { canvasNode: document.getElementById('default-canvas') });
                 }
 
-                const isSkipProcess = initItem ? initItem.skipProcess : false;
-                const playbackDurationMs = isSkipProcess ? 0 : 8000;
+                // ✨ [핵심 수정] 타임랩스인지 즉시 표시인지 "자동 감지"
+                // history 안에 'path'(선 긋기)나 'fill'(채우기) 데이터가 있는지 검사합니다.
+                const hasDrawingProcess = history.some(item => 
+                    item.type !== 'init_layers' && 
+                    item.type !== 'raster_image' && 
+                    item.shape !== 'raster_image' &&
+                    item.type !== 'clear'
+                );
 
-                // ✨ [핵심 해결] 타임랩스 재생 전, 그림에 포함된 모든 텍스트/이미지/바닥 데이터를 미리 로드(Preload)합니다.
-                // 렌더링 도중에 이미지를 불러오느라 타이밍이 꼬이고 이미지가 증발하는 현상을 완벽하게 차단합니다.
-                const imageCache = {};
-                const loadPromises = [];
-
-                history.forEach((item, idx) => {
-                    if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
-                        if (item.src) {
-                            const p = new Promise(resolve => {
-                                const img = new Image();
-                                img.onload = () => {
-                                    imageCache[idx] = img; // 준비 완료된 이미지를 캐시에 저장
-                                    resolve();
-                                };
-                                img.onerror = () => {
-                                    console.warn("이미지 로드 실패 (무시됨)");
-                                    resolve(); 
-                                };
-                                img.src = item.src;
-                            });
-                            loadPromises.push(p);
-                        }
-                    }
-                });
-
-                // 모든 이미지가 준비될 때까지 안전하게 기다림
-                if (loadPromises.length > 0) {
-                    await Promise.all(loadPromises); 
-                }
-
+                // ✨ 과정이 없으면 0초(즉시 표시), 과정이 있으면 8000ms(8초)
+                const playbackDurationMs = hasDrawingProcess ? 8000 : 0;
+                
                 let currentIndex = 0;
                 let exactFloatIndex = 0;
                 let lastTime = null;
@@ -560,6 +539,7 @@
                     const deltaTime = currentTime - lastTime;
                     lastTime = currentTime;
 
+                    // ✨ 재생 시간이 0초면 그리기 진행 인덱스를 끝까지 올려버림 (즉시 렌더링)
                     if (playbackDurationMs === 0) {
                         exactFloatIndex = totalItems;
                     } else {
@@ -587,15 +567,19 @@
                             ctx.clearRect(0, 0, 1920, 1080);
                         }
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
-                            // ✨ 렌더링 중에는 기다리지 않고 준비된 캐시에서 꺼내 0.001초 만에 즉시 그립니다!
-                            const img = imageCache[currentIndex];
-                            if (img) {
-                                ctx.save();
-                                if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
-                                ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
-                                ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
-                                ctx.restore();
-                            }
+                            // ✨ 이미지가 로드될 때까지 기다렸다가 완벽하게 한 번에 그리기
+                            await new Promise(res => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    ctx.save();
+                                    if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
+                                    ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                                    ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                                    ctx.restore();
+                                    res();
+                                };
+                                img.src = item.src;
+                            });
                         }
                         else if (item.type === 'fill') {
                             const px = item.point ? item.point.x : item.x;
