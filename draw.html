@@ -4747,7 +4747,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     });
 
                     if (skipProcess) {
-                        // 2-A. 과정 생략 모드: 모든 레이어를 1장의 이미지로 완벽히 압축하여 전송 (즉시 팝업 보장)
+                        // 2-A. 과정 생략 모드: 화면에 보이는 그대로를 1장으로 완벽히 압축하여 전송 (즉시 팝업 보장)
                         const offCanvas = document.createElement('canvas');
                         offCanvas.width = CANVAS_WIDTH; offCanvas.height = CANVAS_HEIGHT;
                         const offCtx = offCanvas.getContext('2d');
@@ -4758,22 +4758,24 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                                 let mode = l.blendMode || 'normal';
                                 if (mode === 'normal') mode = 'source-over';
                                 offCtx.globalCompositeOperation = mode;
-                                offCtx.drawImage(l.canvas, 0, 0);
+                                
+                                // ✨ 핵심: 바닥(버킷, 불러온 이미지 등) 먼저 칠하고 그 위에 펜 선 칠하기
+                                if (l.baseCanvas) offCtx.drawImage(l.baseCanvas, 0, 0);
+                                if (l.canvas) offCtx.drawImage(l.canvas, 0, 0);
                             }
                         });
-                        
+
                         singleHistoryPayload.push({
                             type: 'raster_image',
-                            layerId: validLayers[0].id, // 캔버스를 합쳤으므로 첫 번째 레이어 기준
+                            layerId: validLayers[0].id,
                             src: offCanvas.toDataURL('image/png'),
                             cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
                             width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
                         });
                     } else {
-                        // 2-B. ✨ 타임랩스 모드: 구워진 바닥과 유효한 기록만 정제해서 전송
+                        // 2-B. 타임랩스 모드: 구워진 바닥과 유효한 기록만 정제해서 전송
                         const validLayerIds = validLayers.map(l => l.id);
 
-                        // [추가] 구워진 바닥(baseCanvas)이 있다면, 선을 그리기 전에 미리 전송해서 깔아줍니다. (버킷 및 파일 로드 이미지 복구)
                         validLayers.forEach(l => {
                             if (l.baseCanvas) {
                                 singleHistoryPayload.push({
@@ -4785,13 +4787,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                             }
                         });
 
-                        // [추가] 사용자가 삭제한 레이어에 그렸던 유령 선들을 필터링하여 깔끔하게 제거합니다.
                         const filteredRecord = fullPlaybackRecord.filter(item => {
-                            if (!item.layerId) return true; // 초기화나 화면 정리 같은 시스템 명령어는 통과
-                            return validLayerIds.includes(item.layerId); // 현재 남아있는 유효한 레이어의 선만 통과
+                            if (!item.layerId) return true;
+                            return validLayerIds.includes(item.layerId);
                         });
 
-                        // 필터링된 깨끗한 타임랩스 기록을 붙여넣기
                         singleHistoryPayload.push(...filteredRecord);
                     }
 

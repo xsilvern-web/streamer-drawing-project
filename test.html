@@ -550,6 +550,7 @@
                 let currentIndex = 0;
                 let exactFloatIndex = 0;
                 let lastTime = null;
+                let isBatchRunning = false; // ✨ 엔진 충돌을 막아주는 핵심 잠금장치
 
                 const tmpCvs = document.createElement('canvas');
                 tmpCvs.width = 1920; tmpCvs.height = 1080;
@@ -568,6 +569,13 @@
                         exactFloatIndex += (totalItems / playbackDurationMs) * deltaTime;
                     }
 
+                    // ✨ 렌더링이 채 끝나기 전에 다음 프레임이 들어오면 막아버림 (이미지 증발 완벽 방지)
+                    if (isBatchRunning) {
+                        requestAnimationFrame(drawNextBatch);
+                        return;
+                    }
+
+                    isBatchRunning = true; // 🔒 렌더링 시작 (잠금)
                     const limit = Math.min(Math.floor(exactFloatIndex), totalItems);
 
                     for (; currentIndex < limit; currentIndex++) {
@@ -589,7 +597,7 @@
                             ctx.clearRect(0, 0, 1920, 1080);
                         }
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
-                            // ✨ 렌더링 중에는 기다리지 않고 준비된 캐시에서 꺼내 0.001초 만에 즉시 그립니다!
+                            // ✨ 이미 준비된 캐시에서 꺼내 즉시 렌더링 (타이밍 밀림 없음)
                             const img = imageCache[currentIndex];
                             if (img) {
                                 ctx.save();
@@ -641,6 +649,8 @@
                             else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
                         }
                     }
+
+                    isBatchRunning = false; // 🔓 렌더링 완료 (잠금 해제)
 
                     if (currentIndex < totalItems) {
                         requestAnimationFrame(drawNextBatch);
