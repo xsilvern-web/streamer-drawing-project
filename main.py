@@ -124,6 +124,67 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
         cursor.execute("UPDATE settings SET notice_text = %s WHERE id = 1", (notice_text,))
     conn.commit()
     conn.close()
+
+# ✨ 아래 헬퍼들은 동기(blocking) DB 작업을 모아둔 함수입니다.
+# psycopg2는 동기 라이브러리라 async 엔드포인트 안에서 그냥 호출하면 이벤트 루프 전체가 멈춰
+# (= 방송 화면의 그림 재생도 같이 멈춰) 버립니다. 그래서 asyncio.to_thread로 스레드에서 실행합니다.
+def _fetch_recent_donations():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+
+def _fetch_replay_row(ledger_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT donor_name, donor_profile_image, drawing_title, drawing_data FROM ledger WHERE id = %s", (ledger_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def _count_since(target_str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM ledger WHERE timestamp >= %s", (target_str,))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def _insert_ledger(email, name, profile_image, title, drawing_history):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (%s, %s, %s, %s, %s)",
+        (email, name, profile_image, title, json.dumps(drawing_history))
+    )
+    conn.commit()
+    conn.close()
+
+def _fetch_donation(ledger_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT * FROM ledger WHERE id = %s", (ledger_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def _fetch_donations_by_date(date):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger WHERE DATE(timestamp) = %s", (date,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+
+def _delete_old_data():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '2 days'")
+    conn.commit()
+    conn.close()
+
 # ✨ test.html 서빙 라우터 추가
 @app.get("/test")
 async def serve_test_page(): return FileResponse("test.html")
@@ -197,12 +258,12 @@ async def verify_password(data: PasswordCheck):
     raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
 
 @app.get("/api/settings")
-async def get_settings(): 
-    return get_db_settings()
+async def get_settings():
+    return await asyncio.to_thread(get_db_settings)
 
 @app.post("/api/toggle-donation")
 async def toggle_donation(enable: bool):
-    update_db_settings(is_enabled=enable)
+    await asyncio.to_thread(update_db_settings, is_enabled=enable)
     return {"message": "success"}
 
 class SettingsUpdate(BaseModel):
@@ -214,7 +275,7 @@ class SettingsUpdate(BaseModel):
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
-    current_settings = get_db_settings()
+    current_settings = await asyncio.to_thread(get_db_settings)
     blocked = current_settings["blocked_emails"]
     changed = False
     if data.add_blocked_email and data.add_blocked_email not in blocked:
@@ -225,9 +286,10 @@ async def update_settings(data: SettingsUpdate):
         changed = True
     
     # ✨ notice_text 추가 전송
-    update_db_settings(
-        blocked_emails=blocked if changed else None, 
-        display_duration=data.display_duration, 
+    await asyncio.to_thread(
+        update_db_settings,
+        blocked_emails=blocked if changed else None,
+        display_duration=data.display_duration,
         daily_limit=data.daily_limit,
         notice_text=data.notice_text
     )
@@ -235,39 +297,25 @@ async def update_settings(data: SettingsUpdate):
 
 @app.get("/api/recent-donations")
 async def get_recent_donations():
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=DictCursor)
-    # ✨ LIMIT 10을 삭제하여 상한선을 없앴습니다. (90일치 전체 데이터를 시간 역순으로 불러옴)
-    cursor.execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+    return await asyncio.to_thread(_fetch_recent_donations)
 
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT donor_name, donor_profile_image, drawing_title, drawing_data FROM ledger WHERE id = %s", (ledger_id,))
-    row = cursor.fetchone()
-    conn.close()
+    row = await asyncio.to_thread(_fetch_replay_row, ledger_id)
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
     await drawing_queue.put({"name": row[0], "profileImage": row[1], "title": row[2], "drawingData": json.loads(row[3])})
     return {"message": "success"}
 
 @app.post("/api/submit-drawing")
 async def submit_drawing(request: Request):
-    settings = get_db_settings()
+    settings = await asyncio.to_thread(get_db_settings)
     if not settings["is_donation_enabled"]: raise HTTPException(status_code=403, detail="현재 그림 받기가 닫혀있습니다.")
 
     if settings.get("daily_limit", 0) > 0:
         now = datetime.now()
         target_date = now - timedelta(days=1) if now.hour < 6 else now
         target_str = target_date.strftime('%Y-%m-%d 06:00:00')
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM ledger WHERE timestamp >= %s", (target_str,))
-        count = cursor.fetchone()[0]
-        conn.close()
+        count = await asyncio.to_thread(_count_since, target_str)
         if count >= settings["daily_limit"]: raise HTTPException(status_code=403, detail=f"오늘 한도({settings['daily_limit']}개)가 초과되었습니다.")
 
     try:
@@ -281,14 +329,7 @@ async def submit_drawing(request: Request):
         if not email: raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (%s, %s, %s, %s, %s)", 
-            (email, name, profile_image, title, json.dumps(drawing_history))
-        )
-        conn.commit()
-        conn.close()
+        await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history)
         
         await drawing_queue.put(data)
         return {"status": "success"}
@@ -308,7 +349,7 @@ async def process_drawing_queue():
             # 목적지 분기 처리 (테스트 플래그 확인)
             target_connections = test_connections if payload.get("is_test") else active_connections
             
-            settings = get_db_settings()
+            settings = await asyncio.to_thread(get_db_settings)
             display_duration = settings.get("display_duration", 8)
             
             name = payload.get("name", "익명")
@@ -418,12 +459,7 @@ async def process_drawing_queue():
 async def auto_delete_old_data():
     while True:
         try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            # 90 days에서 2 days로 수정된 부분입니다.
-            cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '2 days'")
-            conn.commit()
-            conn.close()
+            await asyncio.to_thread(_delete_old_data)
         except Exception as e: 
             print(f"Delete old data error: {e}")
         await asyncio.sleep(86400) # 24시간(86400초)마다 한 번씩 검사하여 삭제를 수행합니다.
@@ -431,23 +467,13 @@ async def auto_delete_old_data():
 
 @app.get("/api/donation/{ledger_id}")
 async def get_donation_data(ledger_id: int):
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=DictCursor)
-    cursor.execute("SELECT * FROM ledger WHERE id = %s", (ledger_id,))
-    row = cursor.fetchone()
-    conn.close()
+    row = await asyncio.to_thread(_fetch_donation, ledger_id)
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
     return {"id": row["id"], "name": row["donor_name"], "title": row["drawing_title"], "data": json.loads(row["drawing_data"]), "time": str(row["timestamp"])}
 
 @app.get("/api/donations/by-date")
 async def get_donations_by_date(date: str):
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=DictCursor)
-    # ✨ 핵심 수정: 서버 메모리가 터지지 않도록 용량이 거대한 drawing_data는 빼고 조회합니다.
-    cursor.execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger WHERE DATE(timestamp) = %s", (date,))
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+    return await asyncio.to_thread(_fetch_donations_by_date, date)
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()

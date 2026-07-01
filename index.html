@@ -123,6 +123,16 @@
     <script>
         // 브러시 이미지를 담아둘 캐시 메모리
         const brushImageCache = {};
+        // ✨ 장시간 방송 시 브러시색 조합이 무한정 쌓여 메모리 누수/프리즈가 생기지 않도록 상한을 둡니다.
+        const BRUSH_CACHE_MAX = 150;
+        function trimBrushCache() {
+            const keys = Object.keys(brushImageCache);
+            if (keys.length > BRUSH_CACHE_MAX) {
+                for (let i = 0; i < keys.length - BRUSH_CACHE_MAX; i++) {
+                    delete brushImageCache[keys[i]]; // 오래된 항목부터 제거(FIFO)
+                }
+            }
+        }
 
         // 흑백 브러시 이미지를 유저가 선택한 색상으로 물들이는 마법의 함수
         // 흑백/흰색 배경 브러시 이미지를 투명화하고 선택한 색상으로 물들이는 함수
@@ -175,6 +185,7 @@
                 img.onerror = () => resolve(null); // 파일 로드 실패 방어
             });
 
+            trimBrushCache(); // ✨ 캐시 상한 유지
             return brushImageCache[cacheKey];
         }
 
@@ -212,12 +223,57 @@
         }
 
         // ✨ 업그레이드된 브러시 렌더링 엔진
+        // ✨ 에어브러시용 부드러운 원형 팁 캐시 (색상별로 한 번만 생성해 재사용 → 방송 재생 부하 최소화)
+        const airbrushTipCache = {};
+        function getAirbrushTip(r, g, b) {
+            const key = `${r}_${g}_${b}`;
+            if (airbrushTipCache[key]) return airbrushTipCache[key];
+            const keys = Object.keys(airbrushTipCache);
+            if (keys.length > 64) delete airbrushTipCache[keys[0]]; // 상한 유지(메모리 방어)
+            const size = 64;
+            const c = document.createElement('canvas'); c.width = size; c.height = size;
+            const cctx = c.getContext('2d');
+            const grad = cctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
+            grad.addColorStop(0.5, `rgba(${r},${g},${b},0.5)`);
+            grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+            cctx.fillStyle = grad;
+            cctx.fillRect(0, 0, size, size);
+            airbrushTipCache[key] = c;
+            return c;
+        }
+
         async function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser, brushType = null, spacingPercent = 0.1) {
             ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
 
             const dx = x2 - x1;
             const dy = y2 - y1;
             const distance = Math.hypot(dx, dy);
+
+            // ✨ 에어브러시: 부드러운 원형 팁을 낮은 투명도로 촘촘히 겹쳐 스프레이 효과 (겹칠수록 진해짐)
+            if (!isEraser && brushType === 'airbrush') {
+                let ar = 255, ag = 255, ab = 255;
+                if (typeof color === 'string' && color[0] === '#') {
+                    ar = parseInt(color.slice(1, 3), 16); ag = parseInt(color.slice(3, 5), 16); ab = parseInt(color.slice(5, 7), 16);
+                } else {
+                    const m = (color || '').match(/[\d.]+/g);
+                    if (m && m.length >= 3) { ar = +m[0]; ag = +m[1]; ab = +m[2]; }
+                }
+                const tip = getAirbrushTip(ar, ag, ab);
+                const airStep = Math.max(1, ((w1 + w2) / 2) * 0.3);
+                const airSteps = Math.floor(distance / airStep);
+                const prevAlpha = ctx.globalAlpha;
+                ctx.globalAlpha = 0.18;
+                for (let i = 0; i <= airSteps; i++) {
+                    const ratio = airSteps === 0 ? 1 : i / airSteps;
+                    const cx = x1 + dx * ratio;
+                    const cy = y1 + dy * ratio;
+                    const cw = Math.max(1, w1 + (w2 - w1) * ratio);
+                    ctx.drawImage(tip, cx - cw / 2, cy - cw / 2, cw, cw);
+                }
+                ctx.globalAlpha = prevAlpha;
+                return;
+            }
 
             // 간격(Spacing) 계산: 굵기 대비 퍼센트 (기본 0.1 = 10% 겹치게 촘촘히 찍음)
             // 데이터에 간격 값이 없으면 0.1을 기본으로 사용하여 기존 그림 완벽 호환
@@ -356,6 +412,8 @@
         let isProcessingQueue = false;
         let isAnimationSkipped = false;
         let animationCache = [];
+        // ✨ 타임랩스 재생 시 한 애니메이션 프레임에서 처리할 최대 아이템 수 (프리즈 방지)
+        const MAX_ITEMS_PER_FRAME = 400;
 
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
@@ -434,6 +492,14 @@
             }
             else if (data.type === 'play_animation') {
                 isAnimationSkipped = false;
+
+                // ✨ cache_frame에서는 img.src만 지정되고 디코딩은 비동기로 진행됩니다.
+                // 디코딩 전에 drawImage하면 첫 루프가 빈 화면/깜빡임이 되므로, 모든 프레임의
+                // 디코딩이 실제로 끝날 때까지 기다린 뒤 재생을 시작합니다.
+                await Promise.all(animationCache.map(f =>
+                    (f.img && f.img.decode) ? f.img.decode().catch(() => { }) : Promise.resolve()
+                ));
+                if (isAnimationSkipped) { animationCache = []; return; }
                 if (loadingIndicator) loadingIndicator.style.display = 'none';
 
                 if (!layerContexts['default'] || Object.keys(layerContexts).length > 1) {
@@ -547,8 +613,12 @@
                     }
 
                     const limit = Math.min(Math.floor(exactFloatIndex), totalItems);
+                    // ✨ 한 프레임에 수천 개의 획을 몰아 그리면 OBS 브라우저 소스가 멈춥니다(프리즈).
+                    // 프레임당 처리량에 상한을 두고, 못 그린 나머지는 다음 프레임에서 이어 그립니다.
+                    // (진행도는 벽시계 기준이라 '그리는 과정' 노출은 그대로 유지됩니다)
+                    const batchLimit = Math.min(limit, currentIndex + MAX_ITEMS_PER_FRAME);
 
-                    for (; currentIndex < limit; currentIndex++) {
+                    for (; currentIndex < batchLimit; currentIndex++) {
                         const item = history[currentIndex];
                         if (item.type === 'init_layers') continue;
 
@@ -578,6 +648,8 @@
                                     ctx.restore();
                                     res();
                                 };
+                                // ✨ 로드 실패 시 onload가 안 불려 Promise가 영원히 멈춰(그림 진행 정지) 있으므로 방어
+                                img.onerror = () => res();
                                 img.src = item.src;
                             });
                         }

@@ -1478,6 +1478,9 @@
             let frames = [];
             let currentFrameId = null;
             let selectedFrameIds = new Set();
+            // ✨ Date.now()만으로는 같은 밀리초에 만든 id가 충돌할 수 있어, 카운터를 더해 고유 id 보장
+            let _uidCounter = 0;
+            function uid(prefix) { return `${prefix}_${Date.now()}_${_uidCounter++}`; }
             let layers = []; let layerCounter = 0; let activeLayerId = null;
             let selectedLayerIds = new Set();
             let history = []; let redoStack = [];
@@ -2018,7 +2021,7 @@
             }
 
             function createNewFrame() {
-                const fId = `frame_${Date.now()}`;
+                const fId = uid('frame');
                 const defaultDurationInput = document.getElementById('default-frame-duration');
                 const defaultDuration = defaultDurationInput ? parseInt(defaultDurationInput.value) || 500 : 500;
 
@@ -2033,12 +2036,9 @@
                 createLayer();
             }
 
-            function copyFrame(sourceId) {
-                syncToFrame();
-                const srcF = frames.find(f => f.id === sourceId);
-                if (!srcF) return;
-
-                const newFId = `frame_${Date.now()}`;
+            // srcF를 복제한 새 프레임 객체를 만들어 반환 (frames 배열엔 넣지 않음 — 단일/다중 복제가 공용 사용)
+            function createFrameCopy(srcF) {
+                const newFId = uid('frame');
                 const newF = {
                     id: newFId, duration: srcF.duration, layers: [],
                     layerCounter: srcF.layerCounter,
@@ -2052,7 +2052,7 @@
                     const newL = { ...l };
                     if (l.type === 'canvas') {
                         const cvs = document.createElement('canvas');
-                        cvs.id = l.id + '_c' + Date.now();
+                        cvs.id = uid(l.id + '_c');
                         cvs.width = CANVAS_WIDTH; cvs.height = CANVAS_HEIGHT;
                         cvs.className = 'drawing-layer';
                         if (l.canvas) {
@@ -2068,12 +2068,25 @@
                         cvs.style.display = 'none';
                         layerWrapper.appendChild(cvs);
                         newL.canvas = cvs; newL.id = cvs.id;
+
+                        // ✨ 구운 바닥(baseCanvas)도 깊은 복사. 안 하면 (1) 복제본 undo 시 오래된 그림이 사라지고
+                        // (2) {...l} 얕은 복사로 원본과 baseCanvas를 공유해 서로 오염됨.
+                        if (l.baseCanvas) {
+                            const baseCvs = document.createElement('canvas');
+                            baseCvs.width = CANVAS_WIDTH; baseCvs.height = CANVAS_HEIGHT;
+                            const bctx = baseCvs.getContext('2d');
+                            bctx.lineCap = 'round'; bctx.lineJoin = 'round';
+                            bctx.drawImage(l.baseCanvas, 0, 0);
+                            newL.baseCanvas = baseCvs; newL.baseCtx = bctx;
+                        } else {
+                            newL.baseCanvas = null; newL.baseCtx = null;
+                        }
                     } else if (l.element) {
                         const box = l.element.cloneNode(true);
                         box.style.display = 'none';
                         box.style.opacity = l.opacity !== undefined ? l.opacity : 1;
                         box.style.mixBlendMode = l.blendMode || 'normal';
-                        box.id = l.id + '_c' + Date.now();
+                        box.id = uid(l.id + '_c');
                         layerWrapper.appendChild(box);
                         newL.element = box; newL.id = box.id;
 
@@ -2090,11 +2103,47 @@
                 const idMap = {};
                 srcF.layers.forEach((l, i) => idMap[l.id] = newF.layers[i].id);
                 newF.history.forEach(h => { if (h.layerId && idMap[h.layerId]) h.layerId = idMap[h.layerId]; });
+                // ✨ 송출용 기록(fullPlaybackRecord)의 레이어 id도 새 id로 매핑 (안 하면 복제본 송출 시 원본 레이어를 가리킴)
+                newF.fullPlaybackRecord.forEach(h => { if (h.layerId && idMap[h.layerId]) h.layerId = idMap[h.layerId]; });
                 if (srcF.activeLayerId && idMap[srcF.activeLayerId]) newF.activeLayerId = idMap[srcF.activeLayerId];
 
-                frames.push(newF);
+                return newF;
+            }
+
+            // 단일 프레임 복제: 원본 바로 다음에 삽입
+            function copyFrame(sourceId) {
+                syncToFrame();
+                const srcF = frames.find(f => f.id === sourceId);
+                if (!srcF) return;
+
+                const newF = createFrameCopy(srcF);
+                const srcIndex = frames.findIndex(f => f.id === sourceId);
+                frames.splice(srcIndex >= 0 ? srcIndex + 1 : frames.length, 0, newF);
                 renderFrameUI();
-                selectFrame(newFId);
+                selectFrame(newF.id);
+            }
+
+            // ✨ 여러 프레임 동시 복제: 선택 프레임들을 타임라인 순서대로 복제해 마지막 선택 프레임 뒤에 블록으로 삽입
+            function copyFrames(ids) {
+                const idSet = ids instanceof Set ? ids : new Set(ids);
+                if (idSet.size === 0) return;
+                if (idSet.size === 1) { copyFrame([...idSet][0]); return; }
+
+                syncToFrame();
+                // frames 배열 순서를 그대로 따라가며 선택된 것만 추림 (타임라인 순서 보존)
+                const selected = frames.filter(f => idSet.has(f.id));
+                if (selected.length === 0) return;
+
+                // 선택 프레임 중 가장 뒤 위치 다음에 복제 블록을 한꺼번에 삽입
+                let lastIndex = -1;
+                selected.forEach(f => { const i = frames.indexOf(f); if (i > lastIndex) lastIndex = i; });
+
+                const copies = selected.map(f => createFrameCopy(f));
+                frames.splice(lastIndex + 1, 0, ...copies);
+
+                // 새로 만든 복제본들을 다중 선택 상태로 유지 (첫 복제본을 현재 프레임으로)
+                selectedFrameIds = new Set(copies.map(c => c.id));
+                selectFrame(copies[0].id);
             }
 
             function deleteFrame(fIdOrIds) {
@@ -2162,10 +2211,11 @@
                         e.preventDefault(); item.style.borderLeft = '2px solid transparent';
                         const draggedId = e.dataTransfer.getData('text/plain'); if (draggedId === f.id) return;
                         const draggedIndex = frames.findIndex(frm => frm.id === draggedId);
-                        const targetIndex = frames.findIndex(frm => frm.id === f.id);
-                        if (draggedIndex > -1 && targetIndex > -1) {
+                        if (draggedIndex > -1) {
                             const [draggedFrm] = frames.splice(draggedIndex, 1);
-                            frames.splice(targetIndex, 0, draggedFrm);
+                            // ✨ 제거 후 목표 위치를 다시 계산 → 방향과 무관하게 항상 "놓은 프레임 앞"에 일관 삽입 (한 칸 어긋남 수정)
+                            const targetIndex = frames.findIndex(frm => frm.id === f.id);
+                            frames.splice(targetIndex > -1 ? targetIndex : frames.length, 0, draggedFrm);
                             renderFrameUI();
                         }
                     };
@@ -2256,8 +2306,13 @@
 
             // 복사/삭제 버튼 클릭 시 다중 선택 해제 (단일 타겟만 처리하거나, 추후 다중 복사/삭제 기능으로 확장 가능)
             document.getElementById('ctx-btn-copy')?.addEventListener('click', () => {
-                if (contextMenuTargetId) copyFrame(contextMenuTargetId);
-                selectedFrameIds.clear();
+                if (selectedFrameIds.size > 1) {
+                    // 다중 선택 복제 (복제본들이 새 선택 상태가 되므로 여기서 clear 하지 않음)
+                    copyFrames(selectedFrameIds);
+                } else if (contextMenuTargetId) {
+                    copyFrame(contextMenuTargetId);
+                    selectedFrameIds.clear();
+                }
                 document.getElementById('frame-context-menu').style.display = 'none';
             });
 
@@ -2868,12 +2923,57 @@
             document.getElementById('btn-add-layer').onclick = createLayer;
 
             // ✨ 업그레이드된 브러시 렌더링 엔진
+            // ✨ 에어브러시용 부드러운 원형 팁 캐시 (색상별로 한 번만 생성해 재사용)
+            const airbrushTipCache = {};
+            function getAirbrushTip(r, g, b) {
+                const key = `${r}_${g}_${b}`;
+                if (airbrushTipCache[key]) return airbrushTipCache[key];
+                const keys = Object.keys(airbrushTipCache);
+                if (keys.length > 64) delete airbrushTipCache[keys[0]];
+                const size = 64;
+                const c = document.createElement('canvas'); c.width = size; c.height = size;
+                const cctx = c.getContext('2d');
+                const grad = cctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+                grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
+                grad.addColorStop(0.5, `rgba(${r},${g},${b},0.5)`);
+                grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+                cctx.fillStyle = grad;
+                cctx.fillRect(0, 0, size, size);
+                airbrushTipCache[key] = c;
+                return c;
+            }
+
             async function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser, brushType = null, spacingPercent = 0.1) {
                 ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
 
                 const dx = x2 - x1;
                 const dy = y2 - y1;
                 const distance = Math.hypot(dx, dy);
+
+                // ✨ 에어브러시: 부드러운 원형 팁을 낮은 투명도로 촘촘히 겹쳐 스프레이 효과 (겹칠수록 진해짐)
+                if (!isEraser && brushType === 'airbrush') {
+                    let ar = 255, ag = 255, ab = 255;
+                    if (typeof color === 'string' && color[0] === '#') {
+                        ar = parseInt(color.slice(1, 3), 16); ag = parseInt(color.slice(3, 5), 16); ab = parseInt(color.slice(5, 7), 16);
+                    } else {
+                        const m = (color || '').match(/[\d.]+/g);
+                        if (m && m.length >= 3) { ar = +m[0]; ag = +m[1]; ab = +m[2]; }
+                    }
+                    const tip = getAirbrushTip(ar, ag, ab);
+                    const airStep = Math.max(1, ((w1 + w2) / 2) * 0.3);
+                    const airSteps = Math.floor(distance / airStep);
+                    const prevAlpha = ctx.globalAlpha;
+                    ctx.globalAlpha = 0.18;
+                    for (let i = 0; i <= airSteps; i++) {
+                        const ratio = airSteps === 0 ? 1 : i / airSteps;
+                        const cx = x1 + dx * ratio;
+                        const cy = y1 + dy * ratio;
+                        const cw = Math.max(1, w1 + (w2 - w1) * ratio);
+                        ctx.drawImage(tip, cx - cw / 2, cy - cw / 2, cw, cw);
+                    }
+                    ctx.globalAlpha = prevAlpha;
+                    return;
+                }
 
                 // 간격(Spacing) 계산: 굵기 대비 퍼센트 (기본 0.1 = 10% 겹치게 촘촘히 찍음)
                 // 데이터에 간격 값이 없으면 0.1을 기본으로 사용하여 기존 그림 완벽 호환
@@ -4159,7 +4259,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 }
             }
             // ✨ 브러시 선택기 전역 상태 변수
-            let allBrushes = ['default'];
+            let allBrushes = ['default', 'airbrush'];
             let recentBrushes = ['default'];
             let currentBrushPage = 0;
             const BRUSHES_PER_PAGE = 25; // 5x5 그리드
@@ -4171,12 +4271,24 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     const brushes = await res.json();
 
                     if (brushes.length > 0) {
-                        allBrushes = ['default', ...brushes];
+                        allBrushes = ['default', 'airbrush', ...brushes];
                     }
                     renderBrushPicker();
                 } catch (e) {
                     console.error("브러시 목록 로드 실패", e);
                 }
+            }
+
+            // ✨ 브러시 표시 이름/아이콘 (내장 브러시는 특수 처리)
+            function brushDisplayName(name) {
+                if (name === 'default') return '기본 둥근 펜';
+                if (name === 'airbrush') return '에어브러시';
+                return name;
+            }
+            function brushIconSrc(name) {
+                if (name === 'default') return "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>";
+                if (name === 'airbrush') return "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><defs><radialGradient id='ab'><stop offset='0' stop-color='black'/><stop offset='1' stop-color='black' stop-opacity='0'/></radialGradient></defs><circle cx='12' cy='12' r='11' fill='url(%23ab)'/></svg>";
+                return `/Brushes/${name}.png`;
             }
 
             // 브러시를 클릭했을 때 실행되는 함수
@@ -4189,10 +4301,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (recentBrushes.length > 5) recentBrushes.pop(); // 최대 5개 유지
 
                 // 좌측 사이드바의 현재 브러시 버튼 UI 업데이트
-                document.getElementById('current-brush-name').innerText = brushName === 'default' ? '기본 둥근 펜' : brushName;
-                document.getElementById('current-brush-icon').src = brushName === 'default'
-                    ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>"
-                    : `/Brushes/${brushName}.png`;
+                document.getElementById('current-brush-name').innerText = brushDisplayName(brushName);
+                document.getElementById('current-brush-icon').src = brushIconSrc(brushName);
 
                 renderBrushPicker();
             }
@@ -4201,12 +4311,10 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             function createBrushElement(brushName) {
                 const div = document.createElement('div');
                 div.className = `brush-item ${currentBrushType === brushName ? 'active' : ''}`;
-                div.title = brushName === 'default' ? '기본 둥근 펜' : brushName;
+                div.title = brushDisplayName(brushName);
 
                 const img = document.createElement('img');
-                img.src = brushName === 'default'
-                    ? "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='black'/></svg>"
-                    : `/Brushes/${brushName}.png`;
+                img.src = brushIconSrc(brushName);
 
                 div.appendChild(img);
 
