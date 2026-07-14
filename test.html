@@ -414,6 +414,9 @@
         let animationCache = [];
         // ✨ 타임랩스 재생 시 한 애니메이션 프레임에서 처리할 최대 아이템 수 (프리즈 방지)
         const MAX_ITEMS_PER_FRAME = 400;
+        // ✨ 재생 '세대' 토큰: 새 타임랩스나 clear가 오면 증가시켜, 이전 후원의 뒤늦은 재생 콜백이
+        //    다음 후원의 캔버스에 그려 순서가 꼬이는 것을 막는다.
+        let timelapseGen = 0;
 
         function connectWebSocket() {
             ws = new WebSocket(wsUrl);
@@ -540,6 +543,8 @@
             // ---------- [교체할 코드 시작] ----------
             else if (data.type === 'play_timelapse') {
                 isAnimationSkipped = false;
+                const myGen = ++timelapseGen; // ✨ 이 재생의 세대 번호 (아래 alive()로 stale 여부 판단)
+                const alive = () => !isAnimationSkipped && myGen === timelapseGen;
 
                 if (data.alert) {
                     document.getElementById('donor-name-display').innerText = data.alert.name;
@@ -591,6 +596,27 @@
 
                 // ✨ 과정이 없으면 0초(즉시 표시), 과정이 있으면 8000ms(8초)
                 const playbackDurationMs = hasDrawingProcess ? 8000 : 0;
+
+                // ✨ 재생 전에 모든 이미지(구운 바닥·래스터·채우기 스냅샷)를 '병렬로' 미리 디코딩한다.
+                //    안 하면 drawNextBatch 루프 안에서 이미지마다 순차로 대기하며 멈춰(특히 레이어 많을 때)
+                //    재생이 느려지고 서버 재생창을 넘겨 다음 후원과 순서가 꼬인다. 미리 받으면 페이싱도 정확해짐.
+                const imgCache = new Map();
+                const preloadSrcs = new Set();
+                history.forEach(it => {
+                    if ((it.type === 'raster_image' || (it.type === 'draw_shape' && it.shape === 'raster_image')) && it.src) preloadSrcs.add(it.src);
+                    if (it.type === 'fill' && it.snapshotSrc) preloadSrcs.add(it.snapshotSrc);
+                });
+                if (preloadSrcs.size > 0) {
+                    if (loadingIndicator) { loadingIndicator.style.display = 'block'; loadingIndicator.innerText = '🎬 그림 데이터를 준비 중입니다...'; }
+                    await Promise.all([...preloadSrcs].map(async src => {
+                        const img = new Image();
+                        img.src = src;
+                        try { await img.decode(); } catch (e) { }
+                        imgCache.set(src, img);
+                    }));
+                    if (loadingIndicator) loadingIndicator.style.display = 'none';
+                }
+                if (!alive()) return; // 준비 중 clear/다음 후원이 오면 이 재생은 폐기
                 
                 let currentIndex = 0;
                 let exactFloatIndex = 0;
@@ -601,7 +627,7 @@
                 const tmpCtx = tmpCvs.getContext('2d');
 
                 async function drawNextBatch(currentTime) {
-                    if (isAnimationSkipped) return;
+                    if (!alive()) return; // ✨ skip됐거나 다음 후원이 시작됐으면(세대 불일치) 즉시 중단
 
                     if (!lastTime) lastTime = currentTime;
                     const deltaTime = currentTime - lastTime;
@@ -621,6 +647,7 @@
                     const batchLimit = Math.min(limit, currentIndex + MAX_ITEMS_PER_FRAME);
 
                     for (; currentIndex < batchLimit; currentIndex++) {
+                        if (!alive()) return; // ✨ 매 아이템마다 세대 확인 → stale 재생이 다음 후원 캔버스를 덮지 못하게
                         const item = history[currentIndex];
                         if (item.type === 'init_layers') continue;
 
@@ -639,28 +666,29 @@
                             ctx.clearRect(0, 0, 1920, 1080);
                         }
                         else if (item.type === 'raster_image' || (item.type === 'draw_shape' && item.shape === 'raster_image')) {
-                            // ✨ 이미지가 로드될 때까지 기다렸다가 완벽하게 한 번에 그리기
-                            await new Promise(res => {
-                                const img = new Image();
-                                img.onload = () => {
-                                    ctx.save();
-                                    if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
-                                    ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
-                                    ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
-                                    ctx.restore();
-                                    res();
-                                };
-                                // ✨ 로드 실패 시 onload가 안 불려 Promise가 영원히 멈춰(그림 진행 정지) 있으므로 방어
-                                img.onerror = () => res();
-                                img.src = item.src;
-                            });
+                            // ✨ 미리 디코딩해둔 이미지를 즉시 그린다(루프 내 대기 없음 → 빠르고 페이싱 정확)
+                            const img = imgCache.get(item.src);
+                            if (img) {
+                                ctx.save();
+                                if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
+                                ctx.translate(item.cx, item.cy); ctx.rotate(item.angle || 0);
+                                ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
+                                ctx.restore();
+                            }
                         }
                         else if (item.type === 'fill') {
-                            const px = item.point ? item.point.x : item.x;
-                            const py = item.point ? item.point.y : item.y;
-                            const tol = item.tolerance !== undefined ? item.tolerance : 50;
-                            const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
-                            doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
+                            if (item.snapshotSrc) {
+                                // ✨ 미리 디코딩해둔 채우기 스냅샷을 즉시 복원 (경계 크롭이라 가볍고, 대기 없음)
+                                const img = imgCache.get(item.snapshotSrc);
+                                if (img) ctx.drawImage(img, item.snapshotX || 0, item.snapshotY || 0);
+                            } else {
+                                // 구버전 데이터 호환: 스냅샷이 없으면 기존 방식으로 재계산
+                                const px = item.point ? item.point.x : item.x;
+                                const py = item.point ? item.point.y : item.y;
+                                const tol = item.tolerance !== undefined ? item.tolerance : 50;
+                                const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
+                                doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
+                            }
                         }
                         else if (item.type === 'path' || !item.type) {
                             if (!item.points || item.points.length === 0) continue;
@@ -700,6 +728,10 @@
 
                     if (currentIndex < totalItems) {
                         requestAnimationFrame(drawNextBatch);
+                    } else if (alive() && data.playbackId != null) {
+                        // ✨ 재생 완료 → 서버에 알림. 서버는 이 신호를 받고 다음 단계(노출 유지→페이드)로 진행.
+                        //    (서버가 고정 8초가 아니라 실제 완료를 기다리므로 레이어 많아도 과정이 잘리지 않음)
+                        try { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'playback_done', playbackId: data.playbackId })); } catch (e) { }
                     }
                 }
 
@@ -740,10 +772,20 @@
                 }
 
                 if (data.type === 'fill') {
-                    const tol = data.tolerance !== undefined ? data.tolerance : 50;
-                    const gap = data.gap !== undefined ? data.gap : 1;
-                    const sampleAll = data.sampleAllLayers !== undefined ? data.sampleAllLayers : false;
-                    doFloodFill(ctx, data.point.x, data.point.y, data.color, tol, gap, sampleAll, layerContexts);
+                    if (data.snapshotSrc) {
+                        // ✨ 채우기 결과 스냅샷 복원 (재계산 없음)
+                        await new Promise(res => {
+                            const img = new Image();
+                            img.onload = () => { ctx.drawImage(img, data.snapshotX || 0, data.snapshotY || 0); res(); };
+                            img.onerror = res;
+                            img.src = data.snapshotSrc;
+                        });
+                    } else {
+                        const tol = data.tolerance !== undefined ? data.tolerance : 50;
+                        const gap = data.gap !== undefined ? data.gap : 1;
+                        const sampleAll = data.sampleAllLayers !== undefined ? data.sampleAllLayers : false;
+                        doFloodFill(ctx, data.point.x, data.point.y, data.color, tol, gap, sampleAll, layerContexts);
+                    }
                 }
                 else if (data.type === 'start_path') {
                     lastPoint = data.point;

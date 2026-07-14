@@ -32,6 +32,12 @@ drawing_queue = asyncio.Queue()
 
 skip_current_drawing = False
 
+# ✨ 재생 완료 ack: 오버레이가 '다 그렸다'고 알려줄 때까지 서버가 기다리기 위한 상태
+#    (레이어가 많아 렌더가 오래 걸려도 그리는 과정이 중간에 잘리지 않게 함)
+current_playback_id = 0
+playback_ack = {"id": 0}
+playback_ack_event = asyncio.Event()
+
 def get_db_connection():
     # 환경변수가 없을 경우 서버가 에러를 띄워 명확하게 알려줍니다.
     if not DATABASE_URL:
@@ -214,19 +220,35 @@ async def submit_test(request: Request):
     await drawing_queue.put(data)
     return {"status": "success"}
 
+def _handle_ws_message(msg):
+    # ✨ 오버레이가 보내는 메시지 처리 (현재는 재생 완료 ack만)
+    try:
+        data = json.loads(msg)
+        if data.get("type") == "playback_done":
+            pid = data.get("playbackId") or 0
+            if pid > playback_ack["id"]:
+                playback_ack["id"] = pid
+            playback_ack_event.set()
+    except:
+        pass
+
 # ✨ 테스트 전용 웹소켓 (이곳으로 연결된 화면만 테스트 그림을 받음)
 @app.websocket("/ws/test")
 async def websocket_test_endpoint(websocket: WebSocket):
     await websocket.accept()
     test_connections.append(websocket)
     try:
-        while True: await websocket.receive_text()
+        while True:
+            msg = await websocket.receive_text()
+            _handle_ws_message(msg)
     except: pass
-    finally: test_connections.remove(websocket)
+    finally:
+        if websocket in test_connections: test_connections.remove(websocket)
 @app.post("/api/skip")
 async def skip_drawing():
     global skip_current_drawing
-    skip_current_drawing = True 
+    skip_current_drawing = True
+    playback_ack_event.set()  # ✨ 재생 완료를 기다리는 중이면 즉시 깨워서 스킵이 바로 반영되게
     
     for connection in active_connections:
         try:
@@ -339,8 +361,8 @@ async def submit_drawing(request: Request):
         raise HTTPException(status_code=500, detail="서버 오류 발생")
 
 async def process_drawing_queue():
-    global skip_current_drawing 
-    
+    global skip_current_drawing, current_playback_id
+
     while True:
         try: 
             payload = await drawing_queue.get()
@@ -425,18 +447,36 @@ async def process_drawing_queue():
                             except: pass
 
                     # 2. 알림 데이터를 타임랩스 그림 데이터에 '포함' 시켜서 하나의 보따리로 보냅니다!
+                    # ✨ 레이어가 많으면 payload(구운 바닥 이미지 등)가 수 MB라, 연결마다 send_json으로
+                    #    매번 재직렬화하면 이벤트 루프가 그만큼 멈춥니다. 한 번만(스레드에서) 직렬화하고
+                    #    같은 문자열을 send_text로 재사용해 블로킹과 중복 직렬화를 줄입니다.
+                    current_playback_id += 1
+                    pid = current_playback_id
+                    playback_ack_event.clear()  # 이번 재생의 ack를 새로 기다리기 위해 초기화(보내기 직전에)
+
+                    timelapse_text = await asyncio.to_thread(json.dumps, {
+                        "type": "play_timelapse",
+                        "playbackId": pid,   # ✨ 오버레이가 재생을 마치면 이 id로 완료 신호를 보냄
+                        "alert": { "name": name, "title": title, "profileImage": profile_image },
+                        "history": drawing_data
+                    })
                     for connection in target_connections:
-                        try: 
-                            await connection.send_json({
-                                "type": "play_timelapse",
-                                "alert": { "name": name, "title": title, "profileImage": profile_image },
-                                "history": drawing_data
-                            })
+                        try:
+                            await connection.send_text(timelapse_text)
                         except: pass
-                    if not skip_current_drawing:
-                        # 클라이언트의 playbackDurationMs(6000)와 동일하게 6초 동안 
-                        # 그림이 다 그려질 때까지 서버도 먼저 기다립니다.
-                        await asyncio.sleep(8)
+
+                    # ✨ 고정 sleep(8) 대신, 오버레이가 '다 그렸다(playback_done)'고 알릴 때까지 대기.
+                    #    레이어가 많아 렌더가 오래 걸려도 그리는 과정이 잘리지 않고, 빨리 끝나면 바로 다음 단계로.
+                    #    (상한 25초 · 보는 오버레이가 없으면 대기 생략 → 무한 대기 방지)
+                    if not skip_current_drawing and target_connections:
+                        async def _wait_playback_done():
+                            while playback_ack["id"] < pid and not skip_current_drawing:
+                                playback_ack_event.clear()
+                                await playback_ack_event.wait()
+                        try:
+                            await asyncio.wait_for(_wait_playback_done(), timeout=25)
+                        except asyncio.TimeoutError:
+                            pass
                 
             if not skip_current_drawing:
                 await asyncio.sleep(display_duration)
@@ -479,9 +519,12 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     active_connections.append(websocket)
     try:
-        while True: await websocket.receive_text()
+        while True:
+            msg = await websocket.receive_text()
+            _handle_ws_message(msg)
     except: pass
-    finally: active_connections.remove(websocket)
+    finally:
+        if websocket in active_connections: active_connections.remove(websocket)
 
 @app.on_event("startup")
 async def startup_event():

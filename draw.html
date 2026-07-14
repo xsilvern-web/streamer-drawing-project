@@ -1505,6 +1505,11 @@
 
             // --- 2. 선을 긋고 마우스를 뗄 때 실행되는 통합 저장 함수 ---
             // --- 2. 선을 긋고 마우스를 뗄 때 실행되는 통합 저장 함수 ---
+            // ✨ 굽기(burn-in) 직렬화 체인: 비동기 굽기(이미지 디코딩 등)가 여러 번 겹쳐도 항상 히스토리 순서대로 실행되게 함
+            let bakeChain = Promise.resolve();
+            let hasBakedAny = false;     // 100개 초과 굽기가 실제로 일어난 적이 있는지 (undo 한도 안내용)
+            let isRasterizing = false;   // 텍스트/변형 래스터화(비동기) 진행 중 undo 개입 차단 플래그
+
             async function finalizePath(item) {
                 history.push(item);             
                 fullPlaybackRecord.push(item);  
@@ -1525,7 +1530,13 @@
                             targetLayer.baseCtx.lineCap = 'round'; 
                             targetLayer.baseCtx.lineJoin = 'round';
                         }
-                        await renderToTarget(oldestItem, targetLayer.baseCtx);
+                        hasBakedAny = true;
+                        // ✨ 직렬화: 앞선 굽기(이미지 디코딩 대기 등)가 끝난 뒤 실행되도록 체인에 연결 (비동기 순서 역전 방지)
+                        bakeChain = bakeChain.then(() => renderToTarget(oldestItem, targetLayer.baseCtx));
+                        await bakeChain;
+                    } else {
+                        // ✨ 대상 레이어가 변형 중(transform_box)이거나 찾을 수 없으면 굽지 않고 보류 (아이템이 소리 없이 소실되는 것 방지)
+                        history.unshift(oldestItem);
                     }
                 }
             }
@@ -1542,6 +1553,9 @@
                         const img = new Image();
                         img.onload = () => {
                             ctx.save();
+                            // ✨ 전체 캔버스 스냅샷(유동화·병합·잘라내기 결과)은 redrawCanvas와 동일하게 바닥을 지우고 덮어씀
+                            //    (안 지우면 스냅샷의 투명 영역 밑에 옛 픽셀이 남아 유령 잔상이 base에 구워짐)
+                            if (item.width >= 1920 && item.height >= 1080) ctx.clearRect(0, 0, 1920, 1080);
                             ctx.translate(item.cx, item.cy);
                             ctx.rotate(item.angle || 0);
                             ctx.drawImage(img, -item.width / 2, -item.height / 2, item.width, item.height);
@@ -1557,8 +1571,20 @@
                     const tol = item.tolerance !== undefined ? item.tolerance : 50;
                     const gap = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
                     
-                    // 되돌리기 재생 중에도 버킷 툴이 정상적으로 다시 칠해지도록 연결합니다.
-                    doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layers);
+                    if (item.snapshotSrc) {
+                        // ✨ 채우기 결과 스냅샷을 그대로 복원 — 여기서 flood fill을 재실행하면 '현재 화면'(이미 칠해진
+                        //    자기 자신 포함)을 샘플링해 조기 종료되어 채우기가 통째로 소실되던 버그의 근본 해결
+                        await new Promise(resolve => {
+                            const img = new Image();
+                            img.onload = () => { ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(img, item.snapshotX || 0, item.snapshotY || 0); resolve(); };
+                            img.onerror = resolve;
+                            img.src = item.snapshotSrc;
+                        });
+                    } else {
+                        // 구버전 데이터 호환: 스냅샷이 없으면 재계산하되, 라이브 레이어 샘플링(현재 화면 오염) 대신
+                        // 굽는 대상(baseCtx) 자신만 샘플링하도록 강등 — 전체 번짐/자기샘플 소실 방지
+                        doFloodFill(ctx, px, py, item.color, tol, gap, false, []);
+                    }
 
                 } else if (item.type === 'path' || !item.type) {
                     if (!item.points || item.points.length === 0) return;
@@ -1805,8 +1831,22 @@
                     cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2,
                     width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
                 };
+                // ✨ 병합 결과를 새 레이어의 '바닥(base)'에도 구워둠 — 이후 undo로 mergeItem이 취소되어도
+                //    병합 그림이 통째로 사라지는 참사 방지 (원본 레이어들은 이미 삭제되어 복구 불가이므로)
+                newLayer.baseCanvas = document.createElement('canvas');
+                newLayer.baseCanvas.width = CANVAS_WIDTH; newLayer.baseCanvas.height = CANVAS_HEIGHT;
+                newLayer.baseCtx = newLayer.baseCanvas.getContext('2d');
+                newLayer.baseCtx.lineCap = 'round'; newLayer.baseCtx.lineJoin = 'round';
+                newLayer.baseCtx.drawImage(offCvs, 0, 0);
+
+                // ✨ 삭제된 원본 레이어들을 가리키는 고아 기록을 undo 스택에서 제거
+                //    (안 하면 undo가 화면 변화 없는 유령 아이템에 소모됨. 송출용 fullPlaybackRecord는 전체 과정 재생을 위해 유지)
+                const mergedIds = layersToMerge.map(l => l.id);
+                history = history.filter(h => !mergedIds.includes(h.layerId));
+
                 history.push(mergeItem);
                 fullPlaybackRecord.push(mergeItem); // ✨ 송출용 기록에도 추가
+                redoStack = []; // ✨ 병합은 새 작업 — 이전 redo 기록(삭제된 레이어를 가리킬 수 있음)을 무효화
 
                 // 7. UI 및 상태 동기화
                 selectedLayerIds.clear();
@@ -2528,6 +2568,10 @@
                         return;
                     }
 
+                    // ✨ 래스터화(폰트 fetch + 이미지 디코딩)가 끝나 기록이 push될 때까지 undo/redo 개입 차단
+                    //    (개입하면 직전 작업이 잘못 취소된 뒤 redoStack까지 비워져 영구 소실됨)
+                    isRasterizing = true;
+
                     const w = contentDiv.offsetWidth; const h = contentDiv.offsetHeight;
                     const style = window.getComputedStyle(contentDiv);
 
@@ -2584,7 +2628,6 @@
                          </svg>`;
 
                     const img = new Image();
-                    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
                     img.onload = () => {
                         const box = layer.element; const boxW = box.offsetWidth; const boxH = box.offsetHeight;
                         const cx = parseFloat(box.style.left) + boxW / 2; const cy = parseFloat(box.style.top) + boxH / 2;
@@ -2606,7 +2649,10 @@
                     history.push(rasterItem);
                     fullPlaybackRecord.push(rasterItem); // ✨ 송출용 기록에도 추가
                     redoStack = []; updateLayersZIndex(); renderLayerUI();
+                    isRasterizing = false; // ✨ 기록 push 완료 — undo 개입 차단 해제
                     };
+                    img.onerror = () => { isRasterizing = false; }; // 로드 실패 시에도 잠금 해제
+                    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
                 }
                 else if (layer.type === 'transform_box') {
                     const box = layer.element; const contentCvs = box.querySelector('canvas.content');
@@ -2626,8 +2672,11 @@
                     layer.element.replaceWith(cvs); layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
                     layer.name = layer.name.replace('변형 이미지', '래스터');
 
-                    const clearItem = { layerId: layer.id, type: 'clear' };
-                    const rasterItem = { layerId: layer.id, type: 'raster_image', src: contentCvs.toDataURL(), cx: cx, cy: cy, width: boxW, height: boxH, angle: angle };
+                    // ✨ 한 번의 확정으로 생기는 clear+raster 2개를 같은 그룹으로 묶어 undo/redo가 항상 함께 처리하게 함
+                    //    (묶지 않으면 undo 한 번에 raster만 취소되고 'clear'가 남아 레이어가 통째로 비어 보임)
+                    const transformGroupId = uid('grp');
+                    const clearItem = { layerId: layer.id, type: 'clear', groupId: transformGroupId };
+                    const rasterItem = { layerId: layer.id, type: 'raster_image', src: contentCvs.toDataURL(), cx: cx, cy: cy, width: boxW, height: boxH, angle: angle, groupId: transformGroupId };
                     history.push(clearItem);
                     history.push(rasterItem);
                     fullPlaybackRecord.push(clearItem);  // ✨ 송출용 기록에도 추가
@@ -2792,6 +2841,11 @@
                 });
 
                 layers = layers.filter(layer => !idsToDelete.includes(layer.id));
+
+                // ✨ 삭제된 레이어를 가리키는 고아 기록을 undo 스택에서 제거
+                //    (안 하면 undo가 화면 변화 없는 유령 아이템에 소모되어 '되돌리기가 엉뚱하게 동작'하는 원인이 됨)
+                history = history.filter(h => !idsToDelete.includes(h.layerId));
+                redoStack = redoStack.filter(h => !idsToDelete.includes(h.layerId));
 
                 // 만약 현재 선택된(작업 중이던) 레이어가 삭제되었다면, 맨 위 레이어로 이동
                 if (idsToDelete.includes(activeLayerId)) {
@@ -3038,7 +3092,8 @@
                 }
 
                 const sx = Math.floor(startX); const sy = Math.floor(startY);
-                if (sx < 0 || sx >= canvasW || sy < 0 || sy >= canvasH) return;
+                // ✨ NaN 좌표는 기존 비교(<, >=)를 전부 통과해 버려 '0픽셀 채우기'가 기록되므로, 긍정 조건으로 검사해 방어
+                if (!(sx >= 0 && sx < canvasW && sy >= 0 && sy < canvasH)) return null;
 
                 const startPos = (sy * canvasW + sx) * 4;
                 const targetR = sampleData[startPos], targetG = sampleData[startPos + 1], targetB = sampleData[startPos + 2], targetA = sampleData[startPos + 3];
@@ -3101,15 +3156,41 @@
                 const fillCtx = fillCvs.getContext('2d');
                 const fillImgData = fillCtx.createImageData(canvasW, canvasH);
                 const fd = fillImgData.data;
+                let filledCount = 0; // ✨ 실제 채워진 픽셀 수 (0이면 무효 채우기)
                 for (let i = 0; i < canvasW * canvasH; i++) {
-                    if (visited[i]) { fd[i * 4] = fillR; fd[i * 4 + 1] = fillG; fd[i * 4 + 2] = fillB; fd[i * 4 + 3] = fillA; }
+                    if (visited[i]) { fd[i * 4] = fillR; fd[i * 4 + 1] = fillG; fd[i * 4 + 2] = fillB; fd[i * 4 + 3] = fillA; filledCount++; }
                 }
+                // ✨ 한 픽셀도 못 채웠으면 무효 — 빈 스냅샷이 기록되어 undo 한 번을 허공에 소모하는 것 방지
+                if (filledCount === 0) return null;
                 fillCtx.putImageData(fillImgData, 0, 0);
 
-                ctx.globalCompositeOperation = 'source-over';
+                // ✨ 실제로 칠해질 최종 결과를 별도 캔버스에 합성해 반환 — 호출부가 이 스냅샷을 기록해 두면
+                //    재생(undo/굽기/송출) 시 flood fill을 재실행하지 않고 그대로 복원할 수 있음 (결정적 재생)
+                const resultCvs = document.createElement('canvas'); resultCvs.width = canvasW; resultCvs.height = canvasH;
+                const resultCtx = resultCvs.getContext('2d');
                 if (gap > 0) {
-                    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) { ctx.drawImage(fillCvs, Math.cos(a) * gap, Math.sin(a) * gap); }
-                } else { ctx.drawImage(fillCvs, 0, 0); }
+                    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) { resultCtx.drawImage(fillCvs, Math.cos(a) * gap, Math.sin(a) * gap); }
+                } else { resultCtx.drawImage(fillCvs, 0, 0); }
+
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.drawImage(resultCvs, 0, 0);
+
+                // ✨ 결과의 실제 경계(bounding box)만 잘라 스냅샷 생성 — 전체 캔버스 PNG(수백KB~1MB) 대신
+                //    부분 채우기는 수 KB로 줄어 전송/노출 재생이 훨씬 빨라짐 (레이어 많을 때 지연 해소)
+                let sMinX = canvasW, sMinY = canvasH, sMaxX = 0, sMaxY = 0;
+                const rdata = resultCtx.getImageData(0, 0, canvasW, canvasH).data;
+                for (let yy = 0; yy < canvasH; yy++) {
+                    for (let xx = 0; xx < canvasW; xx++) {
+                        if (rdata[(yy * canvasW + xx) * 4 + 3] > 0) {
+                            if (xx < sMinX) sMinX = xx; if (xx > sMaxX) sMaxX = xx;
+                            if (yy < sMinY) sMinY = yy; if (yy > sMaxY) sMaxY = yy;
+                        }
+                    }
+                }
+                const bw = sMaxX - sMinX + 1, bh = sMaxY - sMinY + 1;
+                const cropCvs = document.createElement('canvas'); cropCvs.width = bw; cropCvs.height = bh;
+                cropCvs.getContext('2d').drawImage(resultCvs, sMinX, sMinY, bw, bh, 0, 0, bw, bh);
+                return { snapshotSrc: cropCvs.toDataURL('image/png'), snapshotX: sMinX, snapshotY: sMinY };
             }
 
             let transformState = null;
@@ -3259,7 +3340,10 @@
                     const gap = gapInput ? parseInt(gapInput.value) : 1;
                     const sampleAll = sampleAllInput ? sampleAllInput.checked : false;
 
-                    doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers);
+                    const fillSnap = doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers);
+
+                    // ✨ 아무것도 칠하지 못한 무효 채우기는 기록하지 않음 — undo가 허공에 한 번 소모되는 문제 방지
+                    if (!fillSnap) return;
 
                     // ✨ 핵심 해결: history.push 대신 finalizePath를 사용하여 송출용 기록(fullPlaybackRecord)에도 정상적으로 쌓이도록 수정
                     finalizePath({
@@ -3269,6 +3353,11 @@
                         color: currentColor,
                         tolerance: tol,
                         gap: gap,
+                        // ✨ 채우기 결과 픽셀 스냅샷(경계 크롭) — 재생(undo/송출/굽기) 시 flood fill 재실행 없이 그대로 복원
+                        //    (레이어 가시성/순서/변형 상태가 나중에 바뀌어도 채우기 결과가 절대 변하지 않음)
+                        snapshotSrc: fillSnap.snapshotSrc,
+                        snapshotX: fillSnap.snapshotX,
+                        snapshotY: fillSnap.snapshotY,
                         sampleAllLayers: sampleAll 
                     });
                     
@@ -3626,6 +3715,10 @@ async function redrawCanvas() {
     if (isRedrawing) { needsRedraw = true; return; }
     isRedrawing = true;
 
+    // ✨ 진행 중인 굽기(base 반영)가 끝난 뒤에 재구성 — 굽다 만 상태로 재구성하면
+    //    history에서는 이미 빠졌는데 base에는 아직 없는 아이템이 화면에서 사라짐
+    try { await bakeChain; } catch (e) { }
+
     const buffers = {};
     
     // 1. 가상 버퍼 생성 및 각 레이어별 고유 바닥(Base) 깔기
@@ -3662,7 +3755,18 @@ async function redrawCanvas() {
         ctx.globalAlpha = 1.0;
 
         if (item.type === 'clear') { ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT); }
+        else if (item.type === 'fill' && item.snapshotSrc) {
+            // ✨ 채우기 결과 스냅샷을 그대로 복원 — flood fill을 재실행하면 레이어 가시성/순서/변형박스 위치 등
+            //    '현재 상태'를 샘플링해 undo 때마다 채우기가 다른 모양으로 바뀌던 문제의 근본 해결
+            await new Promise(resolve => {
+                const img = new Image();
+                img.onload = () => { ctx.drawImage(img, item.snapshotX || 0, item.snapshotY || 0); resolve(); };
+                img.onerror = resolve;
+                img.src = item.snapshotSrc;
+            });
+        }
         else if (item.type === 'fill') {
+            // 구버전 데이터 호환: 스냅샷 없는 채우기는 기존 방식으로 재계산
             const px = item.point ? item.point.x : item.x; const py = item.point ? item.point.y : item.y;
             const gapVal = item.gap !== undefined ? item.gap : (item.gapSize !== undefined ? item.gapSize : 1);
             const bufferLayers = layers.map(l => {
@@ -3724,22 +3828,45 @@ async function redrawCanvas() {
     if (needsRedraw) { needsRedraw = false; await redrawCanvas(); }
 }
 
+            // ✨ 송출용 기록에서 '정확히 그 아이템'을 찾아 제거 — 두 배열이 어긋나 있어도 엉뚱한 기록을 지우지 않음
+            function removeFromPlayback(item) {
+                const idx = fullPlaybackRecord.lastIndexOf(item);
+                if (idx !== -1) fullPlaybackRecord.splice(idx, 1);
+                else if (fullPlaybackRecord.length > 0) fullPlaybackRecord.pop(); // 참조가 끊긴 경우(파일 로드/프레임 복제 직후) 기존 방식 폴백
+            }
+
             function undo() {
+                // ✨ 드로잉 중(스냅샷 복원 경합)이나 래스터화 진행 중(기록 push 지연)의 undo는 기록-화면 불일치를 만들므로 차단
+                if (isDrawing || isRasterizing) return;
                 if (history.length > 0) {
-                    redoStack.push(history.pop());
-                    if (fullPlaybackRecord.length > 0) fullPlaybackRecord.pop(); // ✨ 핵심: 송출용 기록에서도 취소된 선을 완벽히 제거
+                    const item = history.pop();
+                    redoStack.push(item);
+                    removeFromPlayback(item); // ✨ 핵심: 송출용 기록에서도 취소된 선을 완벽히 제거
+                    // ✨ 같은 조작(groupId)으로 묶인 아이템은 한 번의 undo로 함께 취소 (예: 변형 확정의 clear+raster 쌍)
+                    while (item.groupId && history.length > 0 && history[history.length - 1].groupId === item.groupId) {
+                        const prev = history.pop();
+                        redoStack.push(prev);
+                        removeFromPlayback(prev);
+                    }
                     redrawCanvas();
-                } else {
+                } else if (hasBakedAny) {
                     alert("최근 100개까지만 되돌릴 수 있습니다. (그 이전은 바닥에 구워짐)");
                 }
             }
 
             // 다시 실행(Redo): redoStack에서 다시 가져옴
             function redo() {
+                if (isDrawing || isRasterizing) return;
                 if (redoStack.length > 0) {
                     const item = redoStack.pop();
                     history.push(item);
                     fullPlaybackRecord.push(item); // ✨ 핵심: 다시 살려낸 선을 송출용 기록에도 추가
+                    // ✨ 같은 그룹(groupId) 묶음은 함께 복원
+                    while (item.groupId && redoStack.length > 0 && redoStack[redoStack.length - 1].groupId === item.groupId) {
+                        const nxt = redoStack.pop();
+                        history.push(nxt);
+                        fullPlaybackRecord.push(nxt);
+                    }
                     redrawCanvas();
                 }
             }
@@ -3855,6 +3982,7 @@ async function redrawCanvas() {
                                 };
                                 history.push(transformItem);
                                 fullPlaybackRecord.push(transformItem); // ✨ 송출용 기록에도 추가
+                                redoStack = []; // ✨ 새 작업이므로 이전 redo 기록 무효화 (유령 아이템 재주입 방지)
 
                                 // 7. UI 업데이트 및 점선(선택) 해제
                                 if (typeof clearSelection === 'function') clearSelection();
@@ -4059,6 +4187,12 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 // 글로벌 래스터를 썼을 때 기존 바닥을 지워버리는 충돌 현상 방지
                 if (globalBaseRasterUsed || data.version === "2.0") {
+                    // ✨ 같은 보정을 송출용 기록에도 적용 (history만 고치면 편집 화면과 방송 재생 결과가 달라짐. 보정은 멱등이라 중복 적용 무해)
+                    (newF.fullPlaybackRecord || []).forEach(item => {
+                        if (item.type === 'raster_image' && item.width >= CANVAS_WIDTH) {
+                            item.width = CANVAS_WIDTH - 1;
+                        }
+                    });
                     newF.history.forEach(item => {
                         if (item.type === 'raster_image' && item.width >= CANVAS_WIDTH) {
                             item.width = CANVAS_WIDTH - 1; 
@@ -4869,19 +5003,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                    let singleHistoryPayload = [];
 
-                    // 1. 레이어 초기화 정보 (그대로 유지)
-                    singleHistoryPayload.push({
-                        type: 'init_layers',
-                        layers: validLayers.map(l => ({
-                            id: l.id,
-                            opacity: l.opacity !== undefined ? l.opacity : 1,
-                            blendMode: l.blendMode || 'normal'
-                        }))
-                    });
-
                     const skipProcess = document.getElementById('chk-skip-process').checked;
 
-                    // 1. 레이어 초기화 정보 데이터 삽입
+                    // 1. 레이어 초기화 정보 데이터 삽입 (중복 push 제거 — 오버레이는 첫 init_layers만 사용)
                     singleHistoryPayload.push({
                         type: 'init_layers',
                         skipProcess: skipProcess, // ✨ 이 줄을 추가하여 과정 생략 여부를 수신기에 전달!
