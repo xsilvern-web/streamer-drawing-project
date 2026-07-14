@@ -72,7 +72,19 @@ def init_db():
         )
     ''')
     cursor.execute("INSERT INTO settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
-    
+
+    # ✨ 문의사항(개발자에게 보내는 메시지) 테이블
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS inquiries (
+            id SERIAL PRIMARY KEY,
+            name TEXT,
+            email TEXT,
+            message TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_read BOOLEAN DEFAULT FALSE
+        )
+    ''')
+
     # ✨ 핵심 수정: 테이블을 만들자마자 '확정(commit)'을 지어주어, 이후 작업이 실패해도 테이블이 날아가지 않게 보호합니다.
     conn.commit()
     
@@ -191,6 +203,28 @@ def _delete_old_data():
     conn.commit()
     conn.close()
 
+def _insert_inquiry(name, email, message):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO inquiries (name, email, message) VALUES (%s, %s, %s)", (name, email, message))
+    conn.commit()
+    conn.close()
+
+def _fetch_inquiries():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=DictCursor)
+    cursor.execute("SELECT id, name, email, message, timestamp, is_read FROM inquiries ORDER BY id DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"id": r["id"], "name": r["name"], "email": r["email"], "message": r["message"], "time": str(r["timestamp"]), "is_read": bool(r["is_read"])} for r in rows]
+
+def _delete_inquiry(inquiry_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM inquiries WHERE id = %s", (inquiry_id,))
+    conn.commit()
+    conn.close()
+
 # ✨ test.html 서빙 라우터 추가
 @app.get("/test")
 async def serve_test_page(): return FileResponse("test.html")
@@ -278,6 +312,33 @@ class PasswordCheck(BaseModel):
 async def verify_password(data: PasswordCheck):
     if data.password == CREATOR_PASSWORD: return {"valid": True}
     raise HTTPException(status_code=401, detail="비밀번호가 틀렸습니다.")
+
+# ✨ 문의사항(개발자에게 메시지) 접수/조회/삭제
+class InquiryCreate(BaseModel):
+    name: str = ""
+    email: str = ""
+    message: str
+
+@app.post("/api/inquiry")
+async def create_inquiry(data: InquiryCreate):
+    message = (data.message or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="문의 내용을 입력해주세요.")
+    if len(message) > 2000:
+        message = message[:2000]  # 과도한 길이 방어
+    name = (data.name or "").strip()[:100]
+    email = (data.email or "").strip()[:200]
+    await asyncio.to_thread(_insert_inquiry, name, email, message)
+    return {"status": "success"}
+
+@app.get("/api/inquiries")
+async def get_inquiries():
+    return await asyncio.to_thread(_fetch_inquiries)
+
+@app.delete("/api/inquiry/{inquiry_id}")
+async def delete_inquiry(inquiry_id: int):
+    await asyncio.to_thread(_delete_inquiry, inquiry_id)
+    return {"status": "success"}
 
 @app.get("/api/settings")
 async def get_settings():

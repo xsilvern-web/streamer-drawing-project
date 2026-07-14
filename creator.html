@@ -270,6 +270,30 @@
             </div>
         </div>
 
+        <!-- ✨ 문의사항 (개발자에게 온 메시지) 패널 -->
+        <div class="panel" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 class="panel-title" style="margin: 0; border: none; color: #ffb74d;">📮 문의사항 (개발자 메시지)</h2>
+                <button class="btn-primary" onclick="loadInquiries()">🔄 새로고침</button>
+            </div>
+            <div style="max-height: 320px; overflow-y: auto; margin-top: 15px;">
+                <table id="inquiry-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">ID</th>
+                            <th style="width: 140px;">보낸이</th>
+                            <th>내용</th>
+                            <th style="width: 160px;">시간</th>
+                            <th style="width: 70px;">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- 문의 렌더링 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -326,6 +350,7 @@
                     document.getElementById('dashboard').style.display = 'flex';
                     loadSettings();
                     loadLedger();
+                    loadInquiries();
                 } else {
                     alert("비밀번호가 틀렸습니다.");
                 }
@@ -579,6 +604,51 @@
                 }
             } catch (e) {
                 alert("차단 해제 실패");
+            }
+        }
+
+        // ✨ HTML 이스케이프 (문의 내용은 사용자 자유 입력이므로 XSS 방지)
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        // ✨ 문의사항 목록 로드
+        async function loadInquiries() {
+            try {
+                const res = await fetch(`${API_BASE}/api/inquiries`);
+                const data = await res.json();
+                const tbody = document.querySelector('#inquiry-table tbody');
+                tbody.innerHTML = '';
+                if (!data.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">접수된 문의가 없습니다.</td></tr>';
+                    return;
+                }
+                data.forEach(item => {
+                    const tr = document.createElement('tr');
+                    const emailHtml = item.email ? `<div style="font-size:11px; color:#aaa;">${escapeHtml(item.email)}</div>` : '';
+                    tr.innerHTML = `
+                        <td>${item.id}</td>
+                        <td><div style="font-weight:bold;">${escapeHtml(item.name || '(익명)')}</div>${emailHtml}</td>
+                        <td style="white-space:pre-wrap; word-break:break-word;">${escapeHtml(item.message)}</td>
+                        <td style="font-size:12px; color:#bbb;">${escapeHtml((item.time || '').split('.')[0])}</td>
+                        <td><button class="btn-danger" style="font-size:11px; padding:5px 10px;" onclick="deleteInquiry(${item.id})">삭제</button></td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (e) {
+                console.error("문의 로드 실패", e);
+            }
+        }
+
+        // ✨ 문의사항 삭제
+        async function deleteInquiry(id) {
+            if (!confirm(`문의(ID: ${id})를 삭제하시겠습니까?`)) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/inquiry/${id}`, { method: 'DELETE' });
+                if (res.ok) loadInquiries();
+                else alert("삭제 실패");
+            } catch (e) {
+                alert("삭제 요청 실패");
             }
         }
 
