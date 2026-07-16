@@ -716,11 +716,11 @@
                             }
                         }
                         else if (['line', 'rect', 'circle', 'text'].includes(item.type) || item.type === 'draw_shape') {
-                            ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
+                            ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
                             let shape = item.shape || item.type;
                             if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-                            else if (shape === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-                            else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
+                            else if (shape === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                            else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                         }
                     }
 
@@ -867,9 +867,10 @@
                         ctx.strokeStyle = data.color; ctx.lineWidth = data.width;
                         ctx.globalCompositeOperation = 'source-over';
 
+                        ctx.fillStyle = data.color;
                         if (data.shape === 'line') { ctx.moveTo(data.start.x, data.start.y); ctx.lineTo(data.end.x, data.end.y); ctx.stroke(); }
-                        else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); ctx.stroke(); }
-                        else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                        else if (data.shape === 'rect') { ctx.rect(data.start.x, data.start.y, data.end.x - data.start.x, data.end.y - data.start.y); if (data.filled) ctx.fill(); ctx.stroke(); }
+                        else if (data.shape === 'circle') { let radius = Math.hypot(data.end.x - data.start.x, data.end.y - data.start.y); ctx.arc(data.start.x, data.start.y, radius, 0, Math.PI * 2); if (data.filled) ctx.fill(); ctx.stroke(); }
                         else if (data.shape === 'text') {
                             ctx.font = `bold ${data.width}px 'Malgun Gothic', sans-serif`;
                             ctx.fillStyle = data.color; ctx.textBaseline = 'top';

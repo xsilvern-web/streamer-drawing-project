@@ -1119,6 +1119,15 @@
             <label style="font-size: 12px; color: #ccc;">왜곡 강도: <input type="range" id="liq-strength" min="1" max="100"
                     value="50" style="vertical-align: middle; width: 100px;"></label>
         </div>
+        <!-- ✨ 도형(직선/사각형/원) 옵션 -->
+        <div id="opt-shape" style="display: none; gap: 15px; align-items: center; font-size: 11px; color: #ccc;">
+            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; color: #4CAF50; font-weight: bold;">
+                <input type="checkbox" id="chk-shape-fill" style="width: 14px; height: 14px;">
+                🎨 도형 안 채우기
+            </label>
+            <span style="color: #888;">※ 직선은 채우기가 적용되지 않습니다.</span>
+        </div>
+
         <div id="opt-fill" style="display: none; gap: 15px; align-items: center; font-size: 11px; color: #ccc;">
             <label>색 유사도 (0~255) <input type="number" id="fill-tolerance" value="32" min="0" max="255"
                     style="width: 50px; text-align: center; margin-left: 5px;"></label>
@@ -1523,6 +1532,12 @@
                 };
             }
 
+            // ✨ 도형을 색으로 채울지 여부 (직선 제외)
+            function isShapeFilled() {
+                const el = document.getElementById('chk-shape-fill');
+                return !!(el && el.checked);
+            }
+
             function updateTopOptionBar(tool) {
                 const optText = document.getElementById('opt-text');
                 const optFill = document.getElementById('opt-fill');
@@ -1530,7 +1545,9 @@
                 const toolNameDisplay = document.getElementById('current-tool-name');
                 const optSelection = document.getElementById('opt-selection');
                 const optLiquify = document.getElementById('opt-liquify');
+                const optShape = document.getElementById('opt-shape');
                 if (optLiquify) optLiquify.style.display = 'none';
+                if (optShape) optShape.style.display = 'none';
 
                 if (optText) optText.style.display = 'none';
                 if (optFill) optFill.style.display = 'none';
@@ -1549,6 +1566,10 @@
 
                 if (tool === 'text') { if (optText) optText.style.display = 'flex'; needsOptionBar = true; }
                 if (tool === 'fill') { if (optFill) optFill.style.display = 'flex'; needsOptionBar = true; }
+                if (tool === 'line' || tool === 'rect' || tool === 'circle') {
+                    if (optShape) optShape.style.display = 'flex';
+                    needsOptionBar = true;
+                }
                 if (tool === 'lasso' || tool === 'rect_select') {
                     if (optSelection) optSelection.style.display = 'flex';
                     needsOptionBar = true;
@@ -1724,10 +1745,10 @@
                         ctx.globalAlpha = 1; // 복구
                     }
                 } else if (['line', 'rect', 'circle'].includes(item.type)) {
-                    ctx.beginPath(); ctx.strokeStyle = item.color; ctx.lineWidth = item.width;
+                    ctx.beginPath(); ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.lineWidth = item.width;
                     if (item.type === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-                    else if (item.type === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-                    else if (item.type === 'circle') { let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+                    else if (item.type === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                    else if (item.type === 'circle') { let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                 }
             }
 
@@ -3704,6 +3725,8 @@
                     if (currentTool === 'line') { ctx.moveTo(shapeStartX, shapeStartY); ctx.lineTo(pos.x, pos.y); }
                     else if (currentTool === 'rect') { ctx.rect(shapeStartX, shapeStartY, pos.x - shapeStartX, pos.y - shapeStartY); }
                     else if (currentTool === 'circle') { let radius = Math.hypot(pos.x - shapeStartX, pos.y - shapeStartY); ctx.arc(shapeStartX, shapeStartY, radius, 0, Math.PI * 2); }
+                    // ✨ 도형 안 채우기 (직선은 채울 면이 없으므로 제외)
+                    if (isShapeFilled() && currentTool !== 'line') { ctx.fillStyle = currentColor; ctx.fill(); }
                     ctx.stroke();
                 }
             });
@@ -3769,7 +3792,7 @@
                         }
                     }
                 } else if (currentTool !== 'fill') {
-                    finalizePath({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } });
+                    finalizePath({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, filled: isShapeFilled() && currentTool !== 'line', start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } });
                 }
                 canvasSnapshot = null;
             });
@@ -3942,10 +3965,10 @@ async function redrawCanvas() {
                 ctx.drawImage(tmpCvs, 0, 0); ctx.globalAlpha = 1;
             }
         } else {
-            ctx.beginPath(); ctx.strokeStyle = item.color;
+            ctx.beginPath(); ctx.strokeStyle = item.color; ctx.fillStyle = item.color;
             if (item.type === 'line') { ctx.lineWidth = item.width; ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-            else if (item.type === 'rect') { ctx.lineWidth = item.width; ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-            else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); ctx.stroke(); }
+            else if (item.type === 'rect') { ctx.lineWidth = item.width; if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+            else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
         }
     }
 
@@ -5519,10 +5542,10 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         img.onerror = res; img.src = item.src;
                     });
                 } else if (['line', 'rect', 'circle'].includes(item.type)) {
-                    ctx.beginPath(); ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5;
+                    ctx.beginPath(); ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.lineWidth = item.width || 5;
                     if (item.type === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-                    else if (item.type === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-                    else if (item.type === 'circle') { const r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
+                    else if (item.type === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                    else if (item.type === 'circle') { const r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                 }
             }
 

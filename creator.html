@@ -880,11 +880,11 @@
                     }
                 }
                 else if (['line', 'rect', 'circle', 'text', 'draw_shape'].includes(item.type)) {
-                    ctx.strokeStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
+                    ctx.strokeStyle = item.color; ctx.fillStyle = item.color; ctx.lineWidth = item.width || 5; ctx.beginPath();
                     let shape = item.shape || item.type;
                     if (shape === 'line') { ctx.moveTo(item.start.x, item.start.y); ctx.lineTo(item.end.x, item.end.y); ctx.stroke(); }
-                    else if (shape === 'rect') { ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
-                    else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); ctx.stroke(); }
+                    else if (shape === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
+                    else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                 }
             }
 
