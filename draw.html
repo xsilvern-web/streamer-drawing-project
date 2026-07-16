@@ -1011,6 +1011,30 @@
             </div>
         </div>
 
+        <!-- ✨ 합작방 저장/내보내기 범위 선택 -->
+        <div id="room-scope"
+            style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
+            <div
+                style="background:#2d2d2d; color:#eee; width:420px; max-width:92%; border-radius:10px; padding:24px; box-shadow:0 8px 30px rgba(0,0,0,0.5); border:1px solid #00897b; font-family:'Malgun Gothic',sans-serif;">
+                <h3 id="room-scope-title" style="margin:0 0 10px; color:#4db6ac;"></h3>
+                <p style="font-size:13px; color:#ccc; margin:0 0 16px;">어느 범위로 내보낼까요?</p>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <button id="btn-scope-all"
+                        style="background:#00897b; color:#fff; border:none; padding:12px; border-radius:4px; cursor:pointer; font-weight:bold; text-align:left;">
+                        🎨 합작 전체 <span style="font-weight:normal; font-size:11px; color:#b2dfdb;">— 화면에 보이는 그대로 (모든 참가자)</span>
+                    </button>
+                    <button id="btn-scope-mine"
+                        style="background:#455a64; color:#fff; border:none; padding:12px; border-radius:4px; cursor:pointer; font-weight:bold; text-align:left;">
+                        👤 내 것만 <span style="font-weight:normal; font-size:11px; color:#b0bec5;">— 내가 그린 레이어만</span>
+                    </button>
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+                    <button id="btn-scope-cancel"
+                        style="background:transparent; color:#aaa; border:1px solid #555; padding:7px 16px; border-radius:4px; cursor:pointer;">취소</button>
+                </div>
+            </div>
+        </div>
+
         <!-- ✨ 합작 송출 동의 창 -->
         <div id="room-consent"
             style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
@@ -4171,7 +4195,11 @@ async function redrawCanvas() {
                 }
             });
 
-           document.getElementById('btn-save').onclick = () => {
+           document.getElementById('btn-save').onclick = async () => {
+    // ✨ 합작방이면 '합작 전체 / 내 것만'을 고르게 한다 (방 밖이면 그냥 'all')
+    const roomScope = await roomAskScope('파일 저장');
+    if (!roomScope) return;
+
     syncToFrame();
     const framesData = frames.map(f => {
         const savedTransformObjects = [];
@@ -4195,9 +4223,9 @@ async function redrawCanvas() {
                     id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal',
                     baseRaster: l.baseCanvas ? l.baseCanvas.toDataURL('image/png') : null // ✨ 레이어별 구워진 바닥 저장
                 })),
-                // ✨ 합작방: 남의 레이어는 layers 배열 밖에 있어 그냥 두면 '내 그림만' 저장된다.
+                // ✨ 합작방 '전체' 선택 시: 남의 레이어는 layers 배열 밖에 있어 그냥 두면 '내 그림만' 저장된다.
                 //    편집 이력은 없으므로 '구워진 레이어(baseRaster)'로 담아 다시 열면 합작 전체가 보이게 한다.
-                ...((typeof Room !== 'undefined' && Room.active)
+                ...((typeof Room !== 'undefined' && Room.active && roomScope === 'all')
                     ? [...Room.remote.entries()]
                         .filter(([key]) => key.startsWith(f.id + '::'))
                         .map(([key, r]) => {
@@ -4818,10 +4846,16 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (confirm("정말 모든 프레임과 그림을 지우시겠습니까?\n(이 작업은 되돌릴 수 없습니다)")) clearMyCanvas();
             };
 
-            document.getElementById('btn-export-png').onclick = () => {
+            document.getElementById('btn-export-png').onclick = async () => {
+                // ✨ 합작방이면 '합작 전체 / 내 것만' 선택
+                const roomScope = await roomAskScope('PNG 내보내기');
+                if (!roomScope) return;
+                const inRoomAll = (typeof Room !== 'undefined' && Room.active && roomScope === 'all');
+
                 syncToFrame();
 
-                const baseFileName = document.getElementById('drawing-title').value || "drawing";
+                const baseFileName = (document.getElementById('drawing-title').value || "drawing")
+                    + ((typeof Room !== 'undefined' && Room.active) ? (roomScope === 'all' ? '_합작' : '_내것만') : '');
 
                 let hasUnrasterized = false;
                 frames.forEach(f => {
@@ -4838,9 +4872,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     offCanvas.height = CANVAS_HEIGHT;
                     const offCtx = offCanvas.getContext('2d');
 
-                    // ✨ 합작방에서는 남의 레이어가 layers 배열 밖에 있으므로, 그대로 두면 '내 그림만' 저장된다.
-                    //    화면에 보이는 합작 전체를 그대로 내보낸다.
-                    if (typeof Room !== 'undefined' && Room.active) {
+                    // ✨ 합작방 '전체' 선택 시: 남의 레이어는 layers 배열 밖에 있어 그냥 두면 '내 그림만' 나온다.
+                    //    화면에 보이는 합작 전체를 그대로 내보낸다. ('내 것만'이면 아래 기존 경로로 진행)
+                    if (inRoomAll) {
                         roomCompositeFrameTo(offCtx, frameData);
                         const link0 = document.createElement('a');
                         link0.download = totalFrames > 1 ? `${baseFileName}_${index + 1}.png` : `${baseFileName}.png`;
@@ -4907,6 +4941,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             document.getElementById('btn-export-gif').onclick = async () => {
                 if (frames.length === 0) return alert("프레임이 없습니다.");
 
+                // ✨ 합작방이면 '합작 전체 / 내 것만' 선택
+                const roomScope = await roomAskScope('GIF 내보내기');
+                if (!roomScope) return;
+                const inRoomAll = (typeof Room !== 'undefined' && Room.active && roomScope === 'all');
+
                 syncToFrame(); // 현재 작업 내용 동기화
 
                 // 텍스트/도형이 래스터화(확정) 되지 않았는지 체크
@@ -4931,8 +4970,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 for (let f of frames) {
                     tempCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-                    // ✨ 합작방에서는 남의 레이어까지 합성해야 화면과 같은 결과가 나온다
-                    if (typeof Room !== 'undefined' && Room.active) {
+                    // ✨ 합작방 '전체' 선택 시: 남의 레이어까지 합성해야 화면과 같은 결과가 나온다
+                    if (inRoomAll) {
                         roomCompositeFrameTo(tempCtx, f);
                         images.push(tempCanvas.toDataURL('image/png'));
                         continue;
@@ -4990,7 +5029,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     if (!obj.error) {
                         const link = document.createElement('a');
                         link.href = obj.image;
-                        link.download = (document.getElementById('drawing-title').value || "animation") + ".gif";
+                        link.download = (document.getElementById('drawing-title').value || "animation")
+                            + ((typeof Room !== 'undefined' && Room.active) ? (roomScope === 'all' ? '_합작' : '_내것만') : '') + ".gif";
                         link.click();
                     } else {
                         alert("GIF 생성 실패: " + obj.error);
@@ -5841,6 +5881,30 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     payload.push(item);
                 });
                 return payload;
+            }
+
+            // ✨ 합작방에서 저장/내보내기 범위를 물어본다 → 'all' | 'mine' | null(취소)
+            //    방이 아니면 묻지 않고 곧바로 'all'(=평소 동작).
+            function roomAskScope(actionName) {
+                if (typeof Room === 'undefined' || !Room.active) return Promise.resolve('all');
+                return new Promise(resolve => {
+                    const box = document.getElementById('room-scope');
+                    document.getElementById('room-scope-title').innerText = actionName;
+                    box.style.display = 'flex';
+                    const done = (v) => {
+                        box.style.display = 'none';
+                        btnAll.onclick = btnMine.onclick = btnCancel.onclick = null;
+                        box.onclick = null;
+                        resolve(v);
+                    };
+                    const btnAll = document.getElementById('btn-scope-all');
+                    const btnMine = document.getElementById('btn-scope-mine');
+                    const btnCancel = document.getElementById('btn-scope-cancel');
+                    btnAll.onclick = () => done('all');
+                    btnMine.onclick = () => done('mine');
+                    btnCancel.onclick = () => done(null);
+                    box.onclick = (e) => { if (e.target === box) done(null); };
+                });
             }
 
             // ✨ 한 프레임의 '보이는 그대로'(참가자 전원 레이어)를 주어진 ctx에 합성한다.
