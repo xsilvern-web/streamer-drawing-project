@@ -106,7 +106,15 @@ def init_db():
         conn.commit()
     except psycopg2.Error:
         conn.rollback()
-        
+
+    # ✨ 네이버 실제 메일 주소를 담을 컬럼 (donor_email은 예전부터 'getId() 식별자'를 담고 있어 이름과 달리 이메일이 아님).
+    #    식별/차단은 계속 donor_email(식별자) 기준이고, 이 컬럼은 참고용으로만 추가한다.
+    try:
+        cursor.execute("ALTER TABLE ledger ADD COLUMN donor_naver_email TEXT")
+        conn.commit()
+    except psycopg2.Error:
+        conn.rollback()
+
     conn.close()
 
 init_db()
@@ -149,10 +157,13 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
 def _fetch_recent_donations():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=DictCursor)
-    cursor.execute("SELECT id, donor_name, donor_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
+    cursor.execute("SELECT id, donor_name, donor_email, donor_naver_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+    # email = 네이버 앱별 고유 식별자(차단 기준), naverEmail = 실제 메일 주소(참고용)
+    return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"],
+             "naverEmail": r["donor_naver_email"] or "", "title": r["drawing_title"],
+             "time": str(r["timestamp"])} for r in rows]
 
 def _fetch_replay_row(ledger_id):
     conn = get_db_connection()
@@ -170,12 +181,12 @@ def _count_since(target_str):
     conn.close()
     return count
 
-def _insert_ledger(email, name, profile_image, title, drawing_history):
+def _insert_ledger(email, name, profile_image, title, drawing_history, naver_email=""):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data) VALUES (%s, %s, %s, %s, %s)",
-        (email, name, profile_image, title, json.dumps(drawing_history))
+        "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data, donor_naver_email) VALUES (%s, %s, %s, %s, %s, %s)",
+        (email, name, profile_image, title, json.dumps(drawing_history), naver_email)
     )
     conn.commit()
     conn.close()
@@ -403,16 +414,18 @@ async def submit_drawing(request: Request):
 
     try:
         data = await request.json()
-        email = data.get("email") 
+        email = data.get("email")   # ⚠️ 이름은 email이지만 실제로는 네이버 앱별 고유 식별자(getId). 차단/식별의 기준이므로 절대 실제 메일로 바꾸지 말 것.
         name = data.get("name")
         profile_image = data.get("profileImage", "")
         title = data.get("title", "제목없음")
         drawing_history = data.get("drawingData")
+        naver_email = (data.get("naverEmail") or "").strip()[:200]   # ✨ 실제 메일 주소(참고용)
 
         if not email: raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+        # 차단 판정은 계속 식별자 기준 (기존 블랙리스트가 그대로 유효)
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
-        await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history)
+        await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history, naver_email)
         
         await drawing_queue.put(data)
         return {"status": "success"}

@@ -4652,7 +4652,15 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     if (status) {
                         const uniqueId = naverLogin.user.getId();
                         if (!uniqueId) { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; return; }
-                        loggedInUser = { name: naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자", email: uniqueId, profileImage: naverLogin.user.getProfileImage() || "" };
+                        // ⚠️ email 필드에는 '앱별 고유 식별자(getId)'가 들어간다. 원장(donor_email)과 블랙리스트가 이 값을 기준으로
+                        //    동작하므로 실제 메일 주소로 바꾸면 기존 차단이 전부 풀린다. 실제 메일은 naverEmail로 따로 담는다.
+                        //    (네이버는 로그인 아이디를 제공하지 않고, 식별자는 애플리케이션당 유니크한 값이다)
+                        loggedInUser = {
+                            name: naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자",
+                            email: uniqueId,
+                            naverEmail: (naverLogin.user.getEmail && naverLogin.user.getEmail()) || "",
+                            profileImage: naverLogin.user.getProfileImage() || ""
+                        };
 
                         document.getElementById('login-container').style.display = 'none'; document.getElementById('donation-container').style.display = 'flex';
                         document.getElementById('custom-nickname').value = loggedInUser.name;
@@ -5180,8 +5188,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 }
 
                 const finalProfileImage = (useProfileCheckbox.checked && loggedInUser && loggedInUser.profileImage) ? loggedInUser.profileImage : "";
-                const userEmail = loggedInUser ? loggedInUser.email : "test@test.com";
-                const payload = { name: customName, email: userEmail, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
+                const userEmail = loggedInUser ? loggedInUser.email : "test@test.com";   // 식별자(차단 기준) — 기존 그대로
+                const userNaverEmail = loggedInUser ? (loggedInUser.naverEmail || "") : "";  // ✨ 실제 메일 주소(참고용)
+                const payload = { name: customName, email: userEmail, naverEmail: userNaverEmail, profileImage: finalProfileImage, title: title, drawingData: finalPayload };
 
                 // 목적지 URL 자동 변경 (테스트 vs 실제 방송)
                 const targetUrl = isTest ? `${API_BASE}/api/submit-test` : `${API_BASE}/api/submit-drawing`;
@@ -5756,7 +5765,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     const message = document.getElementById('inquiry-message').value.trim();
                     if (!message) return alert('문의 내용을 입력해주세요.');
                     const name = document.getElementById('inquiry-name').value.trim();
-                    const email = (typeof loggedInUser !== 'undefined' && loggedInUser) ? loggedInUser.email : '';
+                    // 답장이 가능하도록 실제 메일 주소를 우선 사용하고, 없으면 식별자로 폴백
+                    const email = (typeof loggedInUser !== 'undefined' && loggedInUser)
+                        ? (loggedInUser.naverEmail || loggedInUser.email) : '';
                     btnSend.disabled = true; btnSend.innerText = '보내는 중...';
                     try {
                         const res = await fetch(`${API_BASE}/api/inquiry`, {
