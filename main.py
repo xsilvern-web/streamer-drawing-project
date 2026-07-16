@@ -587,10 +587,180 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if websocket in active_connections: active_connections.remove(websocket)
 
+# ================== 협업 방 (마그마식 동시 그리기) ==================
+# 설계 메모:
+# - 방/참가자 상태는 인메모리. 그림 스냅샷은 서버에 저장하지 않고, 새로 입장한 사람에게는
+#   호스트(가장 먼저 들어온 참가자)가 자기 화면 상태를 통째로 넘겨준다(서버는 릴레이만).
+#   → 서버 메모리 폭증이 없고, 방에 아무도 없으면 그림도 사라진다(실시간 협업 방의 특성).
+# - 참가자마다 고유 레이어 1개. 서버가 draw 메시지에 layerId를 강제 주입해 남의 레이어엔 못 그린다.
+# - 프레임(애니메이션) 목록은 서버가 소유하고 변경 시 전원에게 브로드캐스트한다.
+ROOM_PASSWORD = "3400"          # ✨ 지금은 임시로 모든 방 공통 고정 비밀번호
+MAX_ROOMS = 30
+MAX_PARTICIPANTS_PER_ROOM = 12
+MAX_ROOM_FRAMES = 24
+
+rooms = {}
+_room_seq = 0
+_client_seq = 0
+
+class RoomCreate(BaseModel):
+    title: str
+
+@app.get("/api/rooms")
+async def list_rooms():
+    return [
+        {"id": r["id"], "title": r["title"], "count": len(r["participants"]), "frames": len(r["frames"])}
+        for r in rooms.values()
+    ]
+
+@app.post("/api/rooms")
+async def create_room(data: RoomCreate):
+    global _room_seq
+    title = (data.title or "").strip()[:60]
+    if not title:
+        raise HTTPException(status_code=400, detail="방 제목을 입력해주세요.")
+    if len(rooms) >= MAX_ROOMS:
+        raise HTTPException(status_code=429, detail="방이 너무 많습니다. 잠시 후 다시 시도해주세요.")
+    _room_seq += 1
+    rid = f"room_{_room_seq}"
+    rooms[rid] = {
+        "id": rid,
+        "title": title,
+        "frames": [{"id": "frame_1", "duration": 500}],
+        "participants": {},   # clientId -> {"name", "layerId", "ws"}
+        "empty_since": datetime.now(),
+    }
+    return {"id": rid, "title": title}
+
+async def _room_broadcast(room, text, exclude=None):
+    for cid, p in list(room["participants"].items()):
+        if exclude and cid == exclude:
+            continue
+        try:
+            await p["ws"].send_text(text)
+        except:
+            pass
+
+@app.websocket("/ws/room/{room_id}")
+async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
+    global _client_seq
+    await websocket.accept()
+    room = rooms.get(room_id)
+    if not room:
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "방을 찾을 수 없습니다."}))
+            await websocket.close()
+        except: pass
+        return
+
+    client_id = None
+    try:
+        # 1) 첫 메시지는 반드시 join (비밀번호 검증)
+        first = json.loads(await websocket.receive_text())
+        if first.get("type") != "join" or str(first.get("password", "")) != ROOM_PASSWORD:
+            await websocket.send_text(json.dumps({"type": "error", "message": "비밀번호가 올바르지 않습니다."}))
+            await websocket.close()
+            return
+        if len(room["participants"]) >= MAX_PARTICIPANTS_PER_ROOM:
+            await websocket.send_text(json.dumps({"type": "error", "message": "방 인원이 가득 찼습니다."}))
+            await websocket.close()
+            return
+
+        # 2) 참가자 등록 (고유 레이어 1개 배정)
+        host_id = next(iter(room["participants"]), None)   # 기존 최초 참가자 = 상태 제공자
+        _client_seq += 1
+        client_id = f"c{_client_seq}"
+        name = (first.get("name") or "").strip()[:20] or "익명"
+        layer_id = f"rlayer_{client_id}"
+        room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket}
+        room["empty_since"] = None
+
+        await websocket.send_text(json.dumps({
+            "type": "joined",
+            "clientId": client_id, "layerId": layer_id,
+            "roomId": room["id"], "roomTitle": room["title"],
+            "frames": room["frames"],
+            "participants": [{"clientId": cid, "name": p["name"], "layerId": p["layerId"]}
+                             for cid, p in room["participants"].items()],
+            "isHost": host_id is None,
+        }))
+        await _room_broadcast(room, json.dumps({
+            "type": "participant_joined",
+            "participant": {"clientId": client_id, "name": name, "layerId": layer_id}
+        }), exclude=client_id)
+
+        # 3) 기존 호스트에게 "현재 화면 상태를 이 사람에게 보내달라"고 요청
+        if host_id and host_id in room["participants"]:
+            try:
+                await room["participants"][host_id]["ws"].send_text(json.dumps({
+                    "type": "request_state", "forClientId": client_id
+                }))
+            except: pass
+
+        # 4) 메시지 루프
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                msg = json.loads(raw)
+            except:
+                continue
+            mtype = msg.get("type")
+
+            if mtype == "draw":
+                # ✨ 서버가 보낸이/레이어를 강제 주입 → 남의 레이어에 그리는 것을 원천 차단
+                msg["senderId"] = client_id
+                msg["layerId"] = layer_id
+                await _room_broadcast(room, json.dumps(msg), exclude=client_id)
+
+            elif mtype == "frame_op":
+                op = msg.get("op")
+                if op == "add" and len(room["frames"]) < MAX_ROOM_FRAMES:
+                    room["frames"].append({
+                        "id": f"frame_{_client_seq}_{len(room['frames'])}_{int(datetime.now().timestamp() * 1000)}",
+                        "duration": max(10, int(msg.get("duration") or 500)),
+                    })
+                elif op == "delete" and len(room["frames"]) > 1:
+                    room["frames"] = [f for f in room["frames"] if f["id"] != msg.get("frameId")]
+                elif op == "duration":
+                    for f in room["frames"]:
+                        if f["id"] == msg.get("frameId"):
+                            f["duration"] = max(10, int(msg.get("duration") or 500))
+                await _room_broadcast(room, json.dumps({"type": "frames_updated", "frames": room["frames"]}))
+
+            elif mtype == "room_state":
+                # 호스트가 보낸 현재 상태를 요청자에게만 그대로 릴레이 (거대할 수 있어 재직렬화 없이 원문 전달)
+                target = room["participants"].get(msg.get("forClientId"))
+                if target:
+                    try:
+                        await target["ws"].send_text(raw)
+                    except: pass
+    except:
+        pass
+    finally:
+        if client_id and client_id in room["participants"]:
+            room["participants"].pop(client_id, None)
+            if not room["participants"]:
+                room["empty_since"] = datetime.now()
+            await _room_broadcast(room, json.dumps({"type": "participant_left", "clientId": client_id}))
+
+async def cleanup_empty_rooms():
+    # 아무도 없는 방은 그림 상태를 들고 있을 주체가 없으므로 일정 시간 뒤 정리
+    while True:
+        await asyncio.sleep(300)
+        try:
+            now = datetime.now()
+            for rid in [k for k, v in rooms.items()
+                        if not v["participants"] and v.get("empty_since")
+                        and (now - v["empty_since"]).total_seconds() > 600]:
+                rooms.pop(rid, None)
+        except Exception as e:
+            print(f"Room cleanup error: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(process_drawing_queue())
     asyncio.create_task(auto_delete_old_data())
+    asyncio.create_task(cleanup_empty_rooms())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
