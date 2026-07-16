@@ -2504,6 +2504,12 @@
             }
 
             function createTransformObject(type, x, y, width, height, customContent = null) {
+                // ✨ 합작방은 '참가자당 레이어 1개' 규칙이라, 레이어를 새로 만드는 이 경로는 쓸 수 없다.
+                //    (허용하면 내 화면에만 보이고 남에게는 안 나타나 조용히 어긋난다)
+                if (typeof Room !== 'undefined' && Room.active) {
+                    alert('합작방에서는 텍스트·이미지 넣기를 사용할 수 없습니다.\n(참가자당 레이어가 1개라 남에게 보이지 않습니다)');
+                    return;
+                }
                 layerCounter++; const lId = `layer_${layerCounter}`;
 
                 const wrapper = document.createElement('div');
@@ -4060,6 +4066,11 @@ async function redrawCanvas() {
                 if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
                 if (e.altKey && e.key.toLowerCase() === 't') {
                     e.preventDefault();
+                    // ✨ 합작방: 선택영역 분리는 레이어를 새로 만들어 '1인 1레이어' 규칙을 깨므로 차단
+                    if (typeof Room !== 'undefined' && Room.active) {
+                        alert('합작방에서는 선택영역 변형(Alt+T)을 사용할 수 없습니다.\n(레이어가 새로 생겨 남에게 보이지 않습니다)');
+                        return;
+                    }
                     if (activeLayerId) {
                         const layer = layers.find(l => l.id === activeLayerId);
                         if (layer && layer.type === 'canvas') {
@@ -5541,7 +5552,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             // ---------- 늦게 입장한 사람에게 보낼 현재 상태 만들기 (호스트) ----------
             function roomBuildState() {
                 syncToFrame();
-                const state = { frames: [] };
+                // ✨ 픽셀뿐 아니라 '합작 과정 기록'도 함께 넘긴다.
+                //    이게 없으면 늦게 들어온 사람의 기록은 그 시점부터라, 원래 호스트가 나간 뒤
+                //    그 사람이 조립자가 되면 타임랩스 앞부분이 통째로 빠진다.
+                //    __src는 로컬 참조라 전송 전에 반드시 제거(중복 직렬화 방지).
+                const state = { frames: [], playback: Room.playback.map(r => { const c = { ...r }; delete c.__src; return c; }) };
                 frames.forEach(f => {
                     const entry = { frameId: f.id, layers: [] };
                     // 내 레이어
@@ -5560,6 +5575,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
             async function roomApplyState(state) {
                 if (!state || !state.frames) return;
+                // ✨ 호스트가 넘겨준 '방 시작부터의 과정 기록'을 그대로 넘겨받는다 → 나도 완전한 조립자가 된다
+                if (Array.isArray(state.playback)) Room.playback = state.playback;
                 for (const f of state.frames) {
                     if (!frames.some(fr => fr.id === f.frameId)) continue;
                     for (const l of (f.layers || [])) {
@@ -5629,6 +5646,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
             // ---------- 입장 / 퇴장 ----------
             async function roomJoin(roomId) {
+                // ✨ 합작방은 로그인 필수 (누가 그렸는지 남지 않으면 악용 대응이 불가능하므로)
+                if (typeof loggedInUser === 'undefined' || !loggedInUser) {
+                    alert('합작방은 네이버 로그인 후 이용할 수 있습니다.');
+                    return;
+                }
                 // ✨ 방에 들어가면 내 캔버스는 방의 프레임 구성으로 초기화된다 → 작업물이 있으면 먼저 경고
                 syncToFrame();
                 const hasArt = frames.some(f => (f.history && f.history.length > 0));
@@ -5642,7 +5664,12 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 const ws = new WebSocket(`${proto}${window.location.host}/ws/room/${roomId}`);
                 Room.ws = ws;
 
-                ws.onopen = () => ws.send(JSON.stringify({ type: 'join', name: nick, password: pw }));
+                // userId(네이버 앱별 고유 식별자)를 함께 보내 서버가 '누가 방에 있었는지' 남길 수 있게 한다.
+                // 다른 참가자에게는 브로드캐스트하지 않는다.
+                ws.onopen = () => ws.send(JSON.stringify({
+                    type: 'join', name: nick, password: pw,
+                    userId: loggedInUser ? loggedInUser.email : ''
+                }));
                 ws.onmessage = async (ev) => {
                     let msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
 
@@ -5737,16 +5764,20 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             // 호스트만 호출한다(방 시작부터의 전 과정을 가진 유일한 참가자).
             function roomBuildBroadcastPayload(participants, frameId) {
                 const payload = [];
-                // 1) 참가자 전원의 레이어를 입장 순서(z순서)대로 선언 → 오버레이가 레이어별 캔버스를 만든다
-                payload.push({
-                    type: 'init_layers',
-                    layers: participants.map(p => ({ id: p.layerId, opacity: 1, blendMode: 'normal' })),
-                });
-                // 2) 목격 순서대로 쌓인 합작 기록에서 '해당 프레임' 것만 뽑아 이어붙인다
-                const valid = participants.map(p => p.layerId);
+                // 1) 레이어 선언: 현재 참가자(입장 순 = z순서) + '기록에만 남은 나간 사람'까지 포함.
+                //    나간 사람 그림도 캔버스에는 남아 있으므로, 빼면 방송이 화면과 달라져 버린다.
+                const order = participants.map(p => p.layerId);
                 Room.playback.forEach(rec => {
                     if (rec.__frameId !== frameId) return;
-                    if (!valid.includes(rec.layerId)) return;   // 나간 사람 기록은 제외
+                    if (rec.layerId && !order.includes(rec.layerId)) order.push(rec.layerId);
+                });
+                payload.push({
+                    type: 'init_layers',
+                    layers: order.map(id => ({ id, opacity: 1, blendMode: 'normal' })),
+                });
+                // 2) 목격 순서대로 쌓인 합작 기록에서 '해당 프레임' 것만 뽑아 이어붙인다
+                Room.playback.forEach(rec => {
+                    if (rec.__frameId !== frameId) return;
                     const item = { ...rec };
                     delete item.__frameId; delete item.__src;
                     payload.push(item);
@@ -5754,7 +5785,49 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 return payload;
             }
 
+            // 프레임 하나를 '참가자 전원 레이어 합성' 이미지로 굽는다 (애니메이션 합작 송출용)
+            function roomFlattenFrame(frame, participants) {
+                const off = document.createElement('canvas');
+                off.width = CANVAS_WIDTH; off.height = CANVAS_HEIGHT;
+                const ctx = off.getContext('2d');
+                ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+                // 내 레이어
+                const mine = (frame.layers || []).find(l => l.type === 'canvas' && l.canvas);
+                const drawnFirst = participants.some(p => p.clientId === Room.myId);
+                if (drawnFirst && mine) ctx.drawImage(mine.canvas, 0, 0);
+                // 원격 레이어 — 나간 사람 캔버스도 화면에 남아 있으므로 전부 합성 (방송=화면 일치)
+                Room.remote.forEach((r, key) => {
+                    if (key.startsWith(frame.id + '::')) ctx.drawImage(r.canvas, 0, 0);
+                });
+                if (!drawnFirst && mine) ctx.drawImage(mine.canvas, 0, 0);
+                return off.toDataURL('image/png');
+            }
+
             async function roomSubmitBroadcast(title, participants) {
+                // ✨ 프레임이 여러 개면 '합작 애니메이션'으로 송출 (각 프레임을 전원 레이어로 합성).
+                //    프레임이 하나면 '합작 타임랩스'(그리는 과정)로 송출.
+                if (frames.length > 1) {
+                    syncToFrame();
+                    const animFrames = frames.map(f => ({ src: roomFlattenFrame(f, participants), duration: f.duration || 500 }));
+                    const names = participants.map(p => p.name).join(', ');
+                    const payload = {
+                        name: names.slice(0, 60),
+                        email: (typeof loggedInUser !== 'undefined' && loggedInUser) ? loggedInUser.email : 'test@test.com',
+                        naverEmail: (typeof loggedInUser !== 'undefined' && loggedInUser) ? (loggedInUser.naverEmail || '') : '',
+                        profileImage: '',
+                        title: `[합작] ${title}`,
+                        drawingData: { isAnimation: true, frames: animFrames, repeatCount: 5 },
+                    };
+                    try {
+                        const res = await fetch(`${API_BASE}/api/submit-drawing`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                        });
+                        if (res.ok) alert(`합작 애니메이션 송출 성공! (${animFrames.length}프레임)`);
+                        else { const d = await res.json().catch(() => ({})); alert('합작 송출 실패: ' + (d.detail || '서버 오류')); }
+                    } catch (e) { alert('서버 연결에 실패했습니다.'); }
+                    return;
+                }
+
                 const frameId = currentFrameId;
                 const drawingData = roomBuildBroadcastPayload(participants, frameId);
                 if (drawingData.length <= 1) { alert('합작 송출: 그려진 내용이 없습니다.'); return; }
@@ -5866,6 +5939,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 document.getElementById('btn-room-lobby').onclick = () => {
                     if (Room.active) return alert('이미 합작방에 있습니다. 먼저 나가주세요.');
+                    if (typeof loggedInUser === 'undefined' || !loggedInUser) return alert('합작방은 네이버 로그인 후 이용할 수 있습니다.');
                     const nickEl = document.getElementById('room-nickname');
                     if (!nickEl.value) {
                         nickEl.value = (document.getElementById('custom-nickname') && document.getElementById('custom-nickname').value)

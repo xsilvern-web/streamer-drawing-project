@@ -703,7 +703,15 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
         client_id = f"c{_client_seq}"
         name = (first.get("name") or "").strip()[:20] or "익명"
         layer_id = f"rlayer_{client_id}"
-        room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket}
+        # ✨ userId(네이버 앱별 고유 식별자)는 서버에만 보관하고 다른 참가자에게는 브로드캐스트하지 않는다.
+        #    (누가 방에 있었는지 남겨 악용 대응에 쓰기 위함)
+        user_id = (first.get("userId") or "").strip()[:100]
+        if not user_id:
+            await websocket.send_text(json.dumps({"type": "error", "message": "합작방은 로그인 후 이용할 수 있습니다."}))
+            await websocket.close()
+            return
+        room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket, "userId": user_id}
+        print(f"[ROOM] join room={room['id']} client={client_id} name={name} userId={user_id}")
         room["empty_since"] = None
 
         await websocket.send_text(json.dumps({
