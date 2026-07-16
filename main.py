@@ -667,6 +667,12 @@ async def create_room(data: RoomCreate):
     if user_id in settings.get("blocked_emails", []):
         raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
+    # ✨ 계정당 '아직 아무도 안 들어온 방'은 1개까지. 없으면 유령 방을 30개까지 찍어
+    #    MAX_ROOMS를 고갈시켜 로비를 마비시킬 수 있다. 기존 미사용 방이 있으면 그걸 돌려준다.
+    for r in rooms.values():
+        if not r["participants"] and r.get("creator") == user_id:
+            return {"id": r["id"], "title": r["title"]}
+
     if len(rooms) >= MAX_ROOMS:
         raise HTTPException(status_code=429, detail="방이 너무 많습니다. 잠시 후 다시 시도해주세요.")
     _room_seq += 1
@@ -675,8 +681,9 @@ async def create_room(data: RoomCreate):
         "id": rid,
         "title": title,
         "frames": [{"id": "frame_1", "duration": 500}],
-        "participants": {},   # clientId -> {"name", "layerId", "ws"}
+        "participants": {},   # clientId -> {"name", "layerId", "ws", "userId"}
         "empty_since": datetime.now(),
+        "creator": user_id,
     }
     return {"id": rid, "title": title}
 
@@ -690,14 +697,35 @@ async def _room_broadcast(room, text, exclude=None):
             pass
 
 async def _room_maybe_send_go(room):
-    # ✨ '다같이 보내기': 현재 참가자 전원이 동의하면 송출 시작을 알린다.
+    # ✨ '다같이 보내기': 제안 시점의 명단(roster) 전원이 동의해야 송출한다.
+    #    '현재 참가자' 기준으로 판정하면, 동의하지 않은 사람이 나가는 순간 분모가 줄어
+    #    제안자 혼자만 남아도 조건이 자동 충족돼 버린다(= 안 누르고 나가면 오히려 통과).
     ps = room.get("pending_send")
     if not ps or not room["participants"]:
         return
-    if not set(room["participants"].keys()) <= ps["consents"]:
+    roster = ps["roster"] & set(room["participants"].keys())   # 아직 방에 남아 있는 명단
+    if not roster or not roster <= ps["consents"]:
         return
     # 조립·전송은 '호스트(가장 먼저 들어온 사람)'가 맡는다. 방 시작부터의 전 과정을 갖고 있는 유일한 참가자이기 때문.
     assembler = next(iter(room["participants"]))
+
+    # ✨ 발사 직전 참가자 전원의 차단 여부를 다시 확인한다.
+    #    합작 송출은 조립자(호스트) 1인의 식별자로 제출되므로, 차단된 사람이 방에 남아 있으면
+    #    그 사람 그림이 호스트 이름으로 방송에 나가는 '밴 세탁'이 된다.
+    try:
+        s = await asyncio.to_thread(get_db_settings)
+        blocked = set(s.get("blocked_emails", []))
+        if blocked:
+            for cid, p in room["participants"].items():
+                if p.get("userId") in blocked:
+                    room["pending_send"] = None
+                    await _room_broadcast(room, json.dumps({
+                        "type": "send_cancel", "reason": f"차단된 참가자({p['name']})가 있어 송출을 취소했습니다."
+                    }))
+                    return
+    except Exception as e:
+        print(f"[ROOM] 송출 전 차단 확인 실패(진행): {e}")
+
     await _room_broadcast(room, json.dumps({
         "type": "send_go",
         "assemblerId": assembler,
@@ -727,17 +755,6 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
             await websocket.send_text(json.dumps({"type": "error", "message": "비밀번호가 올바르지 않습니다."}))
             await websocket.close()
             return
-        if len(room["participants"]) >= MAX_PARTICIPANTS_PER_ROOM:
-            await websocket.send_text(json.dumps({"type": "error", "message": "방 인원이 가득 찼습니다."}))
-            await websocket.close()
-            return
-
-        # 2) 참가자 등록 (고유 레이어 1개 배정)
-        host_id = next(iter(room["participants"]), None)   # 기존 최초 참가자 = 상태 제공자
-        _client_seq += 1
-        client_id = f"c{_client_seq}"
-        name = (first.get("name") or "").strip()[:20] or "익명"
-        layer_id = f"rlayer_{client_id}"
         # ✨ userId(네이버 앱별 고유 식별자)는 서버에만 보관하고 다른 참가자에게는 브로드캐스트하지 않는다.
         #    (누가 방에 있었는지 남겨 악용 대응에 쓰기 위함)
         user_id = (first.get("userId") or "").strip()[:100]
@@ -748,6 +765,7 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
 
         # ✨ 크리에이터 페이지에서 차단된 계정은 합작방에도 들어올 수 없다.
         #    (blocked_emails는 이름과 달리 '네이버 앱별 고유 식별자' 목록 — 후원 전송과 같은 기준)
+        #    ※ 이 DB 조회는 await이므로, 아래 '등록'까지의 검사는 반드시 이 뒤에서 다시 해야 한다.
         try:
             room_settings = await asyncio.to_thread(get_db_settings)
             if user_id in room_settings.get("blocked_emails", []):
@@ -757,6 +775,33 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
         except Exception as e:
             # 차단 목록을 못 읽으면(DB 장애) 합작방을 통째로 막지는 않되, 로그는 남긴다.
             print(f"[ROOM] 차단 목록 조회 실패(입장은 허용): {e}")
+
+        # 2) 참가자 등록 — 여기부터 등록까지 await가 없어야 원자적이다.
+        #    (위 DB await 동안 마지막 참가자가 나가 방이 삭제됐을 수 있고, 정원도 바뀔 수 있다)
+        if rooms.get(room_id) is not room:
+            await websocket.send_text(json.dumps({"type": "error", "message": "방이 종료되었습니다."}))
+            await websocket.close()
+            return
+
+        # 같은 계정이 여러 탭으로 중복 입장하면 정원·레이어·송출 정족수를 혼자 잠식하므로,
+        # 기존 세션을 정리하고 새 접속으로 교체한다(새로고침 복구도 이 경로로 자연스럽게 동작).
+        for old_cid, old_p in list(room["participants"].items()):
+            if old_p.get("userId") == user_id:
+                room["participants"].pop(old_cid, None)
+                try: await old_p["ws"].close()
+                except: pass
+                print(f"[ROOM] replaced duplicate session room={room['id']} old={old_cid} userId={user_id}")
+
+        if len(room["participants"]) >= MAX_PARTICIPANTS_PER_ROOM:
+            await websocket.send_text(json.dumps({"type": "error", "message": "방 인원이 가득 찼습니다."}))
+            await websocket.close()
+            return
+
+        host_id = next(iter(room["participants"]), None)   # 기존 최초 참가자 = 상태 제공자
+        _client_seq += 1
+        client_id = f"c{_client_seq}"
+        name = (first.get("name") or "").strip()[:20] or "익명"
+        layer_id = f"rlayer_{client_id}"
         room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket, "userId": user_id}
         print(f"[ROOM] join room={room['id']} client={client_id} name={name} userId={user_id}")
         room["empty_since"] = None
@@ -832,12 +877,15 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
                     "requesterId": client_id,
                     "title": (msg.get("title") or room["title"] or "합작").strip()[:60],
                     "consents": {client_id},   # 제안자는 자동 동의
+                    # ✨ 제안 시점 명단을 고정한다. 이후 들어온 사람은 동의창을 못 봤으므로 정족수에서 제외하고,
+                    #    명단에 있는 사람이 동의 없이 나가면 '통과'가 아니라 '취소'로 처리한다.
+                    "roster": set(room["participants"].keys()),
                 }
                 await _room_broadcast(room, json.dumps({
                     "type": "send_request",
                     "requesterId": client_id, "requesterName": name,
                     "title": room["pending_send"]["title"],
-                    "agreed": 1, "total": len(room["participants"]),
+                    "agreed": 1, "total": len(room["pending_send"]["roster"]),
                 }))
                 await _room_maybe_send_go(room)
 
@@ -847,10 +895,11 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
                     continue
                 if msg.get("accept"):
                     ps["consents"].add(client_id)
+                    roster_now = ps["roster"] & set(room["participants"].keys())
                     await _room_broadcast(room, json.dumps({
                         "type": "send_progress",
-                        "agreed": len(ps["consents"] & set(room["participants"].keys())),
-                        "total": len(room["participants"]),
+                        "agreed": len(ps["consents"] & roster_now),
+                        "total": len(roster_now),
                     }))
                     await _room_maybe_send_go(room)
                 else:
@@ -881,8 +930,13 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
                         await _room_broadcast(room, json.dumps({
                             "type": "send_cancel", "reason": "제안자가 나가서 취소되었습니다."
                         }))
+                    elif client_id in ps["roster"] and client_id not in ps["consents"]:
+                        # ✨ 동의하지 않은 사람이 나갔다 → 그대로 두면 분모가 줄어 자동 통과가 되므로 취소한다.
+                        room["pending_send"] = None
+                        await _room_broadcast(room, json.dumps({
+                            "type": "send_cancel", "reason": "동의하지 않은 참가자가 나가서 취소되었습니다."
+                        }))
                     else:
-                        ps["consents"].discard(client_id)
                         await _room_maybe_send_go(room)
 
 async def cleanup_empty_rooms():
