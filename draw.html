@@ -6098,9 +6098,10 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     const title = (document.getElementById('room-new-title').value || '').trim();
                     if (!title) return alert('방 제목을 입력해주세요.');
                     try {
+                        if (typeof loggedInUser === 'undefined' || !loggedInUser) return alert('합작방은 네이버 로그인 후 이용할 수 있습니다.');
                         const res = await fetch(`${API_BASE}/api/rooms`, {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ title })
+                            body: JSON.stringify({ title, userId: loggedInUser.email })
                         });
                         if (!res.ok) { const d = await res.json().catch(() => ({})); return alert('방 생성 실패: ' + (d.detail || '서버 오류')); }
                         const room = await res.json();

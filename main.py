@@ -387,7 +387,31 @@ async def update_settings(data: SettingsUpdate):
         daily_limit=data.daily_limit,
         notice_text=data.notice_text
     )
+
+    # ✨ 차단은 '입장 시점'에만 검사되므로, 이미 합작방에 들어와 있는 사람은 그대로 그리고 있게 된다.
+    #    차단하는 즉시 해당 계정을 방에서 내보낸다.
+    if data.add_blocked_email:
+        await _kick_user_from_rooms(data.add_blocked_email)
+
     return {"message": "success"}
+
+async def _kick_user_from_rooms(user_id):
+    """차단된 계정을 모든 합작방에서 즉시 퇴장시킨다. (연결을 끊으면 WS finally가 정리·브로드캐스트를 처리)"""
+    if not user_id:
+        return
+    for room in list(rooms.values()):
+        for cid, p in list(room["participants"].items()):
+            if p.get("userId") != user_id:
+                continue
+            try:
+                await p["ws"].send_text(json.dumps({"type": "error", "message": "차단되어 합작방에서 나갑니다."}))
+            except:
+                pass
+            try:
+                await p["ws"].close()
+            except:
+                pass
+            print(f"[ROOM] kicked banned user room={room['id']} client={cid} userId={user_id}")
 
 @app.get("/api/recent-donations")
 async def get_recent_donations():
@@ -618,6 +642,7 @@ _client_seq = 0
 
 class RoomCreate(BaseModel):
     title: str
+    userId: str = ""
 
 @app.get("/api/rooms")
 async def list_rooms():
@@ -632,6 +657,16 @@ async def create_room(data: RoomCreate):
     title = (data.title or "").strip()[:60]
     if not title:
         raise HTTPException(status_code=400, detail="방 제목을 입력해주세요.")
+
+    # ✨ 방 생성도 로그인 + 차단 검사. 입장만 막으면 차단된 사람이 빈 방을 계속 만들어
+    #    방 목록을 오염시키고 MAX_ROOMS를 고갈시킬 수 있다.
+    user_id = (data.userId or "").strip()[:100]
+    if not user_id:
+        raise HTTPException(status_code=401, detail="합작방은 로그인 후 이용할 수 있습니다.")
+    settings = await asyncio.to_thread(get_db_settings)
+    if user_id in settings.get("blocked_emails", []):
+        raise HTTPException(status_code=403, detail="차단된 계정입니다.")
+
     if len(rooms) >= MAX_ROOMS:
         raise HTTPException(status_code=429, detail="방이 너무 많습니다. 잠시 후 다시 시도해주세요.")
     _room_seq += 1
@@ -710,6 +745,18 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
             await websocket.send_text(json.dumps({"type": "error", "message": "합작방은 로그인 후 이용할 수 있습니다."}))
             await websocket.close()
             return
+
+        # ✨ 크리에이터 페이지에서 차단된 계정은 합작방에도 들어올 수 없다.
+        #    (blocked_emails는 이름과 달리 '네이버 앱별 고유 식별자' 목록 — 후원 전송과 같은 기준)
+        try:
+            room_settings = await asyncio.to_thread(get_db_settings)
+            if user_id in room_settings.get("blocked_emails", []):
+                await websocket.send_text(json.dumps({"type": "error", "message": "차단된 계정입니다."}))
+                await websocket.close()
+                return
+        except Exception as e:
+            # 차단 목록을 못 읽으면(DB 장애) 합작방을 통째로 막지는 않되, 로그는 남긴다.
+            print(f"[ROOM] 차단 목록 조회 실패(입장은 허용): {e}")
         room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket, "userId": user_id}
         print(f"[ROOM] join room={room['id']} client={client_id} name={name} userId={user_id}")
         room["empty_since"] = None
@@ -816,31 +863,40 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
     finally:
         if client_id and client_id in room["participants"]:
             room["participants"].pop(client_id, None)
-            if not room["participants"]:
-                room["empty_since"] = datetime.now()
-            await _room_broadcast(room, json.dumps({"type": "participant_left", "clientId": client_id}))
 
-            # ✨ 송출 동의 진행 중이었다면: 제안자가 나가면 취소, 아니면 남은 인원 기준으로 재판정
-            ps = room.get("pending_send")
-            if ps:
-                if ps["requesterId"] == client_id or not room["participants"]:
-                    room["pending_send"] = None
-                    await _room_broadcast(room, json.dumps({
-                        "type": "send_cancel", "reason": "제안자가 나가서 취소되었습니다."
-                    }))
-                else:
-                    await _room_maybe_send_go(room)
+            if not room["participants"]:
+                # ✨ 마지막 사람이 나가면 방을 '즉시' 삭제한다.
+                #    방이 비면 그림 상태를 들고 있을 호스트가 없어 어차피 내용이 사라지므로,
+                #    껍데기만 남은 0명 방을 로비에 띄워둘 이유가 없다.
+                rooms.pop(room["id"], None)
+                print(f"[ROOM] closed (empty) room={room['id']}")
+            else:
+                await _room_broadcast(room, json.dumps({"type": "participant_left", "clientId": client_id}))
+
+                # ✨ 송출 동의 진행 중이었다면: 제안자가 나가면 취소, 아니면 남은 인원 기준으로 재판정
+                ps = room.get("pending_send")
+                if ps:
+                    if ps["requesterId"] == client_id:
+                        room["pending_send"] = None
+                        await _room_broadcast(room, json.dumps({
+                            "type": "send_cancel", "reason": "제안자가 나가서 취소되었습니다."
+                        }))
+                    else:
+                        ps["consents"].discard(client_id)
+                        await _room_maybe_send_go(room)
 
 async def cleanup_empty_rooms():
-    # 아무도 없는 방은 그림 상태를 들고 있을 주체가 없으므로 일정 시간 뒤 정리
+    # 참가자가 다 나간 방은 퇴장 시점에 즉시 삭제되므로, 여기서는
+    # '만들어놓고 아무도 들어오지 않은 유령 방'만 짧게 정리한다(방 목록 오염·MAX_ROOMS 고갈 방지).
     while True:
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
         try:
             now = datetime.now()
             for rid in [k for k, v in rooms.items()
                         if not v["participants"] and v.get("empty_since")
-                        and (now - v["empty_since"]).total_seconds() > 600]:
+                        and (now - v["empty_since"]).total_seconds() > 120]:
                 rooms.pop(rid, None)
+                print(f"[ROOM] closed (never joined) room={rid}")
         except Exception as e:
             print(f"Room cleanup error: {e}")
 
