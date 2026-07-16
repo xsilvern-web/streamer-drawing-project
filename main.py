@@ -654,6 +654,24 @@ async def _room_broadcast(room, text, exclude=None):
         except:
             pass
 
+async def _room_maybe_send_go(room):
+    # ✨ '다같이 보내기': 현재 참가자 전원이 동의하면 송출 시작을 알린다.
+    ps = room.get("pending_send")
+    if not ps or not room["participants"]:
+        return
+    if not set(room["participants"].keys()) <= ps["consents"]:
+        return
+    # 조립·전송은 '호스트(가장 먼저 들어온 사람)'가 맡는다. 방 시작부터의 전 과정을 갖고 있는 유일한 참가자이기 때문.
+    assembler = next(iter(room["participants"]))
+    await _room_broadcast(room, json.dumps({
+        "type": "send_go",
+        "assemblerId": assembler,
+        "title": ps["title"],
+        "participants": [{"clientId": cid, "name": p["name"], "layerId": p["layerId"]}
+                         for cid, p in room["participants"].items()],
+    }))
+    room["pending_send"] = None
+
 @app.websocket("/ws/room/{room_id}")
 async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
     global _client_seq
@@ -747,6 +765,44 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
                     try:
                         await target["ws"].send_text(raw)
                     except: pass
+
+            elif mtype == "send_request":
+                # ✨ 다같이 보내기 제안 — 전원 동의해야 송출
+                if room.get("pending_send"):
+                    try:
+                        await websocket.send_text(json.dumps({"type": "send_cancel", "reason": "이미 송출 동의가 진행 중입니다."}))
+                    except: pass
+                    continue
+                room["pending_send"] = {
+                    "requesterId": client_id,
+                    "title": (msg.get("title") or room["title"] or "합작").strip()[:60],
+                    "consents": {client_id},   # 제안자는 자동 동의
+                }
+                await _room_broadcast(room, json.dumps({
+                    "type": "send_request",
+                    "requesterId": client_id, "requesterName": name,
+                    "title": room["pending_send"]["title"],
+                    "agreed": 1, "total": len(room["participants"]),
+                }))
+                await _room_maybe_send_go(room)
+
+            elif mtype == "send_consent":
+                ps = room.get("pending_send")
+                if not ps:
+                    continue
+                if msg.get("accept"):
+                    ps["consents"].add(client_id)
+                    await _room_broadcast(room, json.dumps({
+                        "type": "send_progress",
+                        "agreed": len(ps["consents"] & set(room["participants"].keys())),
+                        "total": len(room["participants"]),
+                    }))
+                    await _room_maybe_send_go(room)
+                else:
+                    room["pending_send"] = None
+                    await _room_broadcast(room, json.dumps({
+                        "type": "send_cancel", "reason": f"{name}님이 동의하지 않아 취소되었습니다."
+                    }))
     except:
         pass
     finally:
@@ -755,6 +811,17 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
             if not room["participants"]:
                 room["empty_since"] = datetime.now()
             await _room_broadcast(room, json.dumps({"type": "participant_left", "clientId": client_id}))
+
+            # ✨ 송출 동의 진행 중이었다면: 제안자가 나가면 취소, 아니면 남은 인원 기준으로 재판정
+            ps = room.get("pending_send")
+            if ps:
+                if ps["requesterId"] == client_id or not room["participants"]:
+                    room["pending_send"] = None
+                    await _room_broadcast(room, json.dumps({
+                        "type": "send_cancel", "reason": "제안자가 나가서 취소되었습니다."
+                    }))
+                else:
+                    await _room_maybe_send_go(room)
 
 async def cleanup_empty_rooms():
     # 아무도 없는 방은 그림 상태를 들고 있을 주체가 없으므로 일정 시간 뒤 정리

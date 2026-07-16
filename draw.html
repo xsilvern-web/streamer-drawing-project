@@ -955,6 +955,9 @@
                     <span id="room-status" style="display:none; align-items:center; gap:8px; margin-left:10px; background:#004d40; border:1px solid #00897b; border-radius:4px; padding:4px 8px;">
                         <span style="font-size:12px; color:#80cbc4; font-weight:bold;">🎨 <span id="room-status-title"></span></span>
                         <span id="room-status-people" style="font-size:11px; color:#b2dfdb;"></span>
+                        <button id="btn-room-broadcast"
+                            style="background:#ff9800; color:#fff; border:none; border-radius:3px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;"
+                            title="참가자 전원이 동의하면 합작 전 과정이 방송에 재생됩니다">📢 다같이 보내기</button>
                         <button id="btn-room-leave"
                             style="background:#d32f2f; color:#fff; border:none; border-radius:3px; padding:2px 8px; font-size:11px; font-weight:bold; cursor:pointer;">나가기</button>
                     </span>
@@ -1005,6 +1008,23 @@
             </div>
             <div class="disclaimer">
                 ※ [조작 커서 ↖] 도구로 객체를 선택 및 이동하세요. (Shift 누르고 크기조절 시 비율 유지) / <b>일반 그림 조작 단축키: Alt + T</b>
+            </div>
+        </div>
+
+        <!-- ✨ 합작 송출 동의 창 -->
+        <div id="room-consent"
+            style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
+            <div
+                style="background:#2d2d2d; color:#eee; width:420px; max-width:92%; border-radius:10px; padding:24px; box-shadow:0 8px 30px rgba(0,0,0,0.5); border:1px solid #ff9800; font-family:'Malgun Gothic',sans-serif;">
+                <h3 style="margin:0 0 10px; color:#ff9800;">📢 합작 송출 동의</h3>
+                <p id="room-consent-text" style="font-size:13px; color:#ddd; white-space:pre-wrap; margin:0 0 12px;"></p>
+                <div id="room-consent-count" style="font-size:12px; color:#80cbc4; font-weight:bold; margin-bottom:14px;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:8px;">
+                    <button id="btn-consent-no"
+                        style="background:#555; color:#fff; border:none; padding:9px 18px; border-radius:4px; cursor:pointer; font-weight:bold;">거절</button>
+                    <button id="btn-consent-yes"
+                        style="background:#ff9800; color:#fff; border:none; padding:9px 18px; border-radius:4px; cursor:pointer; font-weight:bold;">동의</button>
+                </div>
             </div>
         </div>
 
@@ -1585,9 +1605,11 @@
 
             async function finalizePath(item) {
                 // ✨ 합작방: 완성된 액션(채우기/도형/래스터/유동화)을 중계.
-                //    펜/지우개 path는 이미 실시간 스트로크로 중계되므로 제외(이중 렌더 방지).
-                if (typeof Room !== 'undefined' && Room.active && item && item.type && item.type !== 'path') {
-                    roomSend({ type: 'draw', event: 'action', frameId: currentFrameId, item });
+                //    펜/지우개 path는 이미 실시간 스트로크로 중계되므로 중계는 제외(이중 렌더 방지).
+                //    단 '합작 송출용 기록'에는 path도 포함해야 과정 재생이 된다.
+                if (typeof Room !== 'undefined' && Room.active && item && item.type) {
+                    if (item.type !== 'path') roomSend({ type: 'draw', event: 'action', frameId: currentFrameId, item });
+                    roomRecordMine(item, currentFrameId);
                 }
 
                 history.push(item);
@@ -3956,6 +3978,8 @@ async function redrawCanvas() {
                         removeFromPlayback(prev);
                     }
                     // ✨ 합작방: undo는 액션 되돌리기를 중계하는 대신 '내 레이어 픽셀'을 재동기(가장 안전)
+                    //    + 합작 송출 기록에서도 그 아이템을 빼서 과정 재생이 실제와 일치하게 한다.
+                    if (typeof Room !== 'undefined' && Room.active) roomUndoRecord(item);
                     redrawCanvas().then(() => { if (typeof Room !== 'undefined' && Room.active) roomResyncMyLayer(); });
                     return;
                 } else if (hasBakedAny) {
@@ -3976,7 +4000,8 @@ async function redrawCanvas() {
                         history.push(nxt);
                         fullPlaybackRecord.push(nxt);
                     }
-                    // ✨ 합작방: redo도 undo와 동일하게 내 레이어 픽셀 재동기
+                    // ✨ 합작방: redo도 undo와 동일하게 내 레이어 픽셀 재동기 + 기록 복구
+                    if (typeof Room !== 'undefined' && Room.active) roomRedoRecord(item, currentFrameId);
                     redrawCanvas().then(() => { if (typeof Room !== 'undefined' && Room.active) roomResyncMyLayer(); });
                 }
             }
@@ -4725,6 +4750,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             checkDonationStatus(); setInterval(checkDonationStatus, 10000);
 
             function clearMyCanvas() {
+                // ✨ 방 안에서는 frames를 통째로 날리면 방 프레임 동기가 깨진다(새 프레임 id 생성 + 서버로 frame_op 발신).
+                //    '본인 것만' 비우는 전용 경로로 우회한다.
+                if (typeof Room !== 'undefined' && Room.active) { roomClearMyLayers(); return; }
                 frames.forEach(f => {
                     f.layers.forEach(l => {
                         if (l.type === 'canvas' && l.canvas) l.canvas.remove();
@@ -5268,7 +5296,35 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 remote: new Map(),         // `${frameId}::${clientId}` -> {canvas, ctx}
                 strokes: new Map(),        // senderId -> {lastPoint, draft, draftCtx, opacity, brushType, spacing, isEraser, color}
                 pendingPts: [], flushTimer: null, curStrokeId: null,
+                // ✨ 합작 송출용 '전 과정 기록'. 내 획 + 남의 획을 목격 순서대로 쌓는다.
+                //    (원격 획은 픽셀로만 그리고 버리므로, 기록해두지 않으면 합작 타임랩스를 만들 수 없다)
+                //    layerId는 모두 '방 레이어 id(rlayer_cN)'로 통일해서 담는다.
+                playback: [],
             };
+
+            // 내가 그린 액션을 합작 기록에 추가 (로컬 layerId → 내 방 레이어 id로 치환)
+            // __src는 undo 시 원본 아이템을 찾아 제거하기 위한 참조 (전송 전에 제거됨)
+            function roomRecordMine(item, frameId) {
+                if (!Room.active || !item || !item.type) return;
+                Room.playback.push({ ...item, layerId: Room.myLayerId, __frameId: frameId, __src: item });
+            }
+
+            // undo: 내 기록에서 해당 아이템 제거 + 남들 기록에서도 같은 레이어의 마지막 항목 제거
+            function roomUndoRecord(item) {
+                if (!Room.active) return;
+                for (let i = Room.playback.length - 1; i >= 0; i--) {
+                    if (Room.playback[i].__src === item) { Room.playback.splice(i, 1); break; }
+                }
+                roomSend({ type: 'draw', event: 'undo_last' });
+            }
+
+            // redo: 되살린 아이템을 내 기록에 다시 넣고 남들 기록에도 추가 (픽셀은 resync가 맞춤)
+            function roomRedoRecord(item, frameId) {
+                if (!Room.active) return;
+                roomRecordMine(item, frameId);
+                const clean = { ...item };
+                roomSend({ type: 'draw', event: 'record_add', frameId, item: clean });
+            }
 
             const roomSend = (obj) => {
                 if (Room.active && Room.ws && Room.ws.readyState === 1) {
@@ -5372,6 +5428,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     st.isEraser = !!msg.isEraser;
                     st.color = msg.color;
                     st.frameId = frameId;
+                    st.recPoints = [msg.point];   // ✨ 합작 기록용 점 누적 시작
                     if (!st.isEraser) {
                         st.draftCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                         st.draft.style.opacity = st.opacity;
@@ -5392,8 +5449,19 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                                 pt.x, pt.y, pt.w, roomHexToRgba1(st.color), false, st.brushType, st.spacing);
                         }
                         st.lastPoint = pt;
+                        if (st.recPoints) st.recPoints.push(pt);   // ✨ 합작 기록용 누적
                     }
                 } else if (msg.event === 'end') {
+                    // ✨ 실시간 스트로크를 재생 가능한 path 아이템으로 조립해 합작 기록에 남긴다
+                    if (st.recPoints && st.recPoints.length > 0) {
+                        Room.playback.push({
+                            type: 'path', layerId: msg.layerId, __frameId: frameId,
+                            color: st.isEraser ? 'erase' : st.color,
+                            opacity: st.isEraser ? 1 : (st.opacity !== undefined ? st.opacity : 1),
+                            points: st.recPoints, brushType: st.brushType, spacing: st.spacing,
+                        });
+                        st.recPoints = null;
+                    }
                     if (!st.isEraser && st.draft) {
                         // 로컬 pointerup과 동일한 합성 규칙 (투명도는 여기서 한 번에 확정)
                         target.ctx.globalAlpha = st.opacity !== undefined ? st.opacity : 1;
@@ -5413,6 +5481,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (!frames.some(f => f.id === msg.frameId)) return;
                 const target = roomRemoteLayer(msg.frameId, msg.senderId);
                 const item = msg.item || {};
+                // ✨ 합작 송출 기록에 남의 완성 액션도 그대로 축적
+                if (item.type) Room.playback.push({ ...item, layerId: msg.layerId, __frameId: msg.frameId });
                 const ctx = target.ctx;
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1.0;
@@ -5606,10 +5676,43 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     }
                     if (msg.type === 'room_state') { await roomApplyState(msg.state); return; }
                     if (msg.type === 'frames_updated') { roomRebuildFrames(msg.frames || []); return; }
+
+                    // ---- 합작 송출 동의 흐름 ----
+                    if (msg.type === 'send_request') {
+                        if (msg.requesterId === Room.myId) return;   // 제안자는 자동 동의 처리됨
+                        roomShowConsent(msg);
+                        return;
+                    }
+                    if (msg.type === 'send_progress') {
+                        const el = document.getElementById('room-consent-count');
+                        if (el) el.innerText = `동의 ${msg.agreed} / ${msg.total}`;
+                        return;
+                    }
+                    if (msg.type === 'send_cancel') { roomHideConsent(); alert('합작 송출 취소: ' + (msg.reason || '')); return; }
+                    if (msg.type === 'send_go') {
+                        roomHideConsent();
+                        // 전원 동의 완료 — 호스트만 조립·전송 (중복 송출 방지)
+                        if (msg.assemblerId === Room.myId) await roomSubmitBroadcast(msg.title, msg.participants || []);
+                        else alert('전원이 동의했습니다. 합작 송출이 진행됩니다!');
+                        return;
+                    }
                     if (msg.type === 'draw') {
-                        if (msg.event === 'resync') await roomHandleResync(msg);
-                        else if (msg.event === 'action') await roomHandleAction(msg);
-                        else await roomHandleDraw(msg);
+                        if (msg.senderId === Room.myId) return;   // 에코 차단
+                        if (msg.event === 'resync') { await roomHandleResync(msg); return; }
+                        if (msg.event === 'action') { await roomHandleAction(msg); return; }
+                        if (msg.event === 'undo_last') {
+                            // ✨ 남이 undo → 그 사람 레이어의 마지막 기록을 합작 기록에서 제거 (픽셀은 뒤이어 오는 resync가 맞춤)
+                            for (let i = Room.playback.length - 1; i >= 0; i--) {
+                                if (Room.playback[i].layerId === msg.layerId) { Room.playback.splice(i, 1); break; }
+                            }
+                            return;
+                        }
+                        if (msg.event === 'record_add') {
+                            // ✨ 남이 redo → 기록에만 되살림 (픽셀은 resync가 맞춤)
+                            if (msg.item && msg.item.type) Room.playback.push({ ...msg.item, layerId: msg.layerId, __frameId: msg.frameId });
+                            return;
+                        }
+                        await roomHandleDraw(msg);
                         return;
                     }
                 };
@@ -5630,14 +5733,97 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (!silent) alert('합작방에서 나왔습니다. (내가 그린 레이어는 그대로 남아 있습니다)');
             }
 
+            // ---------- 합작 송출: 전 과정 페이로드 조립 ----------
+            // 호스트만 호출한다(방 시작부터의 전 과정을 가진 유일한 참가자).
+            function roomBuildBroadcastPayload(participants, frameId) {
+                const payload = [];
+                // 1) 참가자 전원의 레이어를 입장 순서(z순서)대로 선언 → 오버레이가 레이어별 캔버스를 만든다
+                payload.push({
+                    type: 'init_layers',
+                    layers: participants.map(p => ({ id: p.layerId, opacity: 1, blendMode: 'normal' })),
+                });
+                // 2) 목격 순서대로 쌓인 합작 기록에서 '해당 프레임' 것만 뽑아 이어붙인다
+                const valid = participants.map(p => p.layerId);
+                Room.playback.forEach(rec => {
+                    if (rec.__frameId !== frameId) return;
+                    if (!valid.includes(rec.layerId)) return;   // 나간 사람 기록은 제외
+                    const item = { ...rec };
+                    delete item.__frameId; delete item.__src;
+                    payload.push(item);
+                });
+                return payload;
+            }
+
+            async function roomSubmitBroadcast(title, participants) {
+                const frameId = currentFrameId;
+                const drawingData = roomBuildBroadcastPayload(participants, frameId);
+                if (drawingData.length <= 1) { alert('합작 송출: 그려진 내용이 없습니다.'); return; }
+
+                const names = participants.map(p => p.name).join(', ');
+                const payload = {
+                    name: names.slice(0, 60),
+                    email: (typeof loggedInUser !== 'undefined' && loggedInUser) ? loggedInUser.email : 'test@test.com',
+                    naverEmail: (typeof loggedInUser !== 'undefined' && loggedInUser) ? (loggedInUser.naverEmail || '') : '',
+                    profileImage: '',
+                    title: `[합작] ${title}`,
+                    drawingData,
+                };
+                try {
+                    const res = await fetch(`${API_BASE}/api/submit-drawing`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                    });
+                    if (res.ok) alert('합작 송출 성공! 방송 화면에 전 과정이 재생됩니다.');
+                    else { const d = await res.json().catch(() => ({})); alert('합작 송출 실패: ' + (d.detail || '서버 오류')); }
+                } catch (e) { alert('서버 연결에 실패했습니다.'); }
+            }
+
+            // ---------- 합작 송출: 동의 UI ----------
+            function roomShowConsent(msg) {
+                const box = document.getElementById('room-consent');
+                document.getElementById('room-consent-text').innerText =
+                    `${msg.requesterName}님이 "[합작] ${msg.title}" 송출을 제안했습니다.\n동의하면 방송 화면에 합작 전 과정이 재생됩니다.`;
+                document.getElementById('room-consent-count').innerText = `동의 ${msg.agreed} / ${msg.total}`;
+                box.style.display = 'flex';
+            }
+            function roomHideConsent() {
+                const box = document.getElementById('room-consent');
+                if (box) box.style.display = 'none';
+            }
+
+            // ---------- 개인 송출 후: 내 레이어만 비우기 ----------
+            // clearMyCanvas는 frames를 통째로 날리고 createNewFrame을 불러 방 프레임 동기를 깨뜨린다.
+            function roomClearMyLayers() {
+                syncToFrame();
+                frames.forEach(f => {
+                    (f.layers || []).forEach(l => {
+                        if (l.type === 'canvas' && l.ctx) {
+                            l.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                            l.baseCanvas = null; l.baseCtx = null;
+                        }
+                    });
+                    f.history = []; f.redoStack = []; f.fullPlaybackRecord = [];
+                    // 남들 화면에서도 내 레이어를 비운다 (작은 메시지)
+                    roomSend({ type: 'draw', event: 'action', frameId: f.id, item: { type: 'clear' } });
+                });
+                history = []; redoStack = []; fullPlaybackRecord = [];
+                // 합작 기록에서도 내 것만 제거
+                Room.playback = Room.playback.filter(r => r.layerId !== Room.myLayerId);
+                renderLayerUI();
+            }
+
             // ---------- 방 모드 가드 (레이어 구조를 흔드는 기능 차단) ----------
             function roomApplyGuards(on) {
                 const ids = ['btn-add-layer', 'btn-clear-all', 'btn-compress-history'];
                 ids.forEach(id => { const el = document.getElementById(id); if (el) el.style.display = on ? 'none' : ''; });
                 const fileLabel = document.querySelector('.file-label');
                 if (fileLabel) fileLabel.style.display = on ? 'none' : '';
-                const send = document.getElementById('donation-container');
-                if (send) send.style.opacity = on ? '0.45' : '';
+                // 개인 송출('화면에 띄우기')은 방 안에서도 허용 — 내 레이어만 나가고 내 것만 비워진다.
+                // 다중 프레임 전송은 방 프레임과 얽히므로 방에서는 숨기고, 켜져 있었다면 꺼서 상태를 되돌린다.
+                const animChk = document.getElementById('chk-animation-mode');
+                if (animChk) {
+                    if (on && animChk.checked) { animChk.checked = false; animChk.dispatchEvent(new Event('change')); }
+                    if (animChk.parentElement) animChk.parentElement.style.display = on ? 'none' : '';
+                }
             }
 
             // ---------- 로비 UI ----------
@@ -5710,6 +5896,22 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 document.getElementById('btn-room-leave').onclick = () => {
                     if (confirm('합작방에서 나가시겠습니까?')) roomLeave(false);
+                };
+
+                // ✨ 다같이 보내기 — 전원 동의해야 송출
+                document.getElementById('btn-room-broadcast').onclick = () => {
+                    if (!Room.active) return;
+                    const title = (document.getElementById('drawing-title').value || '').trim() || Room.title;
+                    if (!confirm(`"[합작] ${title}" 송출을 제안합니다.\n참가자 전원이 동의해야 방송에 나갑니다.\n\n계속할까요?`)) return;
+                    roomSend({ type: 'send_request', title });
+                };
+                document.getElementById('btn-consent-yes').onclick = () => {
+                    roomSend({ type: 'send_consent', accept: true });
+                    document.getElementById('btn-consent-yes').disabled = true;
+                };
+                document.getElementById('btn-consent-no').onclick = () => {
+                    roomSend({ type: 'send_consent', accept: false });
+                    roomHideConsent();
                 };
             })();
 
