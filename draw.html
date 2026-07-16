@@ -4190,10 +4190,27 @@ async function redrawCanvas() {
             id: f.id, duration: f.duration, layerCounter: f.layerCounter, 
             history: f.history, redoStack: f.redoStack,
             fullPlaybackRecord: f.fullPlaybackRecord || f.history, // ✨ 프레임별 전체 기록 저장
-            layersInfo: f.layers.filter(l => l.type === 'canvas').map(l => ({ 
-                id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal',
-                baseRaster: l.baseCanvas ? l.baseCanvas.toDataURL('image/png') : null // ✨ 레이어별 구워진 바닥 저장
-            })),
+            layersInfo: [
+                ...f.layers.filter(l => l.type === 'canvas').map(l => ({
+                    id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal',
+                    baseRaster: l.baseCanvas ? l.baseCanvas.toDataURL('image/png') : null // ✨ 레이어별 구워진 바닥 저장
+                })),
+                // ✨ 합작방: 남의 레이어는 layers 배열 밖에 있어 그냥 두면 '내 그림만' 저장된다.
+                //    편집 이력은 없으므로 '구워진 레이어(baseRaster)'로 담아 다시 열면 합작 전체가 보이게 한다.
+                ...((typeof Room !== 'undefined' && Room.active)
+                    ? [...Room.remote.entries()]
+                        .filter(([key]) => key.startsWith(f.id + '::'))
+                        .map(([key, r]) => {
+                            const cid = key.slice((f.id + '::').length);
+                            const p = Room.participants.find(x => x.clientId === cid);
+                            return {
+                                id: 'room_' + cid, name: (p ? p.name : '나간 참가자') + ' (합작)',
+                                visible: true, opacity: 1, blendMode: 'normal',
+                                baseRaster: r.canvas.toDataURL('image/png')
+                            };
+                        })
+                    : [])
+            ],
             transformObjects: savedTransformObjects
         };
     });
@@ -4821,6 +4838,17 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     offCanvas.height = CANVAS_HEIGHT;
                     const offCtx = offCanvas.getContext('2d');
 
+                    // ✨ 합작방에서는 남의 레이어가 layers 배열 밖에 있으므로, 그대로 두면 '내 그림만' 저장된다.
+                    //    화면에 보이는 합작 전체를 그대로 내보낸다.
+                    if (typeof Room !== 'undefined' && Room.active) {
+                        roomCompositeFrameTo(offCtx, frameData);
+                        const link0 = document.createElement('a');
+                        link0.download = totalFrames > 1 ? `${baseFileName}_${index + 1}.png` : `${baseFileName}.png`;
+                        link0.href = offCanvas.toDataURL('image/png');
+                        document.body.appendChild(link0); link0.click(); document.body.removeChild(link0);
+                        return;
+                    }
+
                     const sortedLayers = [...frameData.layers].filter(l => l.visible).sort((a, b) => {
                         const zA = a.type === 'canvas' ? parseInt(a.canvas?.style.zIndex || 0) : parseInt(a.element?.style.zIndex || 0);
                         const zB = b.type === 'canvas' ? parseInt(b.canvas?.style.zIndex || 0) : parseInt(b.element?.style.zIndex || 0);
@@ -4902,6 +4930,13 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 for (let f of frames) {
                     tempCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                    // ✨ 합작방에서는 남의 레이어까지 합성해야 화면과 같은 결과가 나온다
+                    if (typeof Room !== 'undefined' && Room.active) {
+                        roomCompositeFrameTo(tempCtx, f);
+                        images.push(tempCanvas.toDataURL('image/png'));
+                        continue;
+                    }
 
                     // 프레임 렌더링 (기존 PNG 내보내기 로직 활용)
                     const sortedLayers = [...f.layers].filter(l => l.visible).sort((a, b) => {
@@ -5808,21 +5843,41 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 return payload;
             }
 
+            // ✨ 한 프레임의 '보이는 그대로'(참가자 전원 레이어)를 주어진 ctx에 합성한다.
+            //    송출·PNG/GIF 내보내기·파일 저장이 모두 이걸 써서 '화면 = 결과물'을 보장한다.
+            function roomCompositeFrameTo(ctx, frame) {
+                ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+                const drawn = new Set();
+                // 1) 참가자 입장 순서(z순서)대로
+                Room.participants.forEach(p => {
+                    if (p.clientId === Room.myId) {
+                        const mine = (frame.layers || []).find(l => l.type === 'canvas' && l.canvas && l.visible !== false);
+                        if (mine) {
+                            ctx.globalAlpha = mine.opacity !== undefined ? mine.opacity : 1;
+                            ctx.drawImage(mine.canvas, 0, 0);
+                            ctx.globalAlpha = 1;
+                        }
+                    } else {
+                        const r = Room.remote.get(frame.id + '::' + p.clientId);
+                        if (r) ctx.drawImage(r.canvas, 0, 0);
+                        drawn.add(p.clientId);
+                    }
+                });
+                // 2) 나간 사람 그림도 캔버스에는 남아 있으므로 포함 (결과물이 화면과 달라지지 않게)
+                Room.remote.forEach((r, key) => {
+                    if (!key.startsWith(frame.id + '::')) return;
+                    const cid = key.slice((frame.id + '::').length);
+                    if (drawn.has(cid) || cid === Room.myId) return;
+                    ctx.drawImage(r.canvas, 0, 0);
+                });
+                ctx.globalAlpha = 1;
+            }
+
             // 프레임 하나를 '참가자 전원 레이어 합성' 이미지로 굽는다 (애니메이션 합작 송출용)
-            function roomFlattenFrame(frame, participants) {
+            function roomFlattenFrame(frame) {
                 const off = document.createElement('canvas');
                 off.width = CANVAS_WIDTH; off.height = CANVAS_HEIGHT;
-                const ctx = off.getContext('2d');
-                ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-                // 내 레이어
-                const mine = (frame.layers || []).find(l => l.type === 'canvas' && l.canvas);
-                const drawnFirst = participants.some(p => p.clientId === Room.myId);
-                if (drawnFirst && mine) ctx.drawImage(mine.canvas, 0, 0);
-                // 원격 레이어 — 나간 사람 캔버스도 화면에 남아 있으므로 전부 합성 (방송=화면 일치)
-                Room.remote.forEach((r, key) => {
-                    if (key.startsWith(frame.id + '::')) ctx.drawImage(r.canvas, 0, 0);
-                });
-                if (!drawnFirst && mine) ctx.drawImage(mine.canvas, 0, 0);
+                roomCompositeFrameTo(off.getContext('2d'), frame);
                 return off.toDataURL('image/png');
             }
 
@@ -5831,7 +5886,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 //    프레임이 하나면 '합작 타임랩스'(그리는 과정)로 송출.
                 if (frames.length > 1) {
                     syncToFrame();
-                    const animFrames = frames.map(f => ({ src: roomFlattenFrame(f, participants), duration: f.duration || 500 }));
+                    const animFrames = frames.map(f => ({ src: roomFlattenFrame(f), duration: f.duration || 500 }));
                     const names = participants.map(p => p.name).join(', ');
                     const payload = {
                         name: names.slice(0, 60),
