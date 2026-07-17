@@ -1070,7 +1070,8 @@
                 </div>
 
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                    <span style="font-size:12px; color:#ccc; font-weight:bold;">열려 있는 방</span>
+                    <span style="font-size:12px; color:#ccc; font-weight:bold;">열려 있는 방
+                        <span id="room-count" style="color:#4db6ac;">0개</span></span>
                     <button id="btn-room-refresh"
                         style="background:#455a64; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px;">🔄 새로고침</button>
                 </div>
@@ -6049,11 +6050,16 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-                async function refreshRooms() {
-                    listDiv.innerHTML = '<div style="padding:12px; color:#888; text-align:center;">불러오는 중...</div>';
+                const countEl = document.getElementById('room-count');
+                const setCount = (n) => { if (countEl) countEl.innerText = `${n}개`; };
+
+                async function refreshRooms(quiet) {
+                    // quiet=true면 '불러오는 중' 문구 없이 조용히 갱신 (자동 새로고침용, 깜빡임 방지)
+                    if (!quiet) listDiv.innerHTML = '<div style="padding:12px; color:#888; text-align:center;">불러오는 중...</div>';
                     try {
                         const res = await fetch(`${API_BASE}/api/rooms`);
                         const data = await res.json();
+                        setCount(data.length);
                         listDiv.innerHTML = '';
                         if (!data.length) {
                             listDiv.innerHTML = '<div style="padding:14px; color:#888; text-align:center;">열려 있는 방이 없습니다. 새로 만들어 보세요!</div>';
@@ -6089,10 +6095,23 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     }
                     modal.style.display = 'flex';
                     refreshRooms();
+                    startLobbyAutoRefresh();   // 로비가 열려 있는 동안 방 개수를 최신으로 유지
                 };
-                document.getElementById('btn-room-close').onclick = () => { modal.style.display = 'none'; };
-                modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-                document.getElementById('btn-room-refresh').onclick = refreshRooms;
+                // ✨ 로비가 열려 있는 동안만 5초마다 조용히 갱신 (열려 있는 방/인원 변화를 바로 반영)
+                let lobbyTimer = null;
+                function startLobbyAutoRefresh() {
+                    stopLobbyAutoRefresh();
+                    lobbyTimer = setInterval(() => {
+                        if (modal.style.display === 'none') { stopLobbyAutoRefresh(); return; }
+                        refreshRooms(true);
+                    }, 5000);
+                }
+                function stopLobbyAutoRefresh() { if (lobbyTimer) { clearInterval(lobbyTimer); lobbyTimer = null; } }
+
+                const closeLobby = () => { modal.style.display = 'none'; stopLobbyAutoRefresh(); };
+                document.getElementById('btn-room-close').onclick = closeLobby;
+                modal.addEventListener('click', (e) => { if (e.target === modal) closeLobby(); });
+                document.getElementById('btn-room-refresh').onclick = () => refreshRooms();
 
                 document.getElementById('btn-room-create').onclick = async () => {
                     const title = (document.getElementById('room-new-title').value || '').trim();
