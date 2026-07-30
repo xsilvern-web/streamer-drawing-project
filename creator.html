@@ -249,7 +249,10 @@
                     <button class="btn-primary" style="background: #9c27b0;" onclick="downloadBatchByDate()">📦 일괄
                         다운로드</button>
                 </div>
-                <button class="btn-primary" onclick="loadLedger()">🔄 새로고침</button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn-danger" onclick="stopReplay()" title="순차 재생을 중지하고 대기 중인 그림을 취소합니다">⏹ 재생 중지</button>
+                    <button class="btn-primary" onclick="loadLedger()">🔄 새로고침</button>
+                </div>
             </div>
 
             <div style="max-height: 400px; overflow-y: auto; margin-top: 15px;">
@@ -684,6 +687,8 @@
                         <td style="font-size: 12px; color: #bbb;">${item.time.split('.')[0]}</td>
                         <td>
                             <button class="btn-success" style="font-size: 11px; padding: 5px 10px;" onclick="replayDrawing(${item.id})">▶ 재생</button>
+                            <!-- ✨ 이 그림부터 최신까지 순차 재생 -->
+                            <button class="btn-warning" style="font-size: 11px; padding: 5px 10px; margin-left: 5px;" onclick="replayFromHere(${item.id})" title="이 그림부터 가장 최신 그림까지 순서대로 방송에 재생">⏭ 여기부터</button>
                             <!-- ✨ 다운로드 버튼 추가 -->
                             <button class="btn-primary" style="font-size: 11px; padding: 5px 10px; margin-left: 5px;" onclick="downloadSingleDrawing(${item.id}, '${item.name}', '${item.time}')">💾 다운</button>
                         </td>
@@ -707,6 +712,39 @@
                 }
             } catch (e) {
                 alert("재생 요청 실패");
+            }
+        }
+
+        // ✨ 이 그림부터 최신 그림까지 순차 재생
+        async function replayFromHere(id) {
+            if (!confirm(`ID ${id}번 그림부터 '가장 최신 그림까지' 순서대로 방송 화면에 재생하시겠습니까?\n(중간에 멈추려면 [⏹ 재생 중지]를 누르세요)`)) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/replay-from/${id}`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`${data.count}개의 그림을 순서대로 재생합니다.`);
+                } else {
+                    const d = await res.json().catch(() => ({}));
+                    alert("순차 재생 실패: " + (d.detail || "서버 오류"));
+                }
+            } catch (e) {
+                alert("순차 재생 요청 실패");
+            }
+        }
+
+        // ✨ 순차 재생 중지
+        async function stopReplay() {
+            if (!confirm("순차 재생을 중지하고 대기 중인 그림들을 취소하시겠습니까?")) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/replay-clear`, { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    alert(`순차 재생을 중지했습니다. (대기 중이던 ${data.removed}개 취소)`);
+                } else {
+                    alert("중지 실패");
+                }
+            } catch (e) {
+                alert("중지 요청 실패");
             }
         }
         // ✨ 2. 기존의 낡은 구형 renderBrushStroke 함수를 완전히 삭제하고 아래의 신형 비동기 함수로 교체합니다.

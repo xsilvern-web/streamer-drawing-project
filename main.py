@@ -2,7 +2,17 @@ import os
 import asyncio
 import json
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# ✨ 한국 표준시(UTC+9, DST 없음). 배포 서버(예: 클라우드타입)는 보통 UTC라 DB의 timestamp가
+#    UTC로 저장·반환되어 화면에 9시간 어긋나 보인다. tz 정보가 없는(naive) 값은 UTC로 간주하고 KST로 변환한다.
+KST = timezone(timedelta(hours=9))
+def _kst_str(ts):
+    if ts is None:
+        return ""
+    if getattr(ts, "tzinfo", None) is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -163,7 +173,7 @@ def _fetch_recent_donations():
     # email = 네이버 앱별 고유 식별자(차단 기준), naverEmail = 실제 메일 주소(참고용)
     return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"],
              "naverEmail": r["donor_naver_email"] or "", "title": r["drawing_title"],
-             "time": str(r["timestamp"])} for r in rows]
+             "time": _kst_str(r["timestamp"])} for r in rows]
 
 def _fetch_replay_row(ledger_id):
     conn = get_db_connection()
@@ -172,6 +182,15 @@ def _fetch_replay_row(ledger_id):
     row = cursor.fetchone()
     conn.close()
     return row
+
+def _fetch_replay_ids_from(ledger_id):
+    # ✨ 순차재생: 이 id부터 최신까지의 id 목록만 가볍게 조회(그림 데이터는 재생 순서가 됐을 때 하나씩 불러온다)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM ledger WHERE id >= %s ORDER BY id ASC", (ledger_id,))
+    ids = [r[0] for r in cursor.fetchall()]
+    conn.close()
+    return ids
 
 def _count_since(target_str):
     conn = get_db_connection()
@@ -205,7 +224,7 @@ def _fetch_donations_by_date(date):
     cursor.execute("SELECT id, donor_name, drawing_title, timestamp FROM ledger WHERE DATE(timestamp) = %s", (date,))
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": str(r["timestamp"])} for r in rows]
+    return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": _kst_str(r["timestamp"])} for r in rows]
 
 def _delete_old_data():
     conn = get_db_connection()
@@ -227,7 +246,7 @@ def _fetch_inquiries():
     cursor.execute("SELECT id, name, email, message, timestamp, is_read FROM inquiries ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": r["id"], "name": r["name"], "email": r["email"], "message": r["message"], "time": str(r["timestamp"]), "is_read": bool(r["is_read"])} for r in rows]
+    return [{"id": r["id"], "name": r["name"], "email": r["email"], "message": r["message"], "time": _kst_str(r["timestamp"]), "is_read": bool(r["is_read"])} for r in rows]
 
 def _delete_inquiry(inquiry_id):
     conn = get_db_connection()
@@ -424,6 +443,42 @@ async def replay_donation(ledger_id: int):
     await drawing_queue.put({"name": row[0], "profileImage": row[1], "title": row[2], "drawingData": json.loads(row[3])})
     return {"message": "success"}
 
+@app.post("/api/replay-from/{ledger_id}")
+async def replay_from(ledger_id: int):
+    # ✨ 이 그림부터 최신 그림까지 순차 재생. 큐에는 가벼운 마커만 넣고, 처리기가 재생 순서가 됐을 때
+    #    실제 그림 데이터를 하나씩 불러온다(전부 메모리에 올리지 않아 안전).
+    ids = await asyncio.to_thread(_fetch_replay_ids_from, ledger_id)
+    if not ids:
+        raise HTTPException(status_code=404, detail="재생할 그림이 없습니다.")
+    for i in ids:
+        await drawing_queue.put({"__replay_id": i})
+    return {"message": "success", "count": len(ids)}
+
+@app.post("/api/replay-clear")
+async def replay_clear():
+    # ✨ 순차 재생 중지: 대기 중인 '재생 마커'만 큐에서 제거(정상 후원은 유지)하고 현재 재생을 스킵한다.
+    global skip_current_drawing
+    removed = 0
+    kept = []
+    try:
+        while True:
+            item = drawing_queue.get_nowait()
+            drawing_queue.task_done()
+            if isinstance(item, dict) and item.get("__replay_id"):
+                removed += 1
+            else:
+                kept.append(item)
+    except asyncio.QueueEmpty:
+        pass
+    for item in kept:
+        drawing_queue.put_nowait(item)
+
+    skip_current_drawing = True
+    for connection in active_connections:
+        try: await connection.send_json({"type": "clear"})
+        except: pass
+    return {"message": "success", "removed": removed}
+
 @app.post("/api/submit-drawing")
 async def submit_drawing(request: Request):
     settings = await asyncio.to_thread(get_db_settings)
@@ -462,10 +517,17 @@ async def process_drawing_queue():
     global skip_current_drawing, current_playback_id
 
     while True:
-        try: 
+        try:
             payload = await drawing_queue.get()
-            skip_current_drawing = False 
-            
+            skip_current_drawing = False
+
+            # ✨ 순차재생 마커면 이 시점에 실제 그림 데이터를 불러온다(한 번에 하나만 메모리에 로드)
+            if isinstance(payload, dict) and payload.get("__replay_id"):
+                row = await asyncio.to_thread(_fetch_replay_row, payload["__replay_id"])
+                if not row:
+                    continue   # 삭제된 그림이면 건너뜀 (finally에서 task_done 처리)
+                payload = {"name": row[0], "profileImage": row[1], "title": row[2], "drawingData": json.loads(row[3])}
+
             # 목적지 분기 처리 (테스트 플래그 확인)
             target_connections = test_connections if payload.get("is_test") else active_connections
             
@@ -607,7 +669,7 @@ async def auto_delete_old_data():
 async def get_donation_data(ledger_id: int):
     row = await asyncio.to_thread(_fetch_donation, ledger_id)
     if not row: raise HTTPException(status_code=404, detail="데이터를 찾을 수 없습니다.")
-    return {"id": row["id"], "name": row["donor_name"], "title": row["drawing_title"], "data": json.loads(row["drawing_data"]), "time": str(row["timestamp"])}
+    return {"id": row["id"], "name": row["donor_name"], "title": row["drawing_title"], "data": json.loads(row["drawing_data"]), "time": _kst_str(row["timestamp"])}
 
 @app.get("/api/donations/by-date")
 async def get_donations_by_date(date: str):
