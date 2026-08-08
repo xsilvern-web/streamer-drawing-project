@@ -2434,6 +2434,7 @@
                         oldF.layers.forEach(l => {
                             if (l.type === 'canvas' && l.canvas) l.canvas.style.display = 'none';
                             else if (l.element) l.element.style.display = 'none';
+                            if (l.remainderPreview) l.remainderPreview.style.display = 'none';   // ✨ 변형 중 미리보기도 함께 숨김
                         });
                     }
                 }
@@ -2451,6 +2452,7 @@
                     if (l.visible) {
                         if (l.type === 'canvas' && l.canvas) l.canvas.style.display = 'block';
                         else if (l.element) l.element.style.display = 'flex';
+                        if (l.remainderPreview) l.remainderPreview.style.display = 'block';   // ✨ 변형 중 미리보기 복귀
                     }
                 });
 
@@ -2790,6 +2792,8 @@
                     const z = index + 2;
                     if (l.type === 'canvas' && l.canvas) l.canvas.style.zIndex = z;
                     else if (l.element) l.element.style.zIndex = z;
+                    // ✨ 변형 중 '남은 그림' 미리보기는 해당 레이어와 같은 층에 둔다(변형 박스 바로 아래)
+                    if (l.remainderPreview) l.remainderPreview.style.zIndex = z;
                 });
             }
 
@@ -3079,6 +3083,8 @@
                     const ctx = cvs.getContext('2d');
                     // ✨ 선택영역만 변형한 경우: 남겨둔 나머지 그림(baseCanvas)을 먼저 깔아야 사라지지 않는다.
                     if (layer.baseCanvas) ctx.drawImage(layer.baseCanvas, 0, 0);
+                    // 옮기는 동안 보여주던 '남은 그림' 미리보기는 이제 실제 캔버스에 합쳐졌으므로 제거
+                    if (layer.remainderPreview) { layer.remainderPreview.remove(); delete layer.remainderPreview; }
                     ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                     ctx.drawImage(contentCvs, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
 
@@ -3188,6 +3194,23 @@
                 if (layer.canvas) layer.canvas.remove();
                 delete layer.canvas;
                 delete layer.ctx;
+
+                // ✨ 선택 영역만 옮길 때, '남은 그림'을 화면에 계속 보여준다.
+                //    (baseCanvas에 보관만 하고 캔버스를 지워버리면 옮기는 동안 아무것도 안 보여
+                //     위치를 맞출 수 없다. 확정 시 applyTransform에서 제거된다.)
+                if (usePath && layer.baseCanvas) {
+                    const prev = document.createElement('canvas');
+                    prev.width = CANVAS_WIDTH; prev.height = CANVAS_HEIGHT;
+                    prev.className = 'drawing-layer transform-remainder';
+                    prev.style.position = 'absolute';
+                    prev.style.top = '0'; prev.style.left = '0';
+                    prev.style.pointerEvents = 'none';
+                    prev.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
+                    prev.style.mixBlendMode = layer.blendMode || 'normal';
+                    prev.getContext('2d').drawImage(layer.baseCanvas, 0, 0);
+                    layerWrapper.appendChild(prev);
+                    layer.remainderPreview = prev;
+                }
 
                 const wrapper = document.createElement('div');
                 wrapper.className = `transform-box type-transform_box active`;
