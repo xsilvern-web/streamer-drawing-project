@@ -295,6 +295,19 @@
             cursor: pointer;
         }
 
+        /* ✨ 단축키 안내용 키 표시 */
+        kbd {
+            background: #1e1e1e;
+            border: 1px solid #555;
+            border-bottom-width: 2px;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: Consolas, monospace;
+            font-size: 11px;
+            color: #fff;
+            white-space: nowrap;
+        }
+
         #color-picker {
             width: 35px;
             height: 35px;
@@ -949,6 +962,9 @@
                     <button id="btn-clear-all" class="btn-header"
                         style="background-color: #ff4757; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;">🗑️
                         전체 지우기</button>
+                    <button id="btn-shortcuts" class="btn-header"
+                        style="background-color: #3f51b5; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;"
+                        title="단축키 목록 보기">⌨️ 단축키</button>
                     <button id="btn-inquiry" class="btn-header"
                         style="background-color: #795548; color: white; border: none; padding: 5px 10px; margin-left: 10px; border-radius: 4px; cursor: pointer; font-weight: bold;"
                         title="개발자에게 버그 제보나 건의사항을 보냅니다">📮 개발자 문의</button>
@@ -1015,6 +1031,64 @@
             </div>
             <div class="disclaimer">
                 ※ [조작 커서 ↖] 도구로 객체를 선택 및 이동하세요. (Shift 누르고 크기조절 시 비율 유지) / <b>일반 그림 조작 단축키: Alt + T</b>
+            </div>
+        </div>
+
+        <!-- ✨ 단축키 안내 -->
+        <div id="shortcuts-modal"
+            style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:99999; align-items:center; justify-content:center;">
+            <div
+                style="background:#2d2d2d; color:#eee; width:620px; max-width:94%; max-height:82vh; overflow-y:auto; border-radius:10px; padding:24px; box-shadow:0 8px 30px rgba(0,0,0,0.5); border:1px solid #3f51b5; font-family:'Malgun Gothic',sans-serif;">
+                <h3 style="margin:0 0 14px; color:#7986cb;">⌨️ 단축키 안내</h3>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+                    <div>
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin-bottom:6px;">그리기 도구</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0;"><kbd>B</kbd></td><td style="color:#ccc;">펜(브러시)</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>E</kbd></td><td style="color:#ccc;">지우개</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>+</kbd> / <kbd>-</kbd></td><td style="color:#ccc;">브러시 굵기 조절 (1~100)</td></tr>
+                        </table>
+
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">편집</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td style="color:#ccc;">되돌리기</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td style="color:#ccc;">다시 실행</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>Enter</kbd></td><td style="color:#ccc;">텍스트·변형 객체 확정</td></tr>
+                        </table>
+                    </div>
+
+                    <div>
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin-bottom:6px;">선택 · 변형</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Alt</kbd>+<kbd>T</kbd></td><td style="color:#ccc;">선택 영역(올가미) 변형<br><span style="color:#888; font-size:11px;">선택 없으면 레이어 전체 변형</span></td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td style="color:#ccc;">선택 영역 해제</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>Shift</kbd></td><td style="color:#ccc;">크기 조절 시 비율 유지</td></tr>
+                        </table>
+
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">화면</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Alt</kbd>+<kbd>휠</kbd></td><td style="color:#ccc;">확대 / 축소</td></tr>
+                        </table>
+
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">레이어 · 프레임 목록</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Ctrl</kbd>+클릭</td><td style="color:#ccc;">여러 개 선택/해제</td></tr>
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Shift</kbd>+클릭</td><td style="color:#ccc;">범위 선택</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div style="margin-top:16px; padding:10px; background:#1e1e1e; border-radius:6px; font-size:11px; color:#aaa; line-height:1.7;">
+                    💡 <b style="color:#ccc;">확대 배율</b>은 좌측 하단 숫자칸에 직접 입력할 수 있고(10~1500%),
+                    바로 아래 <b style="color:#ccc;">확대 속도</b> 슬라이더로 휠 감도를 조절할 수 있습니다.<br>
+                    💡 텍스트·굵기 입력칸에 값을 적는 중에는 단축키가 동작하지 않습니다.
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                    <button id="btn-shortcuts-close"
+                        style="background:#3f51b5; color:#fff; border:none; padding:9px 20px; border-radius:4px; cursor:pointer; font-weight:bold;">닫기</button>
+                </div>
             </div>
         </div>
 
@@ -1402,8 +1476,10 @@
 
                 <div style="display: flex; gap: 3px; align-items: center; justify-content: space-between;">
                     <button class="sys-btn" id="btn-zoom-out" style="width: 25px; padding: 2px;">-</button>
-                    <span id="zoom-text"
-                        style="font-size: 11px; font-weight: bold; width: 35px; text-align: center;">100%</span>
+                    <!-- ✨ 확대 배율 직접 입력 (10~1500%) -->
+                    <input type="number" id="zoom-text" value="100" min="10" max="1500" step="10"
+                        title="확대 배율을 직접 입력하세요 (10~1500%)"
+                        style="font-size: 11px; font-weight: bold; width: 46px; text-align: center; background:#333; color:#fff; border:1px solid #555; border-radius:3px; padding:2px;">
                     <button class="sys-btn" id="btn-zoom-in" style="width: 25px; padding: 2px;">+</button>
 
                     <!-- 이미지 로드 버튼 -->
@@ -1412,6 +1488,13 @@
                         📁 이미지 로드
                         <input type="file" id="image-load-file" accept="image/*" style="display: none;">
                     </label>
+                </div>
+                <!-- ✨ 확대 속도(감도) 조절 -->
+                <div style="display:flex; align-items:center; gap:5px; margin-top:4px;">
+                    <span style="font-size:10px; color:#aaa; white-space:nowrap;">확대 속도</span>
+                    <input type="range" id="zoom-speed" min="0.2" max="4" step="0.1" value="1"
+                        title="Alt+휠 / +- 버튼의 확대 감도" style="flex:1; height:14px;">
+                    <span id="zoom-speed-val" style="font-size:10px; color:#4db6ac; width:24px; text-align:right;">x1.0</span>
                 </div>
             </div>
 
@@ -1561,7 +1644,8 @@
                 layerWrapper.style.left = Math.max(0, (wsRect.width - scaledWidth) / 2) + 'px';
                 layerWrapper.style.top = Math.max(0, (wsRect.height - scaledHeight) / 2) + 'px';
 
-                zoomText.innerText = `${Math.round(zoomLevel * 100)}%`;
+                // ✨ 배율 표시(입력창). 사용자가 타이핑 중일 때는 덮어쓰지 않는다.
+                if (zoomText && document.activeElement !== zoomText) zoomText.value = Math.round(zoomLevel * 100);
             }
 
             window.addEventListener('resize', resizeCanvasToFit);
@@ -2093,11 +2177,48 @@
             toggleBgBtn.addEventListener('change', checkLiveStatus);
             checkLiveStatus();
 
-            document.getElementById('btn-zoom-in').onclick = () => updateZoom(zoomLevel + 0.1);
-            document.getElementById('btn-zoom-out').onclick = () => updateZoom(zoomLevel - 0.1);
+            // ✨ 확대 속도(감도). 1이 기본이고 값이 클수록 휠 한 칸/버튼 한 번에 더 많이 확대된다.
+            function getZoomSpeed() {
+                const el = document.getElementById('zoom-speed');
+                const v = el ? parseFloat(el.value) : 1;
+                return (isNaN(v) || v <= 0) ? 1 : v;
+            }
+            // 배율에 비례해 증감(고배율에서 한 칸이 너무 작게 느껴지지 않도록)
+            function zoomStep(dir) {
+                const factor = 1 + 0.1 * getZoomSpeed();
+                updateZoom(dir > 0 ? zoomLevel * factor : zoomLevel / factor);
+            }
+            document.getElementById('btn-zoom-in').onclick = () => zoomStep(1);
+            document.getElementById('btn-zoom-out').onclick = () => zoomStep(-1);
+
             scrollContainer.addEventListener('wheel', (e) => {
-                if (e.altKey) { e.preventDefault(); if (e.deltaY < 0) updateZoom(zoomLevel + 0.01); else updateZoom(zoomLevel - 0.01); }
+                if (e.altKey) {
+                    e.preventDefault();
+                    const factor = 1 + 0.05 * getZoomSpeed();
+                    updateZoom(e.deltaY < 0 ? zoomLevel * factor : zoomLevel / factor);
+                }
             }, { passive: false });
+
+            // ✨ 배율 직접 입력
+            (function initZoomInput() {
+                const inp = document.getElementById('zoom-text');
+                if (!inp) return;
+                const apply = () => {
+                    const v = parseFloat(inp.value);
+                    if (!isNaN(v)) updateZoom(Math.min(1500, Math.max(10, v)) / 100);
+                    inp.value = Math.round(zoomLevel * 100);
+                };
+                inp.addEventListener('change', apply);
+                inp.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); apply(); inp.blur(); }
+                    e.stopPropagation();   // 캔버스 단축키(B/E 등)가 타이핑을 가로채지 않게
+                });
+                const speed = document.getElementById('zoom-speed');
+                if (speed) speed.addEventListener('input', () => {
+                    const lbl = document.getElementById('zoom-speed-val');
+                    if (lbl) lbl.innerText = `x${parseFloat(speed.value).toFixed(1)}`;
+                });
+            })();
 
             function updateOnionSkin() {
                 const prevCanvas = document.getElementById('onion-prev');
@@ -6292,6 +6413,20 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             };
 
             // =====================================================================
+
+            // ✨ 단축키 안내 모달
+            (function initShortcuts() {
+                const modal = document.getElementById('shortcuts-modal');
+                const btn = document.getElementById('btn-shortcuts');
+                if (!modal || !btn) return;
+                const close = () => { modal.style.display = 'none'; };
+                btn.onclick = () => { modal.style.display = 'flex'; };
+                document.getElementById('btn-shortcuts-close').onclick = close;
+                modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+                window.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && modal.style.display === 'flex') close();
+                });
+            })();
 
             // ✨ 개발자 문의 모달 로직
             (function initInquiry() {
