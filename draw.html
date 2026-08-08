@@ -1143,6 +1143,15 @@
                 style="background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-weight: bold;">B</button>
             <button class="toolbar-btn" id="tb-italic"
                 style="background: #333; color: white; border: 1px solid #555; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-weight: bold; font-style: italic;">I</button>
+            <!-- ✨ 텍스트 정렬 -->
+            <span style="display:inline-flex; gap:4px; margin-left:6px;">
+                <button class="toolbar-btn tb-align" data-align="left" title="왼쪽 정렬"
+                    style="background:#333; color:white; border:1px solid #555; padding:5px 8px; border-radius:4px; cursor:pointer;">⯇</button>
+                <button class="toolbar-btn tb-align" data-align="center" title="가운데 정렬"
+                    style="background:#333; color:white; border:1px solid #555; padding:5px 8px; border-radius:4px; cursor:pointer;">≡</button>
+                <button class="toolbar-btn tb-align" data-align="right" title="오른쪽 정렬"
+                    style="background:#333; color:white; border:1px solid #555; padding:5px 8px; border-radius:4px; cursor:pointer;">⯈</button>
+            </span>
         </div>
         <!-- 선택 옵션바 아래에 픽셀 유동화 세팅창 추가 -->
         <div id="opt-liquify" style="display: none; gap: 15px; align-items: center;">
@@ -1541,7 +1550,8 @@
                 ctx.restore();
             }
             function updateZoom(newZoom) {
-                zoomLevel = Math.max(0.1, Math.min(newZoom, 5.0));
+                // ✨ 확대 최대치 500% → 1500% (세밀한 작업 요청 반영)
+                zoomLevel = Math.max(0.1, Math.min(newZoom, 15.0));
                 const finalScale = baseScale * zoomLevel;
                 layerWrapper.style.transform = `scale(${finalScale})`;
 
@@ -2826,7 +2836,10 @@
                     cvs.style.opacity = layer.opacity !== undefined ? layer.opacity : 1;
                     cvs.style.mixBlendMode = layer.blendMode || 'normal';
 
-                    const ctx = cvs.getContext('2d'); ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
+                    const ctx = cvs.getContext('2d');
+                    // ✨ 선택영역만 변형한 경우: 남겨둔 나머지 그림(baseCanvas)을 먼저 깔아야 사라지지 않는다.
+                    if (layer.baseCanvas) ctx.drawImage(layer.baseCanvas, 0, 0);
+                    ctx.save(); ctx.translate(cx, cy); ctx.rotate(angle);
                     ctx.drawImage(contentCvs, -boxW / 2, -boxH / 2, boxW, boxH); ctx.restore();
 
                     layer.element.replaceWith(cvs); layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
@@ -2861,12 +2874,59 @@
                 return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
             }
 
-            function activateTransform(layer) {
-                const bbox = getBoundingBox(layer.ctx, CANVAS_WIDTH, CANVAS_HEIGHT);
-                if (!bbox) return alert('변형할 그림이 없습니다.');
+            // selectionPath를 주면 '그 영역만' 오려내 변형 박스로 띄우고, 나머지 그림은 레이어에 그대로 남긴다.
+            // (레이어를 새로 만들지 않으므로 레이어가 늘지 않고, 확정 시 applyTransform이 같은 레이어에 다시 합친다)
+            function activateTransform(layer, selectionPath) {
+                const usePath = selectionPath && selectionPath.length > 2;
+
+                // 선택 영역이 있으면 그 부분만 별도 캔버스로 오려낸다
+                let sourceCtx = layer.ctx;
+                let cutCvs = null;
+                if (usePath) {
+                    cutCvs = document.createElement('canvas');
+                    cutCvs.width = CANVAS_WIDTH; cutCvs.height = CANVAS_HEIGHT;
+                    const cutCtx = cutCvs.getContext('2d');
+                    cutCtx.save();
+                    cutCtx.beginPath();
+                    cutCtx.moveTo(selectionPath[0].x, selectionPath[0].y);
+                    for (let i = 1; i < selectionPath.length; i++) cutCtx.lineTo(selectionPath[i].x, selectionPath[i].y);
+                    cutCtx.closePath();
+                    cutCtx.clip();
+                    cutCtx.drawImage(layer.canvas, 0, 0);
+                    cutCtx.restore();
+                    sourceCtx = cutCtx;
+                }
+
+                const bbox = getBoundingBox(sourceCtx, CANVAS_WIDTH, CANVAS_HEIGHT);
+                if (!bbox) return alert(usePath ? '선택한 영역에 그림이 없습니다.' : '변형할 그림이 없습니다.');
 
                 const tempCvs = document.createElement('canvas'); tempCvs.width = bbox.w; tempCvs.height = bbox.h;
-                tempCvs.getContext('2d').putImageData(layer.ctx.getImageData(bbox.x, bbox.y, bbox.w, bbox.h), 0, 0);
+                tempCvs.getContext('2d').putImageData(sourceCtx.getImageData(bbox.x, bbox.y, bbox.w, bbox.h), 0, 0);
+
+                if (usePath) {
+                    // ✨ 선택 영역만 원본에서 지우고(잘라내기), 나머지 그림은 '구워진 바닥'으로 보존한다.
+                    //    레이어가 곧 transform_box로 바뀌면서 캔버스가 사라지므로 픽셀을 baseCanvas에 옮겨둔다.
+                    layer.ctx.save();
+                    layer.ctx.beginPath();
+                    layer.ctx.moveTo(selectionPath[0].x, selectionPath[0].y);
+                    for (let i = 1; i < selectionPath.length; i++) layer.ctx.lineTo(selectionPath[i].x, selectionPath[i].y);
+                    layer.ctx.closePath();
+                    layer.ctx.globalCompositeOperation = 'destination-out';
+                    layer.ctx.fill();
+                    layer.ctx.restore();
+
+                    if (!layer.baseCanvas) {
+                        layer.baseCanvas = document.createElement('canvas');
+                        layer.baseCanvas.width = CANVAS_WIDTH; layer.baseCanvas.height = CANVAS_HEIGHT;
+                        layer.baseCtx = layer.baseCanvas.getContext('2d');
+                        layer.baseCtx.lineCap = 'round'; layer.baseCtx.lineJoin = 'round';
+                    }
+                    // 남은 그림 = 지금 레이어 캔버스 상태. 통째로 바닥에 굽고 히스토리는 초기화(이미 반영됐으므로)
+                    layer.baseCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    layer.baseCtx.drawImage(layer.canvas, 0, 0);
+                    history = history.filter(h => h.layerId !== layer.id);
+                    redoStack = [];
+                }
 
                 layer.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 if (layer.canvas) layer.canvas.remove();
@@ -4121,78 +4181,18 @@ async function redrawCanvas() {
                 if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
                 if (e.altKey && e.key.toLowerCase() === 't') {
                     e.preventDefault();
-                    // ✨ 합작방: 선택영역 분리는 레이어를 새로 만들어 '1인 1레이어' 규칙을 깨므로 차단
-                    if (typeof Room !== 'undefined' && Room.active) {
-                        alert('합작방에서는 선택영역 변형(Alt+T)을 사용할 수 없습니다.\n(레이어가 새로 생겨 남에게 보이지 않습니다)');
-                        return;
-                    }
                     if (activeLayerId) {
                         const layer = layers.find(l => l.id === activeLayerId);
                         if (layer && layer.type === 'canvas') {
 
                             // ✨ 1. 올가미 점선(선택 영역)이 활성화되어 있는지 확인
                             if (typeof currentSelectionPath !== 'undefined' && currentSelectionPath && currentSelectionPath.length > 2) {
-
-                                // 2. 선택 영역을 담을 '새 레이어' 생성
-                                layerCounter++;
-                                const newLayerId = `layer_${layerCounter}`;
-                                const newCvs = document.createElement('canvas');
-                                newCvs.id = newLayerId;
-                                newCvs.width = CANVAS_WIDTH;
-                                newCvs.height = CANVAS_HEIGHT;
-                                newCvs.className = 'drawing-layer';
-                                newCvs.style.pointerEvents = 'none'; // 변형 도구가 제어하므로 none 처리
-                                const newCtx = newCvs.getContext('2d');
-
-                                // 3. 선택 영역만큼만 가위로 오려서 새 레이어에 복사 (Clipping)
-                                newCtx.save();
-                                newCtx.beginPath();
-                                newCtx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
-                                for (let i = 1; i < currentSelectionPath.length; i++) newCtx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
-                                newCtx.closePath();
-                                newCtx.clip();
-                                newCtx.drawImage(layer.canvas, 0, 0);
-                                newCtx.restore();
-
-                                // 4. 원본 레이어에서는 오려낸 부분만큼 지우개로 뚫어버리기 (Cut 효과)
-                                layer.ctx.save();
-                                layer.ctx.beginPath();
-                                layer.ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
-                                for (let i = 1; i < currentSelectionPath.length; i++) layer.ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
-                                layer.ctx.closePath();
-                                layer.ctx.globalCompositeOperation = 'destination-out';
-                                layer.ctx.fill();
-                                layer.ctx.restore();
-
-                                // 5. 새 레이어를 시스템 배열에 등록
-                                const newLayer = {
-                                    id: newLayerId, name: `선택영역 변형`, canvas: newCvs, ctx: newCtx,
-                                    visible: true, opacity: 1, blendMode: 'normal', type: 'canvas'
-                                };
-
-                                // 현재 레이어 바로 위에 새 레이어를 삽입
-                                const currentIdx = layers.findIndex(l => l.id === activeLayerId);
-                                layers.splice(currentIdx + 1, 0, newLayer);
-                                layerWrapper.appendChild(newCvs);
-
-                                // 6. 뒤로가기(Ctrl+Z)를 위해 원본 레이어의 구멍 뚫린 상태 기록
-                                const transformItem = {
-                                    type: 'raster_image', layerId: layer.id,
-                                    src: layer.canvas.toDataURL('image/png'),
-                                    cx: CANVAS_WIDTH / 2, cy: CANVAS_HEIGHT / 2, width: CANVAS_WIDTH, height: CANVAS_HEIGHT, angle: 0
-                                };
-                                history.push(transformItem);
-                                fullPlaybackRecord.push(transformItem); // ✨ 송출용 기록에도 추가
-                                redoStack = []; // ✨ 새 작업이므로 이전 redo 기록 무효화 (유령 아이템 재주입 방지)
-
-                                // 7. UI 업데이트 및 점선(선택) 해제
+                                // ✨ 예전에는 선택 영역을 '새 레이어'로 분리해서 레이어가 계속 늘어나 불편했다.
+                                //    이제는 같은 레이어 안에서 선택 부분만 변형 박스로 띄우고(나머지는 그대로 남음),
+                                //    확정하면 원래 레이어에 다시 합쳐진다. 레이어가 늘지 않아 합작방에서도 사용 가능.
+                                const path = currentSelectionPath.slice();
                                 if (typeof clearSelection === 'function') clearSelection();
-                                updateLayersZIndex();
-                                renderLayerUI();
-                                selectLayer(newLayerId);
-
-                                // 8. 분리된 새 레이어를 대상으로 Transform(조작) 도구 즉시 실행
-                                setTimeout(() => { activateTransform(newLayer); }, 50);
+                                activateTransform(layer, path);
 
                             } else {
                                 // ✨ 선택 영역이 없을 때는 기존처럼 전체 레이어 조작
@@ -4542,6 +4542,13 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         activeTextContent.querySelectorAll('*').forEach(el => el.style.fontSize = `${value}px`);
                     }
                 }
+
+                // ✨ 정렬은 문단 속성이라 부분 선택이든 아니든 상자 전체에 적용하는 편이 자연스럽다.
+                //    (내부에 정렬이 박힌 자식이 있으면 상자 설정이 먹지 않으므로 함께 정리)
+                if (command === 'align') {
+                    activeTextContent.style.textAlign = value;
+                    activeTextContent.querySelectorAll('*').forEach(el => { if (el.style.textAlign) el.style.textAlign = value; });
+                }
             }
 
             // 이벤트 리스너 통합 연동
@@ -4549,6 +4556,10 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             document.getElementById('tb-bold')?.addEventListener('click', () => applyTextFormat('bold', null));
             document.getElementById('tb-italic')?.addEventListener('click', () => applyTextFormat('italic', null));
             document.getElementById('tb-fontfamily')?.addEventListener('change', (e) => applyTextFormat('fontName', e.target.value));
+            // ✨ 텍스트 정렬 (좌/가운데/우)
+            document.querySelectorAll('.tb-align').forEach(btn => {
+                btn.addEventListener('click', () => applyTextFormat('align', btn.getAttribute('data-align')));
+            });
 
             // ✨ input 이벤트를 사용하여 크기 조절 화살표를 누를 때마다 실시간으로 크기가 변경되도록 수정
             document.getElementById('tb-fontsize')?.addEventListener('input', (e) => applyTextFormat('fontSize', e.target.value));
@@ -4811,6 +4822,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                     // ✨ 2. 실시간 공지사항 팝업 감지
                     const noticeText = data.notice_text;
+                    // (renderNoticeText는 아래에 정의 — 안전한 서식 태그만 허용)
                     if (noticeText && noticeText.trim() !== '') {
                         // 공지 내용이 관리자에 의해 바뀌었을 때 (또는 처음 접속 시)
                         if (lastSeenNotice !== noticeText) {
@@ -4822,7 +4834,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                             // 오늘 하루 안보기를 체크하지 않았거나, 체크했더라도 공지가 '새로운 내용'으로 바뀌었다면 무조건 팝업!
                             if (!hideUntil || now > parseInt(hideUntil) || hiddenNotice !== noticeText) {
-                                document.getElementById('notice-content').innerText = noticeText;
+                                renderNoticeText(document.getElementById('notice-content'), noticeText);
                                 document.getElementById('notice-popup').style.display = 'flex';
                             }
                         }
@@ -5370,6 +5382,27 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             document.getElementById('btn-send').onclick = () => executeDrawingSend(false);
             document.getElementById('btn-send-test').onclick = () => executeDrawingSend(true);
 
+            // ✨ 공지사항 서식 렌더러
+            //    관리자가 [b]굵게[/b] [size=24]크게[/size] [color=#ff0000]색상[/color] 같은 태그를 쓸 수 있게 한다.
+            //    HTML을 그대로 넣으면 XSS가 되므로, 먼저 전부 이스케이프한 뒤 '허용된 태그만' 되살린다.
+            function renderNoticeText(el, text) {
+                if (!el) return;
+                let s = String(text == null ? '' : text)
+                    .replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+                s = s
+                    .replace(/\[b\]([\s\S]*?)\[\/b\]/gi, '<b>$1</b>')
+                    .replace(/\[i\]([\s\S]*?)\[\/i\]/gi, '<i>$1</i>')
+                    .replace(/\[u\]([\s\S]*?)\[\/u\]/gi, '<u>$1</u>')
+                    // 크기: 10~80px로 제한
+                    .replace(/\[size=(\d{1,2})\]([\s\S]*?)\[\/size\]/gi,
+                        (m, n, inner) => `<span style="font-size:${Math.min(80, Math.max(10, parseInt(n)))}px">${inner}</span>`)
+                    // 색상: #rgb / #rrggbb 또는 안전한 영문 색이름만
+                    .replace(/\[color=(#[0-9a-fA-F]{3,6}|[a-zA-Z]{3,20})\]([\s\S]*?)\[\/color\]/g,
+                        (m, c, inner) => `<span style="color:${c}">${inner}</span>`)
+                    .replace(/\n/g, '<br>');
+                el.innerHTML = s;
+            }
+
             async function checkNoticePopup() {
                 try {
                     const response = await fetch(`${API_BASE}/api/settings`);
@@ -5382,7 +5415,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         const now = new Date().getTime();
 
                         if (!hideUntil || now > parseInt(hideUntil)) {
-                            document.getElementById('notice-content').innerText = noticeText;
+                            renderNoticeText(document.getElementById('notice-content'), noticeText);
                             document.getElementById('notice-popup').style.display = 'flex';
                         }
                     }
