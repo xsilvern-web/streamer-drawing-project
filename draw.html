@@ -1043,17 +1043,31 @@
 
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
                     <div>
-                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin-bottom:6px;">그리기 도구</div>
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin-bottom:6px;">도구 선택</div>
                         <table style="width:100%; font-size:12px; border-collapse:collapse;">
                             <tr><td style="padding:3px 0;"><kbd>B</kbd></td><td style="color:#ccc;">펜(브러시)</td></tr>
                             <tr><td style="padding:3px 0;"><kbd>E</kbd></td><td style="color:#ccc;">지우개</td></tr>
-                            <tr><td style="padding:3px 0;"><kbd>+</kbd> / <kbd>-</kbd></td><td style="color:#ccc;">브러시 굵기 조절 (1~100)</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>G</kbd></td><td style="color:#ccc;">채우기(버킷)</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>I</kbd></td><td style="color:#ccc;">스포이드</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>V</kbd></td><td style="color:#ccc;">조작 커서</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>T</kbd></td><td style="color:#ccc;">텍스트</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>L</kbd></td><td style="color:#ccc;">올가미 선택</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>M</kbd></td><td style="color:#ccc;">사각형 선택</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>U</kbd></td><td style="color:#ccc;">도형(사각형)</td></tr>
+                        </table>
+
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">브러시</div>
+                        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>+</kbd> / <kbd>-</kbd></td><td style="color:#ccc;">굵기 조절 (1~100)</td></tr>
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>[</kbd> / <kbd>]</kbd></td><td style="color:#ccc;">굵기 조절 (동일)</td></tr>
                         </table>
 
                         <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">편집</div>
                         <table style="width:100%; font-size:12px; border-collapse:collapse;">
                             <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td style="color:#ccc;">되돌리기</td></tr>
                             <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td style="color:#ccc;">다시 실행</td></tr>
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td style="color:#ccc;">다시 실행 (동일)</td></tr>
+                            <tr><td style="padding:3px 0;"><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td style="color:#ccc;">파일 저장</td></tr>
                             <tr><td style="padding:3px 0;"><kbd>Enter</kbd></td><td style="color:#ccc;">텍스트·변형 객체 확정</td></tr>
                         </table>
                     </div>
@@ -1066,8 +1080,9 @@
                             <tr><td style="padding:3px 0;"><kbd>Shift</kbd></td><td style="color:#ccc;">크기 조절 시 비율 유지</td></tr>
                         </table>
 
-                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">화면</div>
+                        <div style="font-size:12px; color:#9fa8da; font-weight:bold; margin:14px 0 6px;">마우스</div>
                         <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                            <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>우클릭</kbd></td><td style="color:#ccc;">스포이드 (색 추출)<br><span style="color:#888; font-size:11px;">도구를 바꾸지 않아도 바로 사용</span></td></tr>
                             <tr><td style="padding:3px 0; white-space:nowrap;"><kbd>Alt</kbd>+<kbd>휠</kbd></td><td style="color:#ccc;">확대 / 축소</td></tr>
                         </table>
 
@@ -4341,16 +4356,47 @@ async function redrawCanvas() {
                         cursor.style.height = `${currentWidth * zoomLevel}px`;
                     }
                 }
-                // ✨ B (브러시/펜), E (지우개) 단축키
-                if (e.key.toLowerCase() === 'b') {
-                    e.preventDefault();
-                    document.querySelector('.tool-btn[data-tool="pen"]').click();
-                }
-                if (e.key.toLowerCase() === 'e') {
-                    e.preventDefault();
-                    document.querySelector('.tool-btn[data-tool="eraser"]').click();
+                // ✨ 도구 전환 단축키 (Ctrl/Alt 조합이 아닐 때만 — Ctrl+S 같은 조합과 충돌 방지)
+                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                    const toolKeys = {
+                        'b': 'pen',          // Brush
+                        'e': 'eraser',       // Eraser
+                        'g': 'fill',         // Gradient/fill(버킷)
+                        'i': 'eyedropper',   // eyedropper (스포이드) — 캔버스 우클릭으로도 가능
+                        'v': 'cursor',       // move/선택 커서
+                        't': 'text',         // Text
+                        'l': 'lasso',        // Lasso
+                        'm': 'rect_select',  // Marquee(사각형 선택)
+                        'u': 'rect',         // 도형(사각형)
+                    };
+                    const wanted = toolKeys[e.key.toLowerCase()];
+                    if (wanted) {
+                        const btn = document.querySelector(`.tool-btn[data-tool="${wanted}"]`);
+                        if (btn) { e.preventDefault(); btn.click(); }
+                    }
                 }
                 if (e.ctrlKey && e.key.toLowerCase() === 'd') { e.preventDefault(); clearSelection(); }
+                // ✨ Ctrl+S: 파일 저장 (브라우저 저장창 대신 프로젝트 저장)
+                if (e.ctrlKey && e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    document.getElementById('btn-save')?.onclick?.();
+                }
+                // ✨ Ctrl+Shift+Z: 다시 실행 (Ctrl+Y와 동일 — 다른 툴 습관 지원)
+                if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); redo(); }
+                // ✨ [ ] : 브러시 굵기 (포토샵 관례)
+                if (e.key === '[' || e.key === ']') {
+                    e.preventDefault();
+                    const delta = e.key === ']' ? 1 : -1;
+                    let val = Math.min(100, Math.max(1, currentWidth + delta));
+                    currentWidth = val;
+                    document.getElementById('width-input').value = val;
+                    document.getElementById('line-width').value = val;
+                    const cursor = document.getElementById('custom-cursor');
+                    if (cursor && (currentTool === 'pen' || currentTool === 'eraser')) {
+                        cursor.style.width = `${currentWidth * zoomLevel}px`;
+                        cursor.style.height = `${currentWidth * zoomLevel}px`;
+                    }
+                }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     autoRasterizeAllTransforms();
