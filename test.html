@@ -414,6 +414,20 @@
         let animationCache = [];
         // ✨ 타임랩스 재생 시 한 애니메이션 프레임에서 처리할 최대 아이템 수 (프리즈 방지)
         const MAX_ITEMS_PER_FRAME = 400;
+
+        // ✨ 기록에 clipPath(올가미 영역)가 있으면 재생 시에도 그 안쪽에만 그린다(편집 화면과 동일하게).
+        //    true를 반환하면 그린 뒤 ctx.restore()를 호출해야 한다.
+        function applyItemClip(ctx, item) {
+            const p = item && item.clipPath;
+            if (!p || p.length < 3 || !ctx) return false;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(p[0].x, p[0].y);
+            for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+            ctx.closePath();
+            ctx.clip();
+            return true;
+        }
         // ✨ 재생 '세대' 토큰: 새 타임랩스나 clear가 오면 증가시켜, 이전 후원의 뒤늦은 재생 콜백이
         //    다음 후원의 캔버스에 그려 순서가 꼬이는 것을 막는다.
         let timelapseGen = 0;
@@ -659,6 +673,9 @@
                         }
                         if (!ctx) continue;
 
+                        // ✨ 올가미 영역 안에서만 그린 획은 재생에서도 그 영역으로 제한 (편집 화면과 일치)
+                        const __clipped = applyItemClip(ctx, item);
+
                         ctx.globalCompositeOperation = 'source-over';
                         ctx.globalAlpha = 1.0;
 
@@ -691,7 +708,7 @@
                             }
                         }
                         else if (item.type === 'path' || !item.type) {
-                            if (!item.points || item.points.length === 0) continue;
+                            if (!item.points || item.points.length === 0) { if (__clipped) ctx.restore(); continue; }
                             const brushType = item.brushType || 'default';
                             const spacing = item.spacing || 0.1;
                             if (item.color === 'erase') {
@@ -713,6 +730,12 @@
                                         await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
                                     }
                                 }
+                                // ✨ 클리핑 마스크: 아래 레이어의 그림이 있는 곳만 남긴다(편집기와 동일)
+                                if (item.clipBelowId && layerContexts[item.clipBelowId] && layerContexts[item.clipBelowId].canvasNode) {
+                                    tmpCtx.globalCompositeOperation = 'destination-in';
+                                    tmpCtx.drawImage(layerContexts[item.clipBelowId].canvasNode, 0, 0);
+                                    tmpCtx.globalCompositeOperation = 'source-over';
+                                }
                                 ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1.0;
                                 ctx.drawImage(tmpCvs, 0, 0);
                             }
@@ -724,6 +747,7 @@
                             else if (shape === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
                             else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                         }
+                        if (__clipped) ctx.restore();
                     }
 
                     if (currentIndex < totalItems) {

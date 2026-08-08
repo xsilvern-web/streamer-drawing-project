@@ -1618,6 +1618,87 @@
             const scrollContainer = document.getElementById('scroll-container');
             let liqLastPos = null;
             let selectionMaskData = null;
+
+            // ✨ 올가미(선택 영역)가 살아있는 동안에는 그 안에서만 그려지도록 제한한다.
+            //    선택 모양대로 채운 마스크 캔버스를 만들고, 'destination-in'으로 바깥을 잘라낸다.
+            function hasActiveSelection() {
+                return !!(currentSelectionPath && currentSelectionPath.length > 2);
+            }
+            function getSelectionMaskCanvas() {
+                if (!hasActiveSelection()) return null;
+                let m = document.getElementById('selection-mask-canvas');
+                if (!m) {
+                    m = document.createElement('canvas');
+                    m.id = 'selection-mask-canvas';
+                    m.width = CANVAS_WIDTH; m.height = CANVAS_HEIGHT;
+                    m.style.display = 'none';
+                    document.body.appendChild(m);
+                }
+                const mc = m.getContext('2d');
+                mc.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                mc.beginPath();
+                mc.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                for (let i = 1; i < currentSelectionPath.length; i++) mc.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                mc.closePath();
+                mc.fillStyle = '#fff';
+                mc.fill();
+                return m;
+            }
+            // 레이어에 직접 그리는 도구(지우개 등)용: 선택 영역으로 clip을 건다.
+            // true를 반환하면 호출부가 그리기 후 ctx.restore()를 해야 한다.
+            function applySelectionClip(ctx) {
+                if (!hasActiveSelection() || !ctx) return false;
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(currentSelectionPath[0].x, currentSelectionPath[0].y);
+                for (let i = 1; i < currentSelectionPath.length; i++) ctx.lineTo(currentSelectionPath[i].x, currentSelectionPath[i].y);
+                ctx.closePath();
+                ctx.clip();
+                return true;
+            }
+
+            // ✨ 클리핑 마스크: 켜면 '바로 아래 레이어'의 그림이 있는 부분에만 그려진다.
+            function toggleClipToBelow(layerId) {
+                const idx = layers.findIndex(l => l.id === layerId);
+                if (idx <= 0) return alert('맨 아래 레이어에는 클리핑을 걸 수 없습니다.');
+                const l = layers[idx];
+                if (l.type !== 'canvas') return alert('텍스트/변형 객체는 [확정] 후 사용할 수 있습니다.');
+                l.clipToBelow = !l.clipToBelow;
+                renderLayerUI();
+            }
+            // 클리핑 대상(바로 아래 캔버스 레이어)을 찾는다.
+            function getClipBaseLayer(layerId) {
+                const idx = layers.findIndex(l => l.id === layerId);
+                if (idx <= 0) return null;
+                for (let i = idx - 1; i >= 0; i--) {
+                    if (layers[i].type === 'canvas' && layers[i].canvas) return layers[i];
+                }
+                return null;
+            }
+            // 임시 캔버스에서 '아래 레이어에 그림이 없는 부분'을 잘라낸다.
+            function clipToBelowLayer(canvasEl, layerId) {
+                const l = layers.find(x => x.id === layerId);
+                if (!l || !l.clipToBelow || !canvasEl) return null;
+                const base = getClipBaseLayer(layerId);
+                if (!base) return null;
+                const c = canvasEl.getContext('2d');
+                const prev = c.globalCompositeOperation;
+                c.globalCompositeOperation = 'destination-in';
+                c.drawImage(base.canvas, 0, 0);
+                c.globalCompositeOperation = prev || 'source-over';
+                return base.id;
+            }
+
+            // 임시 캔버스(draft/도형 버퍼)에서 선택 영역 바깥을 잘라낸다.
+            function clipToSelection(canvasEl) {
+                const mask = getSelectionMaskCanvas();
+                if (!mask || !canvasEl) return;
+                const c = canvasEl.getContext('2d');
+                const prev = c.globalCompositeOperation;
+                c.globalCompositeOperation = 'destination-in';
+                c.drawImage(mask, 0, 0);
+                c.globalCompositeOperation = prev || 'source-over';
+            }
             let baseScale = 1.0;
             let zoomLevel = 1.0;
 
@@ -1804,8 +1885,31 @@
                 }
             }
 
+            // ✨ 기록에 clipPath(올가미 영역)가 있으면 재생 시에도 그 안쪽에만 그린다.
+            //    true를 반환하면 그린 뒤 ctx.restore()를 호출해야 한다. (편집 화면 = 방송 화면 일치 보장)
+            function applyItemClip(ctx, item) {
+                const p = item && item.clipPath;
+                if (!p || p.length < 3 || !ctx) return false;
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(p[0].x, p[0].y);
+                for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+                ctx.closePath();
+                ctx.clip();
+                return true;
+            }
+
             // --- 3. 특정 아이템을 캔버스(ctx)에 그려주는 헬퍼 함수 ---
             async function renderToTarget(item, ctx) {
+                const __clipped = applyItemClip(ctx, item);
+                try {
+                    await renderToTargetInner(item, ctx);
+                } finally {
+                    if (__clipped) ctx.restore();
+                }
+            }
+
+            async function renderToTargetInner(item, ctx) {
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1.0;
 
@@ -3310,6 +3414,17 @@
                         rasterBtn.onclick = (e) => { e.stopPropagation(); applyTransform(l.id); };
                         btnGroup.appendChild(rasterBtn);
                     }
+
+                    // ✨ 클리핑 마스크 토글: 켜면 '바로 아래 레이어'의 불투명 영역 안에만 보인다.
+                    const idxForClip = layers.findIndex(layer => layer.id === l.id);
+                    if (l.type === 'canvas' && idxForClip > 0) {
+                        const clipBtn = document.createElement('button');
+                        clipBtn.innerText = l.clipToBelow ? '⤵클립' : '⤵';
+                        clipBtn.title = l.clipToBelow ? '클리핑 마스크 해제' : '아래 레이어에 클리핑 (아래 그림 안쪽에만 보임)';
+                        clipBtn.style.cssText = `padding:2px 6px; border-radius:3px; border:none; cursor:pointer; font-size:10px; color:white; background:${l.clipToBelow ? '#e65100' : '#555'};`;
+                        clipBtn.onclick = (e) => { e.stopPropagation(); toggleClipToBelow(l.id); };
+                        btnGroup.appendChild(clipBtn);
+                    }
                     // ✨ 위로 올리기 (화면의 앞으로 가져오기 -> 인덱스 증가)
                     const upBtn = document.createElement('button');
                     upBtn.innerText = '▲';
@@ -3433,7 +3548,8 @@
                 }
             }
 
-            function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap, sampleAllLayers = false, allLayers = []) {
+            // clipMask: 선택 영역 밖을 채우지 않도록 하는 마스크(Uint8ClampedArray, RGBA). 없으면 제한 없음.
+            function doFloodFill(ctx, startX, startY, colorStr, tolerance, gap, sampleAllLayers = false, allLayers = [], clipMask = null) {
                 const canvasW = ctx.canvas.width; const canvasH = ctx.canvas.height;
                 let sampleData;
 
@@ -3530,6 +3646,8 @@
                 const fd = fillImgData.data;
                 let filledCount = 0; // ✨ 실제 채워진 픽셀 수 (0이면 무효 채우기)
                 for (let i = 0; i < canvasW * canvasH; i++) {
+                    // ✨ 올가미 선택 영역이 있으면 그 안쪽 픽셀만 채운다(마스크 알파 0 = 바깥)
+                    if (clipMask && clipMask[i * 4 + 3] === 0) continue;
                     if (visited[i]) { fd[i * 4] = fillR; fd[i * 4 + 1] = fillG; fd[i * 4 + 2] = fillB; fd[i * 4 + 3] = fillA; filledCount++; }
                 }
                 // ✨ 한 픽셀도 못 채웠으면 무효 — 빈 스냅샷이 기록되어 undo 한 번을 허공에 소모하는 것 방지
@@ -3746,7 +3864,10 @@
                     const gap = gapInput ? parseInt(gapInput.value) : 1;
                     const sampleAll = sampleAllInput ? sampleAllInput.checked : false;
 
-                    const fillSnap = doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers);
+                    // ✨ 올가미 영역이 있으면 그 안에서만 채워지도록 마스크를 넘긴다
+                    const selMask = getSelectionMaskCanvas();
+                    const selMaskData = selMask ? selMask.getContext('2d').getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT).data : null;
+                    const fillSnap = doFloodFill(activeLayer.ctx, pos.x, pos.y, currentColor, tol, gap, sampleAll, layers, selMaskData);
 
                     // ✨ 아무것도 칠하지 못한 무효 채우기는 기록하지 않음 — undo가 허공에 한 번 소모되는 문제 방지
                     if (!fillSnap) return;
@@ -3980,7 +4101,11 @@
                         const opaqueColor = `rgba(${parseInt(currentColorHex.slice(1, 3), 16)}, ${parseInt(currentColorHex.slice(3, 5), 16)}, ${parseInt(currentColorHex.slice(5, 7), 16)}, 1)`;
                         renderBrushStroke(draftCtx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, opaqueColor, false, currentBrushType, currentSpacing);
                     } else {
+                        // 지우개는 draft를 못 쓰고(빈 캔버스에 destination-out은 무의미) 레이어에 직접 지운다.
+                        // ✨ 올가미 영역이 있으면 그 안에서만 지워지도록 세그먼트마다 clip을 건다(save/restore로 자체 완결).
+                        const clipped = applySelectionClip(ctx);
                         renderBrushStroke(ctx, lastX, lastY, currentPath[currentPath.length - 1].w, smX, smY, smW, currentColor, true, currentBrushType, currentSpacing);
+                        if (clipped) ctx.restore();
                     }
 
                     lastX = smX; lastY = smY; currentPath.push({ x: smX, y: smY, w: smW });
@@ -3999,13 +4124,17 @@
                         }
                     }
                 } else if (currentTool !== 'fill') {
-                    ctx.putImageData(canvasSnapshot, 0, 0); ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth;
+                    ctx.putImageData(canvasSnapshot, 0, 0);
+                    // ✨ 올가미 영역이 있으면 도형도 그 안에서만 그려지게 clip
+                    const shapeClipped = applySelectionClip(ctx);
+                    ctx.beginPath(); ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth;
                     if (currentTool === 'line') { ctx.moveTo(shapeStartX, shapeStartY); ctx.lineTo(pos.x, pos.y); }
                     else if (currentTool === 'rect') { ctx.rect(shapeStartX, shapeStartY, pos.x - shapeStartX, pos.y - shapeStartY); }
                     else if (currentTool === 'circle') { let radius = Math.hypot(pos.x - shapeStartX, pos.y - shapeStartY); ctx.arc(shapeStartX, shapeStartY, radius, 0, Math.PI * 2); }
                     // ✨ 도형 안 채우기 (직선은 채울 면이 없으므로 제외)
                     if (isShapeFilled() && currentTool !== 'line') { ctx.fillStyle = currentColor; ctx.fill(); }
                     ctx.stroke();
+                    if (shapeClipped) ctx.restore();
                 }
             });
 
@@ -4065,19 +4194,21 @@
                         if (currentTool === 'pen') {
                             const activeLayer = layers.find(l => l.id === activeLayerId);
                             const draftLayer = getDraftLayer();
+                            clipToSelection(draftLayer);   // ✨ 올가미 영역 밖은 잘라냄
+                            const clipBelowId = clipToBelowLayer(draftLayer, activeLayerId);  // ✨ 클리핑 마스크
                             activeLayer.ctx.globalAlpha = currentOpacity;
                             activeLayer.ctx.globalCompositeOperation = 'source-over';
                             activeLayer.ctx.drawImage(draftLayer, 0, 0);
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
 
-                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing, clipPath: hasActiveSelection() ? currentSelectionPath.slice() : undefined, clipBelowId: clipBelowId || undefined });
                         } else {
                             finalizePath({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         }
                     }
                 } else if (currentTool !== 'fill') {
-                    finalizePath({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, filled: isShapeFilled() && currentTool !== 'line', start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y } });
+                    finalizePath({ layerId: activeLayerId, type: currentTool, color: currentColor, width: currentWidth, filled: isShapeFilled() && currentTool !== 'line', start: { x: shapeStartX, y: shapeStartY }, end: { x: pos.x, y: pos.y }, clipPath: hasActiveSelection() ? currentSelectionPath.slice() : undefined });
                 }
                 canvasSnapshot = null;
             });
@@ -4131,13 +4262,15 @@
                         if (currentTool === 'pen') {
                             const activeLayer = layers.find(l => l.id === activeLayerId);
                             const draftLayer = getDraftLayer();
+                            clipToSelection(draftLayer);   // ✨ 올가미 영역 밖은 잘라냄
+                            const clipBelowId = clipToBelowLayer(draftLayer, activeLayerId);  // ✨ 클리핑 마스크
                             activeLayer.ctx.globalAlpha = currentOpacity;
                             activeLayer.ctx.globalCompositeOperation = 'source-over';
                             activeLayer.ctx.drawImage(draftLayer, 0, 0);
                             activeLayer.ctx.globalAlpha = 1.0;
                             draftLayer.style.display = 'none';
 
-                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
+                            finalizePath({ layerId: activeLayerId, type: 'path', color: currentColorHex, opacity: currentOpacity, points: currentPath, brushType: currentBrushType, spacing: currentSpacing, clipPath: hasActiveSelection() ? currentSelectionPath.slice() : undefined, clipBelowId: clipBelowId || undefined });
                         } else {
                             finalizePath({ layerId: activeLayerId, type: 'path', color: 'erase', opacity: 1, points: currentPath, brushType: currentBrushType, spacing: currentSpacing });
                         }
@@ -4193,6 +4326,7 @@ async function redrawCanvas() {
         const targetLayer = layers.find(l => l.id === item.layerId);
         if (!targetLayer || targetLayer.type !== 'canvas' || !buffers[targetLayer.id]) continue;
         const ctx = buffers[targetLayer.id].ctx;
+        const __itemClipped = applyItemClip(ctx, item);   // ✨ 올가미로 제한해 그린 획은 재생 때도 그 영역만
 
         ctx.globalCompositeOperation = 'source-over';
         ctx.globalAlpha = 1.0;
@@ -4235,7 +4369,7 @@ async function redrawCanvas() {
             });
         }
         else if (item.type === 'path' || !item.type) {
-            if (item.points.length === 0) continue;
+            if (item.points.length === 0) { if (__itemClipped) ctx.restore(); continue; }
             const brushType = item.brushType || 'default';
             const spacing = item.spacing || 0.1;
 
@@ -4246,6 +4380,12 @@ async function redrawCanvas() {
                 const rgbColor = item.color.startsWith('#') ? item.color : '#ffffff';
                 const opaqueColor = `rgba(${parseInt(rgbColor.slice(1, 3), 16)}, ${parseInt(rgbColor.slice(3, 5), 16)}, ${parseInt(rgbColor.slice(5, 7), 16)}, 1)`;
                 for (let i = 1; i < item.points.length; i++) await renderBrushStroke(tmpCtx, item.points[i - 1].x, item.points[i - 1].y, item.points[i - 1].w, item.points[i].x, item.points[i].y, item.points[i].w, opaqueColor, false, brushType, spacing);
+                // ✨ 클리핑 마스크: 아래 레이어의 그림이 있는 곳만 남긴다(그릴 때와 동일하게)
+                if (item.clipBelowId && buffers[item.clipBelowId]) {
+                    tmpCtx.globalCompositeOperation = 'destination-in';
+                    tmpCtx.drawImage(buffers[item.clipBelowId].cvs, 0, 0);
+                    tmpCtx.globalCompositeOperation = 'source-over';
+                }
                 ctx.globalAlpha = item.opacity !== undefined ? item.opacity : 1;
                 ctx.drawImage(tmpCvs, 0, 0); ctx.globalAlpha = 1;
             }
@@ -4255,6 +4395,7 @@ async function redrawCanvas() {
             else if (item.type === 'rect') { ctx.lineWidth = item.width; if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
             else if (item.type === 'circle') { ctx.lineWidth = item.width; let radius = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, radius, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
         }
+        if (__itemClipped) ctx.restore();
     }
 
     // 3. 완성된 버퍼를 실제 캔버스에 덮어쓰기
@@ -4453,6 +4594,7 @@ async function redrawCanvas() {
             layersInfo: [
                 ...f.layers.filter(l => l.type === 'canvas').map(l => ({
                     id: l.id, name: l.name, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal',
+                    clipToBelow: !!l.clipToBelow,   // ✨ 클리핑 마스크 상태 보존
                     baseRaster: l.baseCanvas ? l.baseCanvas.toDataURL('image/png') : null // ✨ 레이어별 구워진 바닥 저장
                 })),
                 // ✨ 합작방 '전체' 선택 시: 남의 레이어는 layers 배열 밖에 있어 그냥 두면 '내 그림만' 저장된다.
@@ -4604,10 +4746,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     cvs.style.mixBlendMode = lInfo.blendMode || 'normal';
                     layerWrapper.appendChild(cvs);
 
-                    const layerObj = { 
-                        id: cvs.id, name: lInfo.name || `레이어 ${j+1}`, canvas: cvs, ctx: cvs.getContext('2d'), 
-                        visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1, 
-                        blendMode: lInfo.blendMode || 'normal', type: 'canvas' 
+                    const layerObj = {
+                        id: cvs.id, name: lInfo.name || `레이어 ${j+1}`, canvas: cvs, ctx: cvs.getContext('2d'),
+                        visible: lInfo.visible !== false, opacity: lInfo.opacity !== undefined ? lInfo.opacity : 1,
+                        blendMode: lInfo.blendMode || 'normal', type: 'canvas',
+                        clipToBelow: !!lInfo.clipToBelow   // ✨ 클리핑 마스크 상태 복원(구버전 파일엔 없으므로 false)
                     };
                     
                     // ✨ 1번 레이어에 과거의 거대한 바닥 이미지(baseRaster) 주입

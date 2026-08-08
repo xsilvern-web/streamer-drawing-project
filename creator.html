@@ -756,6 +756,19 @@
             }
         }
         // ✨ 2. 기존의 낡은 구형 renderBrushStroke 함수를 완전히 삭제하고 아래의 신형 비동기 함수로 교체합니다.
+        // ✨ 기록에 clipPath(올가미 영역)가 있으면 렌더 시에도 그 안쪽에만 그린다.
+        function applyItemClip(ctx, item) {
+            const p = item && item.clipPath;
+            if (!p || p.length < 3 || !ctx) return false;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(p[0].x, p[0].y);
+            for (let i = 1; i < p.length; i++) ctx.lineTo(p[i].x, p[i].y);
+            ctx.closePath();
+            ctx.clip();
+            return true;
+        }
+
         async function renderBrushStroke(ctx, x1, y1, w1, x2, y2, w2, color, isEraser, brushType = null, spacingPercent = 0.1) {
             ctx.globalCompositeOperation = isEraser ? 'destination-out' : 'source-over';
             const dx = x2 - x1; const dy = y2 - y1; const distance = Math.hypot(dx, dy);
@@ -862,6 +875,9 @@
                 const targetLayer = getTargetLayer(item.layerId);
                 const ctx = targetLayer.ctx;
 
+                // ✨ 올가미 영역 안에서만 그린 획은 다운로드 렌더에서도 그 영역으로 제한
+                const __clipped = applyItemClip(ctx, item);
+
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.globalAlpha = 1.0;
 
@@ -893,7 +909,7 @@
                     doFloodFill(ctx, px, py, item.color, tol, gap, item.sampleAllLayers, layerContexts);
                 }
                 else if (item.type === 'path' || !item.type) {
-                    if (!item.points || item.points.length === 0) continue;
+                    if (!item.points || item.points.length === 0) { if (__clipped) ctx.restore(); continue; }
 
                     // ✨ 브러시 종류와 간격 데이터 적용
                     const brushType = item.brushType || 'default';
@@ -932,6 +948,7 @@
                     else if (shape === 'rect') { if (item.filled) ctx.fillRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); ctx.strokeRect(item.start.x, item.start.y, item.end.x - item.start.x, item.end.y - item.start.y); }
                     else if (shape === 'circle') { let r = Math.hypot(item.end.x - item.start.x, item.end.y - item.start.y); ctx.arc(item.start.x, item.start.y, r, 0, Math.PI * 2); if (item.filled) ctx.fill(); ctx.stroke(); }
                 }
+                if (__clipped) ctx.restore();
             }
 
             // 3) 분리된 모든 레이어들을 z-index 순서에 맞게 최종 합성 (Baking)
