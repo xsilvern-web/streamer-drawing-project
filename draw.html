@@ -2847,6 +2847,22 @@
 
                     // ✨ 한 번의 확정으로 생기는 clear+raster 2개를 같은 그룹으로 묶어 undo/redo가 항상 함께 처리하게 함
                     //    (묶지 않으면 undo 한 번에 raster만 취소되고 'clear'가 남아 레이어가 통째로 비어 보임)
+                    // ✨ 이동/변형 과정을 단계별로 기록해뒀다면, 마지막 단계는 확정 결과와 같은 그림이라
+                    //    그대로 두면 재생에서 같은 장면이 두 번 나온다. 꼬리의 중간단계 한 묶음만 제거한다.
+                    const dropLastStep = (arr) => {
+                        for (let i = arr.length - 1; i >= 0; i--) {
+                            if (arr[i].layerId !== layer.id) break;
+                            if (!arr[i].__transformStep) break;
+                            const gid = arr[i].groupId;
+                            let j = i;
+                            while (j >= 0 && arr[j].groupId === gid && arr[j].__transformStep) j--;
+                            arr.splice(j + 1, i - j);
+                            break;
+                        }
+                    };
+                    dropLastStep(history);
+                    dropLastStep(fullPlaybackRecord);
+
                     const transformGroupId = uid('grp');
                     const clearItem = { layerId: layer.id, type: 'clear', groupId: transformGroupId };
                     const rasterItem = { layerId: layer.id, type: 'raster_image', src: contentCvs.toDataURL(), cx: cx, cy: cy, width: boxW, height: boxH, angle: angle, groupId: transformGroupId };
@@ -3415,6 +3431,40 @@
 
             let transformState = null;
 
+            // ✨ 변형 박스의 '현재 모습'을 내역에 한 단계로 기록한다(확정 때와 같은 clear+raster 형식).
+            //    재생기는 이미 이 형식을 처리하므로 재생/송출 코드는 그대로 두고 과정만 늘어난다.
+            //    각 단계는 groupId로 묶여 undo 한 번에 함께 취소된다.
+            function recordTransformStep(layer) {
+                try {
+                    const box = layer.element;
+                    const contentCvs = box && box.querySelector('canvas.content');
+                    if (!contentCvs) return;
+                    const boxW = box.offsetWidth, boxH = box.offsetHeight;
+                    const cx = parseFloat(box.style.left) + boxW / 2;
+                    const cy = parseFloat(box.style.top) + boxH / 2;
+                    let angle = 0;
+                    const tr = window.getComputedStyle(box).transform;
+                    if (tr !== 'none') { const v = tr.split('(')[1].split(')')[0].split(','); angle = Math.atan2(v[1], v[0]); }
+
+                    const gid = uid('grp');
+                    const clearItem = { layerId: layer.id, type: 'clear', groupId: gid, __transformStep: true };
+                    const rasterItem = {
+                        layerId: layer.id, type: 'raster_image', src: contentCvs.toDataURL(),
+                        cx, cy, width: boxW, height: boxH, angle, groupId: gid, __transformStep: true
+                    };
+                    // 남겨둔 나머지 그림(baseCanvas)은 재생 시 base로 먼저 깔리므로 여기서는 조각만 기록하면 된다.
+                    history.push(clearItem); history.push(rasterItem);
+                    fullPlaybackRecord.push(clearItem); fullPlaybackRecord.push(rasterItem);
+                    redoStack = [];
+                    if (typeof Room !== 'undefined' && Room.active) {
+                        roomSend({ type: 'draw', event: 'action', frameId: currentFrameId, item: clearItem });
+                        roomSend({ type: 'draw', event: 'action', frameId: currentFrameId, item: rasterItem });
+                        roomRecordMine(clearItem, currentFrameId);
+                        roomRecordMine(rasterItem, currentFrameId);
+                    }
+                } catch (e) { console.warn('변형 단계 기록 실패(무시)', e); }
+            }
+
             layerWrapper.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
             });
@@ -3825,7 +3875,14 @@
 
             layerWrapper.addEventListener('pointerup', (e) => {
                 if (currentTool === 'bg_control') { isDraggingBg = false; return; }
-                if (transformState) { transformState = null; return; }
+                if (transformState) {
+                    // ✨ 변형 박스를 한 번 옮기거나 크기/회전을 바꿀 때마다 그 순간을 내역에 남긴다.
+                    //    → 타임랩스에서 '옮기는 과정'이 단계적으로 보인다(확정 때 한 번에 나타나지 않음).
+                    const movedLayer = layers.find(l => l.element === transformState.target);
+                    transformState = null;
+                    if (movedLayer && movedLayer.type === 'transform_box') recordTransformStep(movedLayer);
+                    return;
+                }
                 if (!isDrawing) return;
                 isDrawing = false; const pos = getPointerPos(e);
 
