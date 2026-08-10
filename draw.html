@@ -6,7 +6,15 @@
     <title>시청자용 그리기 (애니메이션 지원 프로페셔널 에디터)</title>
     <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js"
         charset="utf-8"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.4.5/gifshot.min.js"></script>
+    <!-- ✨ GIF 생성 라이브러리.
+         이전에 쓰던 cdnjs의 0.4.5 경로는 파일이 등록돼 있지 않아 404였고(=GIF 내보내기가 동작하지 않음),
+         실제로 응답하는 jsdelivr 주소로 교체. 실패 시 cdnjs 0.3.2로 자동 폴백한다. -->
+    <script src="https://cdn.jsdelivr.net/npm/gifshot@0.4.5/dist/gifshot.min.js"></script>
+    <script>
+        if (typeof gifshot === 'undefined') {
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.3.2/gifshot.min.js"><\/script>');
+        }
+    </script>
     <style>
         body,
         html {
@@ -1371,10 +1379,10 @@
             <div class="control-group">
                 <label style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                     굵기
-                    <input type="number" id="width-input" value="5" min="1" max="100"
+                    <input type="number" id="width-input" value="5" min="0.1" max="100" step="0.1"
                         style="width: 40px; height: 16px; text-align: center; font-size: 11px; padding: 0; background: #444; border: 1px solid #555; color: white; border-radius: 3px;">
                 </label>
-                <input type="range" id="line-width" min="1" max="100" value="5">
+                <input type="range" id="line-width" min="0.1" max="100" step="0.1" value="5">
             </div>
             <div style="margin-top: 15px;">
                 <label
@@ -2071,19 +2079,20 @@
             const lineWidthSlider = document.getElementById('line-width');
             const widthInput = document.getElementById('width-input');
 
+            // ✨ 굵기를 소수점(0.1 단위)까지 지원 — 얇은 선을 섬세하게 조절하기 위함
+            const clampWidth = (v) => Math.round(Math.min(100, Math.max(0.1, v)) * 10) / 10;
+
             // 슬라이더를 조절할 때 숫자 칸도 같이 업데이트
             lineWidthSlider.oninput = (e) => {
-                currentWidth = parseInt(e.target.value);
+                currentWidth = clampWidth(parseFloat(e.target.value));
                 widthInput.value = currentWidth;
             };
 
             // 숫자를 직접 입력했을 때 슬라이더와 펜 굵기 업데이트
             widthInput.addEventListener('change', (e) => {
-                let val = parseInt(e.target.value);
-                // 숫자가 아니거나 1보다 작으면 1로 고정
-                if (isNaN(val) || val < 1) val = 1;
-                // 최댓값을 100으로 고정 (원하시면 더 늘리실 수 있습니다)
-                if (val > 100) val = 100;
+                let val = parseFloat(e.target.value);
+                if (isNaN(val)) val = 1;
+                val = clampWidth(val);
 
                 currentWidth = val;
                 widthInput.value = val;
@@ -3921,7 +3930,8 @@
                     if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
 
                     // ✅ pointermove 이벤트와 동일하게 targetWidth를 계산하는 코드를 추가합니다.
-                    let targetWidth = Math.max(currentWidth * pressure, 1);
+                    // ✨ 0.X 굵기를 지원하기 위해 하한을 0.1로 (예전에는 1로 강제해 얇은 선이 안 나왔다)
+                    let targetWidth = Math.max(currentWidth * pressure, 0.1);
 
                     smX = pos.x; smY = pos.y; smW = targetWidth; lastX = smX; lastY = smY; currentPath = [{ x: smX, y: smY, w: smW }];
 
@@ -4115,7 +4125,8 @@
                     const usePressure = document.getElementById('chk-use-pressure') ? document.getElementById('chk-use-pressure').checked : true;
                     let pressure = (e.pointerType === 'pen' && usePressure) ? e.pressure : 1;
                     if (e.pointerType === 'mouse' && e.pressure > 0) pressure = 1;
-                    let targetWidth = Math.max(currentWidth * pressure, 1);
+                    // ✨ 0.X 굵기를 지원하기 위해 하한을 0.1로 (예전에는 1로 강제해 얇은 선이 안 나왔다)
+                    let targetWidth = Math.max(currentWidth * pressure, 0.1);
                     const smoothingLevel = parseInt(document.getElementById('smoothing-level').value); const factor = 1 / (smoothingLevel + 1);
                     smX = smX + (pos.x - smX) * factor; smY = smY + (pos.y - smY) * factor; smW = smW + (targetWidth - smW) * factor;
 
@@ -4492,8 +4503,8 @@ async function redrawCanvas() {
                 // 👇👇👇 여기서부터 추가해 주세요 👇👇👇
                 // ✨ 브러시 크기 축소 (-) 단축키 (꾹 누르기 지원)
                 if (e.key === '-' || e.key === '_') {
-                    let val = currentWidth - 1;
-                    if (val < 1) val = 1; // 최소 굵기 1 제한
+                    // ✨ 1 이하에서는 0.1 단위로 세밀하게 (얇은 선 조절)
+                    let val = clampWidth(currentWidth <= 1 ? currentWidth - 0.1 : currentWidth - 1);
                     currentWidth = val;
                     document.getElementById('width-input').value = val;
                     document.getElementById('line-width').value = val;
@@ -4507,8 +4518,8 @@ async function redrawCanvas() {
                 }
                 // ✨ 브러시 크기 확대 (+) 단축키 (꾹 누르기 지원)
                 if (e.key === '+' || e.key === '=') {
-                    let val = currentWidth + 1;
-                    if (val > 100) val = 100; // 최대 굵기 100 제한
+                    // ✨ 1 미만에서는 0.1 단위로 세밀하게
+                    let val = clampWidth(currentWidth < 1 ? currentWidth + 0.1 : currentWidth + 1);
                     currentWidth = val;
                     document.getElementById('width-input').value = val;
                     document.getElementById('line-width').value = val;
@@ -4550,8 +4561,9 @@ async function redrawCanvas() {
                 // ✨ [ ] : 브러시 굵기 (포토샵 관례)
                 if (e.key === '[' || e.key === ']') {
                     e.preventDefault();
-                    const delta = e.key === ']' ? 1 : -1;
-                    let val = Math.min(100, Math.max(1, currentWidth + delta));
+                    const fine = currentWidth < 1 || (e.key === '[' && currentWidth <= 1);
+                    const delta = (e.key === ']' ? 1 : -1) * (fine ? 0.1 : 1);   // ✨ 1 이하에서는 0.1 단위
+                    let val = clampWidth(currentWidth + delta);
                     currentWidth = val;
                     document.getElementById('width-input').value = val;
                     document.getElementById('line-width').value = val;
@@ -5365,6 +5377,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     return alert("확정되지 않은 객체가 있습니다. 모든 프레임에서 [확정]을 눌러주세요.");
                 }
 
+                // ✨ 라이브러리 로드 실패 시 조용히 멈추지 않고 원인을 알려준다
+                if (typeof gifshot === 'undefined' || typeof gifshot.createGIF !== 'function') {
+                    return alert('GIF 생성 라이브러리를 불러오지 못했습니다.\n네트워크(광고 차단기 등)를 확인한 뒤 새로고침해 주세요.');
+                }
+
                 const btn = document.getElementById('btn-export-gif');
                 const originalText = btn.innerText;
                 btn.innerText = "GIF 생성 중...";
@@ -5429,6 +5446,21 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 // 프레임들의 평균 속도 계산 (gifshot은 일괄 속도 권장)
                 const avgDuration = frames.reduce((acc, f) => acc + (f.duration || 500), 0) / frames.length;
 
+                // ✨ 인코딩이 끝나지 않으면 버튼이 'GIF 생성 중...'에 영구히 묶여 아무 안내도 없다.
+                //    한 번만 실행되는 마무리 함수 + 타임아웃으로 항상 원상복구되게 한다.
+                let gifDone = false;
+                const finishGif = (msg) => {
+                    if (gifDone) return;
+                    gifDone = true;
+                    clearTimeout(gifTimer);
+                    btn.innerText = originalText;
+                    btn.disabled = false;
+                    if (msg) alert(msg);
+                };
+                const gifTimer = setTimeout(() => {
+                    finishGif('GIF 생성이 오래 걸려 중단했습니다.\n프레임 수를 줄이거나 잠시 후 다시 시도해 주세요.');
+                }, 120000);
+
                 gifshot.createGIF({
                     images: images,
                     gifWidth: CANVAS_WIDTH / 2, // 1920은 너무 커서 처리 속도를 위해 절반으로 줄임 (선택사항)
@@ -5436,17 +5468,17 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     interval: avgDuration / 1000, // ms를 초 단위로 변환
                     numWorkers: 4
                 }, function (obj) {
+                    if (gifDone) return;   // 타임아웃 뒤 뒤늦게 도착한 콜백 무시
                     if (!obj.error) {
                         const link = document.createElement('a');
                         link.href = obj.image;
                         link.download = (document.getElementById('drawing-title').value || "animation")
                             + ((typeof Room !== 'undefined' && Room.active) ? (roomScope === 'all' ? '_합작' : '_내것만') : '') + ".gif";
                         link.click();
+                        finishGif(null);
                     } else {
-                        alert("GIF 생성 실패: " + obj.error);
+                        finishGif("GIF 생성 실패: " + (obj.errorMsg || obj.error));
                     }
-                    btn.innerText = originalText;
-                    btn.disabled = false;
                 });
             };
 
