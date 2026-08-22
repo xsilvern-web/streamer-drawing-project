@@ -226,10 +226,17 @@ def _fetch_donations_by_date(date):
     conn.close()
     return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": _kst_str(r["timestamp"])} for r in rows]
 
+# ✨ 그림 보관 기간(일). 이 기간이 지난 원장 기록은 자동 삭제된다.
+#    drawing_data(그림 전체)가 커서 무한 보관은 어렵고, 값만 바꾸면 기간을 조절할 수 있다.
+DRAWING_RETENTION_DAYS = 7
+
 def _delete_old_data():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM ledger WHERE timestamp <= NOW() - INTERVAL '2 days'")
+    cursor.execute(
+        "DELETE FROM ledger WHERE timestamp <= NOW() - (%s * INTERVAL '1 day')",
+        (DRAWING_RETENTION_DAYS,)
+    )
     conn.commit()
     conn.close()
 
