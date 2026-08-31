@@ -1116,6 +1116,44 @@
         </div>
 
         <!-- ✨ 합작방 저장/내보내기 범위 선택 -->
+        <!-- ✨ GIF 배경 선택 (GIF는 반투명을 지원하지 않아, 투명 프레임을 그대로 쓰면 이전 장면이 남는다) -->
+        <div id="gif-bg-modal"
+            style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:99999; align-items:center; justify-content:center;">
+            <div
+                style="background:#2d2d2d; color:#eee; width:430px; max-width:92%; border-radius:10px; padding:24px; box-shadow:0 8px 30px rgba(0,0,0,0.5); border:1px solid #9c27b0; font-family:'Malgun Gothic',sans-serif;">
+                <h3 style="margin:0 0 8px; color:#ce93d8;">GIF 배경 선택</h3>
+                <p style="font-size:12px; color:#aaa; margin:0 0 16px; line-height:1.6;">
+                    GIF 형식은 반투명을 지원하지 않습니다. 배경을 지정하지 않으면
+                    빈 곳에 <b style="color:#ddd;">이전 장면이 그대로 남습니다.</b>
+                </p>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="gif-bg-pick" data-bg="#000000"
+                        style="background:#000; color:#fff; border:1px solid #555; padding:12px; border-radius:4px; cursor:pointer; font-weight:bold; text-align:left;">
+                        검정 배경 <span style="font-weight:normal; font-size:11px; color:#bbb;">— 밝은 색으로 그렸다면 이쪽</span>
+                    </button>
+                    <button class="gif-bg-pick" data-bg="#ffffff"
+                        style="background:#fff; color:#222; border:1px solid #555; padding:12px; border-radius:4px; cursor:pointer; font-weight:bold; text-align:left;">
+                        흰색 배경 <span style="font-weight:normal; font-size:11px; color:#666;">— 어두운 색으로 그렸다면 이쪽</span>
+                    </button>
+                    <label style="display:flex; align-items:center; gap:8px; background:#222; border:1px solid #555; padding:10px 12px; border-radius:4px; cursor:pointer;">
+                        <span style="font-size:12px; color:#ccc; font-weight:bold; flex:1;">직접 고르기</span>
+                        <input type="color" id="gif-bg-custom" value="#1e1e1e"
+                            style="width:34px; height:26px; padding:0; border:none; background:transparent; cursor:pointer;">
+                        <button class="gif-bg-pick" data-bg="custom"
+                            style="background:#9c27b0; color:#fff; border:none; padding:6px 14px; border-radius:4px; cursor:pointer; font-weight:bold;">사용</button>
+                    </label>
+                    <button class="gif-bg-pick" data-bg="none"
+                        style="background:#455a64; color:#fff; border:none; padding:10px; border-radius:4px; cursor:pointer; font-size:12px; text-align:left;">
+                        배경 없이 그대로 <span style="font-weight:normal; font-size:11px; color:#b0bec5;">— 이전 장면이 남을 수 있음</span>
+                    </button>
+                </div>
+                <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                    <button id="btn-gif-bg-cancel"
+                        style="background:transparent; color:#aaa; border:1px solid #555; padding:7px 16px; border-radius:4px; cursor:pointer;">취소</button>
+                </div>
+            </div>
+        </div>
+
         <div id="room-scope"
             style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:99999; align-items:center; justify-content:center;">
             <div
@@ -5368,6 +5406,11 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 if (!roomScope) return;
                 const inRoomAll = (typeof Room !== 'undefined' && Room.active && roomScope === 'all');
 
+                // ✨ GIF는 반투명을 지원하지 않아, 투명한 프레임을 그대로 넘기면 빈 곳에 이전 장면이 남는다.
+                //    프레임마다 불투명 배경을 깔아 이 잔상을 없앤다.
+                const gifBg = await askGifBackground();
+                if (gifBg === undefined) return;   // 취소
+
                 syncToFrame(); // 현재 작업 내용 동기화
 
                 // 텍스트/도형이 래스터화(확정) 되지 않았는지 체크
@@ -5395,7 +5438,14 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 const tempCtx = tempCanvas.getContext('2d');
 
                 for (let f of frames) {
+                    tempCtx.globalAlpha = 1;
+                    tempCtx.globalCompositeOperation = 'source-over';
                     tempCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    // ✨ 프레임마다 배경을 새로 칠해 이전 장면이 비쳐 보이지 않게 한다
+                    if (gifBg) {
+                        tempCtx.fillStyle = gifBg;
+                        tempCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                    }
 
                     // ✨ 합작방 '전체' 선택 시: 남의 레이어까지 합성해야 화면과 같은 결과가 나온다
                     if (inRoomAll) {
@@ -6367,6 +6417,30 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     btnMine.onclick = () => done('mine');
                     btnCancel.onclick = () => done(null);
                     box.onclick = (e) => { if (e.target === box) done(null); };
+                });
+            }
+
+            // ✨ GIF 배경 선택 → '#rrggbb' | null(그대로) | undefined(취소)
+            function askGifBackground() {
+                return new Promise(resolve => {
+                    const box = document.getElementById('gif-bg-modal');
+                    box.style.display = 'flex';
+                    const picks = [...box.querySelectorAll('.gif-bg-pick')];
+                    const cancel = document.getElementById('btn-gif-bg-cancel');
+                    const done = (v) => {
+                        box.style.display = 'none';
+                        picks.forEach(b => b.onclick = null);
+                        cancel.onclick = null; box.onclick = null;
+                        resolve(v);
+                    };
+                    picks.forEach(b => b.onclick = () => {
+                        const v = b.getAttribute('data-bg');
+                        if (v === 'none') return done(null);
+                        if (v === 'custom') return done(document.getElementById('gif-bg-custom').value || '#000000');
+                        done(v);
+                    });
+                    cancel.onclick = () => done(undefined);
+                    box.onclick = (e) => { if (e.target === box) done(undefined); };
                 });
             }
 
