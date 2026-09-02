@@ -15,10 +15,12 @@ def _kst_str(ts):
     return ts.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
+import httpx
+import secrets as _secrets
 
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -28,6 +30,24 @@ CREATOR_PASSWORD = os.getenv("CREATOR_PASSWORD", "streamer777!")
 
 # ✨ 하드코딩된 기본값을 완전히 삭제하고 환경변수에서만 불러옵니다.
 DATABASE_URL = os.getenv("DATABASE_URL")
+
+# ✨ 치지직(CHZZK) 오픈 API 연동.
+#    시청자용(유저 조회)과 방송인용(활동제한 쓰기)은 앱을 분리할 수 있다.
+#    치지직은 인증 요청에 scope 파라미터가 없어 '앱에 등록된 scope 전체'를 한 번에 위임받는다.
+#    → 시청자에게 활동제한 권한까지 요구하지 않으려면 앱을 2개로 나누는 편이 낫다.
+#    STREAMER 쪽 값이 없으면 같은 앱을 쓴다.
+CHZZK_CLIENT_ID = os.getenv("CHZZK_CLIENT_ID", "")
+CHZZK_CLIENT_SECRET = os.getenv("CHZZK_CLIENT_SECRET", "")
+CHZZK_STREAMER_CLIENT_ID = os.getenv("CHZZK_STREAMER_CLIENT_ID", "") or CHZZK_CLIENT_ID
+CHZZK_STREAMER_CLIENT_SECRET = os.getenv("CHZZK_STREAMER_CLIENT_SECRET", "") or CHZZK_CLIENT_SECRET
+
+CHZZK_AUTH_URL = "https://chzzk.naver.com/account-interlock"
+CHZZK_API_BASE = "https://openapi.chzzk.naver.com"
+
+def _chzzk_creds(role):
+    if role == "streamer":
+        return (CHZZK_STREAMER_CLIENT_ID, CHZZK_STREAMER_CLIENT_SECRET)
+    return (CHZZK_CLIENT_ID, CHZZK_CLIENT_SECRET)
 
 app = FastAPI()
 app.mount("/Fonts", StaticFiles(directory="Fonts"), name="Fonts")
@@ -95,6 +115,26 @@ def init_db():
         )
     ''')
 
+    # ✨ 치지직 계정 연결: 네이버 식별자(donor_email) ↔ 치지직 채널
+    #    치지직 닉네임은 바뀔 수 있으므로 channel_id를 영구 키로 쓰고 nickname은 표시용으로 갱신한다.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chzzk_links (
+            naver_id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL,
+            nickname TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # ✨ 방송인 토큰(활동제한 호출용). role='streamer' 한 줄만 사용한다.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chzzk_tokens (
+            role TEXT PRIMARY KEY,
+            access_token TEXT,
+            refresh_token TEXT,
+            expires_at TIMESTAMP
+        )
+    ''')
+
     # ✨ 핵심 수정: 테이블을 만들자마자 '확정(commit)'을 지어주어, 이후 작업이 실패해도 테이블이 날아가지 않게 보호합니다.
     conn.commit()
     
@@ -124,6 +164,14 @@ def init_db():
         conn.commit()
     except psycopg2.Error:
         conn.rollback()
+
+    # ✨ 치지직 채널/닉네임 (연동한 사람만 채워진다. 기존 행은 NULL로 남고 표시는 기존 이름으로 폴백)
+    for _col in ("chzzk_channel_id TEXT", "chzzk_nickname TEXT"):
+        try:
+            cursor.execute(f"ALTER TABLE ledger ADD COLUMN {_col}")
+            conn.commit()
+        except psycopg2.Error:
+            conn.rollback()
 
     conn.close()
 
@@ -167,13 +215,15 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
 def _fetch_recent_donations():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=DictCursor)
-    cursor.execute("SELECT id, donor_name, donor_email, donor_naver_email, drawing_title, timestamp FROM ledger ORDER BY id DESC")
+    cursor.execute("SELECT id, donor_name, donor_email, donor_naver_email, drawing_title, timestamp, chzzk_channel_id, chzzk_nickname FROM ledger ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
     # email = 네이버 앱별 고유 식별자(차단 기준), naverEmail = 실제 메일 주소(참고용)
     return [{"id": r["id"], "name": r["donor_name"], "email": r["donor_email"],
              "naverEmail": r["donor_naver_email"] or "", "title": r["drawing_title"],
-             "time": _kst_str(r["timestamp"])} for r in rows]
+             "time": _kst_str(r["timestamp"]),
+             "chzzkNickname": r["chzzk_nickname"] or "", "chzzkChannelId": r["chzzk_channel_id"] or ""}
+            for r in rows]
 
 def _fetch_replay_row(ledger_id):
     conn = get_db_connection()
@@ -200,12 +250,15 @@ def _count_since(target_str):
     conn.close()
     return count
 
-def _insert_ledger(email, name, profile_image, title, drawing_history, naver_email=""):
+def _insert_ledger(email, name, profile_image, title, drawing_history, naver_email="",
+                   chzzk_channel_id=None, chzzk_nickname=None):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data, donor_naver_email) VALUES (%s, %s, %s, %s, %s, %s)",
-        (email, name, profile_image, title, json.dumps(drawing_history), naver_email)
+        "INSERT INTO ledger (donor_email, donor_name, donor_profile_image, drawing_title, drawing_data, donor_naver_email, chzzk_channel_id, chzzk_nickname) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (email, name, profile_image, title, json.dumps(drawing_history), naver_email,
+         chzzk_channel_id, chzzk_nickname)
     )
     conn.commit()
     conn.close()
@@ -225,6 +278,59 @@ def _fetch_donations_by_date(date):
     rows = cursor.fetchall()
     conn.close()
     return [{"id": r["id"], "name": r["donor_name"], "title": r["drawing_title"], "time": _kst_str(r["timestamp"])} for r in rows]
+
+# ---------- 치지직 연동 DB 헬퍼 ----------
+def _chzzk_save_link(naver_id, channel_id, nickname):
+    """네이버 식별자 ↔ 치지직 채널 연결 저장(있으면 갱신). 과거 후원 기록에도 닉네임을 소급 반영한다."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO chzzk_links (naver_id, channel_id, nickname, updated_at)
+        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        ON CONFLICT (naver_id) DO UPDATE
+        SET channel_id = EXCLUDED.channel_id, nickname = EXCLUDED.nickname, updated_at = CURRENT_TIMESTAMP
+    """, (naver_id, channel_id, nickname))
+    # ✨ 소급 적용: 이 사람이 예전에 보낸 그림들에도 치지직 닉네임을 채운다.
+    #    (연동 전 기록은 원래 알 수 없던 값이라, 연동하는 순간에만 채울 수 있다)
+    cursor.execute(
+        "UPDATE ledger SET chzzk_channel_id = %s, chzzk_nickname = %s WHERE donor_email = %s",
+        (channel_id, nickname, naver_id)
+    )
+    backfilled = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return backfilled
+
+def _chzzk_get_link(naver_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT channel_id, nickname FROM chzzk_links WHERE naver_id = %s", (naver_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return {"channelId": row[0], "nickname": row[1]} if row else None
+
+def _chzzk_save_token(role, access_token, refresh_token, expires_in):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO chzzk_tokens (role, access_token, refresh_token, expires_at)
+        VALUES (%s, %s, %s, NOW() + (%s * INTERVAL '1 second'))
+        ON CONFLICT (role) DO UPDATE
+        SET access_token = EXCLUDED.access_token, refresh_token = EXCLUDED.refresh_token,
+            expires_at = EXCLUDED.expires_at
+    """, (role, access_token, refresh_token, int(expires_in or 86400)))
+    conn.commit()
+    conn.close()
+
+def _chzzk_get_token(role):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT access_token, refresh_token, (expires_at <= NOW() + INTERVAL '60 seconds') FROM chzzk_tokens WHERE role = %s",
+        (role,))
+    row = cursor.fetchone()
+    conn.close()
+    return {"accessToken": row[0], "refreshToken": row[1], "expired": bool(row[2])} if row else None
 
 # ✨ 그림 보관 기간(일). 이 기간이 지난 원장 기록은 자동 삭제된다.
 #    drawing_data(그림 전체)가 커서 무한 보관은 어렵고, 값만 바꾸면 기간을 조절할 수 있다.
@@ -392,6 +498,7 @@ class SettingsUpdate(BaseModel):
     display_duration: int = None
     daily_limit: int = None
     notice_text: str = None # ✨ 추가
+    chzzk_restrict: bool = False   # ✨ 차단/해제 시 치지직 활동제한도 함께 적용할지
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
@@ -419,7 +526,20 @@ async def update_settings(data: SettingsUpdate):
     if data.add_blocked_email:
         await _kick_user_from_rooms(data.add_blocked_email)
 
-    return {"message": "success"}
+    # ✨ 치지직 활동제한 동시 적용(선택). 치지직을 연동한 사람만 채널ID를 알 수 있어 가능하다.
+    chzzk_result = None
+    if data.chzzk_restrict and (data.add_blocked_email or data.remove_blocked_email):
+        target_naver_id = data.add_blocked_email or data.remove_blocked_email
+        link = await asyncio.to_thread(_chzzk_get_link, target_naver_id)
+        if not link:
+            chzzk_result = {"ok": False, "message": "이 사용자는 치지직 계정을 연동하지 않아 활동제한을 걸 수 없습니다."}
+        else:
+            ok, msg = await _chzzk_restrict(link["channelId"], remove=bool(data.remove_blocked_email))
+            chzzk_result = {"ok": ok, "message": msg, "nickname": link.get("nickname") or ""}
+            print(f"[CHZZK] 활동제한 {'해제' if data.remove_blocked_email else '등록'} "
+                  f"channel={link['channelId']} ok={ok} msg={msg}")
+
+    return {"message": "success", "chzzk": chzzk_result}
 
 async def _kick_user_from_rooms(user_id):
     """차단된 계정을 모든 합작방에서 즉시 퇴장시킨다. (연결을 끊으면 WS finally가 정리·브로드캐스트를 처리)"""
@@ -442,6 +562,128 @@ async def _kick_user_from_rooms(user_id):
 @app.get("/api/recent-donations")
 async def get_recent_donations():
     return await asyncio.to_thread(_fetch_recent_donations)
+
+# ---------- 치지직 OAuth / API ----------
+# state는 서버 메모리에 잠깐 보관한다(재시작 시 사라지지만 사용자가 다시 누르면 되므로 무해).
+_chzzk_pending = {}
+
+def _chzzk_redirect_uri(request: Request):
+    # 등록된 '로그인 리디렉션 URL'과 정확히 일치해야 한다.
+    return str(request.base_url).rstrip("/") + "/chzzk/callback"
+
+async def _chzzk_token_request(role, payload):
+    client_id, client_secret = _chzzk_creds(role)
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=500, detail="치지직 CLIENT_ID/SECRET 환경변수가 설정되지 않았습니다.")
+    body = dict(payload, clientId=client_id, clientSecret=client_secret)
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.post(f"{CHZZK_API_BASE}/auth/v1/token", json=body,
+                              headers={"Content-Type": "application/json"})
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"치지직 토큰 요청 실패({r.status_code}): {r.text[:200]}")
+    data = r.json()
+    return data.get("content", data)   # 응답이 content로 감싸져 오는 경우 대비
+
+async def _chzzk_access_token(role):
+    """저장된 토큰을 돌려주되, 만료됐으면 refresh로 갱신한다."""
+    tok = await asyncio.to_thread(_chzzk_get_token, role)
+    if not tok:
+        return None
+    if not tok["expired"]:
+        return tok["accessToken"]
+    content = await _chzzk_token_request(role, {
+        "grantType": "refresh_token", "refreshToken": tok["refreshToken"]})
+    await asyncio.to_thread(_chzzk_save_token, role, content.get("accessToken"),
+                            content.get("refreshToken"), content.get("expiresIn"))
+    return content.get("accessToken")
+
+@app.get("/chzzk/login")
+async def chzzk_login(request: Request, role: str = "viewer", userId: str = "", pw: str = ""):
+    """치지직 인증 시작. viewer=시청자 계정 연결, streamer=방송인 권한 위임(활동제한용)."""
+    if role not in ("viewer", "streamer"):
+        raise HTTPException(status_code=400, detail="role이 올바르지 않습니다.")
+    if role == "viewer" and not userId:
+        raise HTTPException(status_code=400, detail="네이버 로그인 후 이용할 수 있습니다.")
+    if role == "streamer" and pw != CREATOR_PASSWORD:
+        raise HTTPException(status_code=403, detail="방송인 비밀번호가 올바르지 않습니다.")
+
+    client_id, _ = _chzzk_creds(role)
+    if not client_id:
+        raise HTTPException(status_code=500, detail="치지직 CLIENT_ID 환경변수가 설정되지 않았습니다.")
+
+    state = _secrets.token_urlsafe(16)
+    _chzzk_pending[state] = {"role": role, "naverId": userId.strip()[:100]}
+    if len(_chzzk_pending) > 500:      # 오래된 항목 정리(누수 방지)
+        for k in list(_chzzk_pending)[:200]:
+            _chzzk_pending.pop(k, None)
+
+    from urllib.parse import urlencode
+    q = urlencode({"clientId": client_id, "redirectUri": _chzzk_redirect_uri(request), "state": state})
+    return RedirectResponse(f"{CHZZK_AUTH_URL}?{q}")
+
+@app.get("/chzzk/callback")
+async def chzzk_callback(request: Request, code: str = "", state: str = ""):
+    pending = _chzzk_pending.pop(state, None)
+    if not pending or not code:
+        return HTMLResponse("<h3>인증 정보가 유효하지 않습니다. 다시 시도해 주세요.</h3>", status_code=400)
+    role = pending["role"]
+
+    content = await _chzzk_token_request(role, {
+        "grantType": "authorization_code", "code": code, "state": state})
+    access_token = content.get("accessToken")
+    if not access_token:
+        return HTMLResponse("<h3>치지직 토큰 발급에 실패했습니다.</h3>", status_code=502)
+
+    await asyncio.to_thread(_chzzk_save_token, role, access_token,
+                            content.get("refreshToken"), content.get("expiresIn"))
+
+    # 본인 채널 정보 조회 (유저 조회 scope)
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{CHZZK_API_BASE}/open/v1/users/me",
+                             headers={"Authorization": f"Bearer {access_token}"})
+    if r.status_code != 200:
+        return HTMLResponse(
+            f"<h3>치지직 유저 정보 조회 실패({r.status_code})</h3>"
+            f"<p>앱에 '유저 조회' 권한이 포함되어 있는지 확인해 주세요.</p>", status_code=502)
+    me = r.json()
+    me = me.get("content", me)
+    channel_id, nickname = me.get("channelId"), me.get("channelName")
+
+    if role == "streamer":
+        print(f"[CHZZK] 방송인 연동 완료 channel={channel_id} name={nickname}")
+        return HTMLResponse(
+            f"<h3>치지직 방송인 연동이 완료되었습니다.</h3><p>채널: {nickname}</p>"
+            "<p>이 창을 닫고 관리자 페이지로 돌아가세요.</p>")
+
+    backfilled = await asyncio.to_thread(_chzzk_save_link, pending["naverId"], channel_id, nickname)
+    print(f"[CHZZK] 시청자 연동 naver={pending['naverId']} channel={channel_id} 소급={backfilled}건")
+    return HTMLResponse(
+        "<script>try{window.opener&&window.opener.postMessage({type:'chzzk_linked'},'*')}catch(e){}"
+        "setTimeout(function(){window.close()},1200)</script>"
+        f"<h3>치지직 계정 연결 완료</h3><p>닉네임: {nickname}</p>"
+        f"<p>이전 그림 {backfilled}건에도 닉네임이 반영되었습니다.</p><p>이 창은 곧 닫힙니다.</p>")
+
+@app.get("/api/chzzk/status")
+async def chzzk_status(userId: str = ""):
+    """시청자 본인의 연동 상태 조회(그리기 화면에서 버튼 표시용)."""
+    link = await asyncio.to_thread(_chzzk_get_link, userId.strip()[:100]) if userId else None
+    return {"configured": bool(CHZZK_CLIENT_ID), "linked": bool(link),
+            "nickname": (link or {}).get("nickname", ""), "channelId": (link or {}).get("channelId", "")}
+
+async def _chzzk_restrict(target_channel_id, remove=False):
+    """방송인 채널에 활동제한 등록/해제. 성공 시 (True, 메시지)."""
+    token = await _chzzk_access_token("streamer")
+    if not token:
+        return False, "방송인 치지직 연동이 되어 있지 않습니다."
+    method = "DELETE" if remove else "POST"
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.request(method, f"{CHZZK_API_BASE}/open/v1/restrict-channels",
+                                 json={"targetChannelId": target_channel_id},
+                                 headers={"Authorization": f"Bearer {token}",
+                                          "Content-Type": "application/json"})
+    if r.status_code == 200:
+        return True, "성공"
+    return False, f"치지직 응답 {r.status_code}: {r.text[:150]}"
 
 @app.post("/api/replay-donation/{ledger_id}")
 async def replay_donation(ledger_id: int):
@@ -511,8 +753,19 @@ async def submit_drawing(request: Request):
         # 차단 판정은 계속 식별자 기준 (기존 블랙리스트가 그대로 유효)
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
-        await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history, naver_email)
-        
+        # ✨ 치지직을 연동한 사람이면 그 닉네임으로 표시한다(연동 안 했으면 기존 이름 그대로).
+        chzzk_link = await asyncio.to_thread(_chzzk_get_link, email)
+        chzzk_channel_id = chzzk_nickname = None
+        if chzzk_link:
+            chzzk_channel_id = chzzk_link["channelId"]
+            chzzk_nickname = chzzk_link["nickname"]
+            if chzzk_nickname:
+                name = chzzk_nickname
+                data["name"] = chzzk_nickname   # 방송 화면 알림도 치지직 닉네임으로
+
+        await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history,
+                                naver_email, chzzk_channel_id, chzzk_nickname)
+
         await drawing_queue.put(data)
         return {"status": "success"}
     except HTTPException as he: raise he

@@ -237,6 +237,21 @@
                         <input type="text" id="ban-email" placeholder="차단할 고유ID (이메일)" style="flex: 1;">
                         <button class="btn-danger" onclick="banUser()">차단 추가</button>
                     </div>
+                    <!-- ✨ 치지직 활동제한 동시 적용 -->
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ccc; cursor:pointer;">
+                            <input type="checkbox" id="chk-chzzk-restrict" style="margin:0;">
+                            치지직 활동제한도 함께 적용
+                        </label>
+                        <button class="btn-primary" style="font-size:11px; padding:4px 10px; background:#00c73c;"
+                            onclick="linkChzzkStreamer()" title="활동제한을 걸려면 방송인 계정 권한 위임이 1회 필요합니다">
+                            치지직 방송인 연동
+                        </button>
+                    </div>
+                    <p style="font-size:11px; color:#888; margin:6px 0 0; line-height:1.6;">
+                        ※ 활동제한은 <b style="color:#aaa;">치지직 계정을 연동한 시청자</b>에게만 적용됩니다.
+                        (연동 안 한 사람은 그림툴 차단만 적용)
+                    </p>
                     <ul id="ban-list"
                         style="list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; background: #222; border: 1px solid #444; border-radius: 4px; padding: 5px;">
                         <!-- 차단 목록 렌더링 -->
@@ -591,10 +606,12 @@
                 const res = await fetch(`${API_BASE}/api/update-settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ add_blocked_email: email })
+                    body: JSON.stringify({ add_blocked_email: email, chzzk_restrict: chzzkRestrictChecked() })
                 });
                 if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
                     document.getElementById('ban-email').value = '';
+                    reportChzzkResult(data, '활동제한');
                     loadSettings();
                 }
             } catch (e) {
@@ -608,14 +625,35 @@
                 const res = await fetch(`${API_BASE}/api/update-settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ remove_blocked_email: email })
+                    body: JSON.stringify({ remove_blocked_email: email, chzzk_restrict: chzzkRestrictChecked() })
                 });
                 if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    reportChzzkResult(data, '활동제한 해제');
                     loadSettings();
                 }
             } catch (e) {
                 alert("차단 해제 실패");
             }
+        }
+
+        // ✨ 치지직 활동제한 관련 헬퍼
+        function chzzkRestrictChecked() {
+            const el = document.getElementById('chk-chzzk-restrict');
+            return !!(el && el.checked);
+        }
+        function reportChzzkResult(data, action) {
+            const c = data && data.chzzk;
+            if (!c) return;                       // 체크 안 했으면 조용히 넘어감
+            if (c.ok) alert(`치지직 ${action} 완료${c.nickname ? ' (' + c.nickname + ')' : ''}`);
+            else alert(`치지직 ${action} 실패
+${c.message || ''}`);
+        }
+        // 방송인 권한 위임(활동제한 호출용). 비밀번호는 이미 로그인에 쓴 값을 그대로 사용한다.
+        function linkChzzkStreamer() {
+            const pw = prompt('방송인 비밀번호를 입력하세요 (치지직 권한 위임)');
+            if (!pw) return;
+            window.open(`${API_BASE}/chzzk/login?role=streamer&pw=${encodeURIComponent(pw)}`, '_blank');
         }
 
         // ✨ HTML 이스케이프 (문의 내용은 사용자 자유 입력이므로 XSS 방지)
@@ -688,6 +726,7 @@
                         <td>${item.id}</td>
                         <td>
                             <div style="font-weight: bold;">${escapeHtml(item.name)}</div>
+                            ${item.chzzkNickname ? `<div style="font-size:11px; color:#00c73c;" title="치지직 닉네임">치지직 ${escapeHtml(item.chzzkNickname)}</div>` : ''}
                             ${mailLine}
                             <div style="font-size: 10px; color: #777; word-break: break-all;" title="차단에 사용하는 고유 식별자">${escapeHtml(item.email)}</div>
                         </td>
