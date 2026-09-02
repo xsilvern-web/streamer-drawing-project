@@ -1123,6 +1123,14 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
         _client_seq += 1
         client_id = f"c{_client_seq}"
         name = (first.get("name") or "").strip()[:20] or "익명"
+        # ✨ 치지직을 연동했다면 합작방 이름도 치지직 닉네임으로 고정한다.
+        #    (합작 송출은 참가자 이름이 그대로 방송에 나가므로, 여기서 막지 않으면 이름을 바꿔 보낼 수 있다)
+        try:
+            _link = await asyncio.to_thread(_chzzk_get_link, user_id)
+            if _link and _link.get("nickname"):
+                name = _link["nickname"][:20]
+        except Exception as e:
+            print(f"[ROOM] 치지직 닉네임 조회 실패(입력값 사용): {e}")
         layer_id = f"rlayer_{client_id}"
         room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket, "userId": user_id}
         print(f"[ROOM] join room={room['id']} client={client_id} name={name} userId={user_id}")

@@ -6754,14 +6754,30 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                     const d = await res.json();
                     if (!d.configured) { btn.style.display = 'none'; return; }   // 서버에 설정 안 됐으면 숨김
                     btn.style.display = '';
+                    const nick = document.getElementById('custom-nickname');
                     if (d.linked) {
                         btn.innerText = `치지직 ${d.nickname}`;
                         btn.style.background = '#2e7d32';
                         btn.title = '치지직 닉네임으로 표시됩니다. 다시 누르면 계정을 바꿀 수 있습니다.';
+                        // ✨ 연동한 경우 닉네임은 치지직 닉네임으로 고정한다.
+                        //    (서버도 어차피 치지직 닉네임으로 덮어쓰므로, 입력칸만 바꿔봐야 표시가 달라져 혼란만 준다)
+                        if (nick && d.nickname) {
+                            nick.value = d.nickname;
+                            nick.readOnly = true;
+                            nick.style.opacity = '0.75';
+                            nick.style.cursor = 'not-allowed';
+                            nick.title = '치지직 계정을 연결하면 닉네임은 치지직 닉네임으로 고정됩니다.';
+                        }
                     } else {
                         btn.innerText = '치지직 연결';
                         btn.style.background = '#00c73c';
                         btn.title = '치지직 계정을 연결하면 치지직 닉네임으로 표시됩니다';
+                        if (nick) {
+                            nick.readOnly = false;
+                            nick.style.opacity = '';
+                            nick.style.cursor = '';
+                            nick.title = '';
+                        }
                     }
                 } catch (e) { btn.style.display = 'none'; }
             }
