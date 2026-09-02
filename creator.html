@@ -199,6 +199,9 @@
                         <input type="number" id="setting-limit" value="0" style="width: 60px;" title="0이면 무제한">
                         <span style="font-size: 12px; color: #aaa;">(0 = 무제한)</span>
                     </div>
+                    <p style="font-size:11px; color:#888; margin:-4px 0 12px; line-height:1.6;">
+                        ※ 로그인이 <b style="color:#00c73c;">치지직 계정</b>으로 통일되어, 모든 이용자가 치지직 신원으로 식별됩니다.
+                    </p>
                     <button class="btn-success" onclick="saveSettings()">설정 저장</button>
                 </div>
 
@@ -498,6 +501,13 @@
 
                 document.getElementById('setting-duration').value = data.display_duration;
                 document.getElementById('setting-limit').value = data.daily_limit;
+                // ✨ 치지직 연동 필수 토글 (서버에 치지직 설정이 없으면 켜도 무시되므로 비활성 처리)
+                const reqEl = document.getElementById('setting-require-chzzk');
+                if (reqEl) {
+                    reqEl.checked = !!data.require_chzzk;
+                    reqEl.disabled = !data.chzzk_configured;
+                    reqEl.title = data.chzzk_configured ? '' : '서버에 치지직 CLIENT_ID가 설정되어 있지 않습니다.';
+                }
                 document.getElementById('admin-notice-input').value = data.notice_text || "";
 
                 const banListUl = document.getElementById('ban-list');
@@ -563,11 +573,12 @@
         async function saveSettings() {
             const duration = parseInt(document.getElementById('setting-duration').value) || 8;
             const limit = parseInt(document.getElementById('setting-limit').value) || 0;
+            const requireChzzk = !!(document.getElementById('setting-require-chzzk') || {}).checked;
             try {
                 const res = await fetch(`${API_BASE}/api/update-settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ display_duration: duration, daily_limit: limit })
+                    body: JSON.stringify({ display_duration: duration, daily_limit: limit, require_chzzk: requireChzzk })
                 });
                 if (res.ok) alert("설정이 저장되었습니다.");
             } catch (e) {

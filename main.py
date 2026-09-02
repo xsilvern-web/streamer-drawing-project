@@ -15,7 +15,7 @@ def _kst_str(ts):
     return ts.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
 from fastapi import FastAPI, WebSocket, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import FileResponse, RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
@@ -157,6 +157,13 @@ def init_db():
     except psycopg2.Error:
         conn.rollback()
 
+    # ✨ 치지직 연동 필수 여부. 기본 FALSE — 켜기 전까지는 기존과 똑같이 동작한다.
+    try:
+        cursor.execute("ALTER TABLE settings ADD COLUMN require_chzzk BOOLEAN DEFAULT FALSE")
+        conn.commit()
+    except psycopg2.Error:
+        conn.rollback()
+
     # ✨ 네이버 실제 메일 주소를 담을 컬럼 (donor_email은 예전부터 'getId() 식별자'를 담고 있어 이름과 달리 이메일이 아님).
     #    식별/차단은 계속 donor_email(식별자) 기준이고, 이 컬럼은 참고용으로만 추가한다.
     try:
@@ -190,10 +197,13 @@ def get_db_settings():
         "blocked_emails": json.loads(row_dict.get("blocked_emails", '[]')),
         "display_duration": row_dict.get("display_duration", 8),
         "daily_limit": row_dict.get("daily_limit", 0),
-        "notice_text": row_dict.get("notice_text", "") # ✨ 추가
+        "notice_text": row_dict.get("notice_text", ""), # ✨ 추가
+        # ✨ 치지직 연동을 강제할지. CLIENT_ID가 없으면(=연동 자체가 불가) 강제하지 않는다.
+        "require_chzzk": bool(row_dict.get("require_chzzk", False)) and bool(CHZZK_CLIENT_ID),
+        "chzzk_configured": bool(CHZZK_CLIENT_ID)
     }
 
-def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None, notice_text=None): # ✨ 파라미터 추가
+def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=None, daily_limit=None, notice_text=None, require_chzzk=None): # ✨ 파라미터 추가
     conn = get_db_connection()
     cursor = conn.cursor()
     if is_enabled is not None:
@@ -206,6 +216,8 @@ def update_db_settings(is_enabled=None, blocked_emails=None, display_duration=No
         cursor.execute("UPDATE settings SET daily_limit = %s WHERE id = 1", (daily_limit,))
     if notice_text is not None: # ✨ DB에 공지사항 저장 로직 추가
         cursor.execute("UPDATE settings SET notice_text = %s WHERE id = 1", (notice_text,))
+    if require_chzzk is not None:
+        cursor.execute("UPDATE settings SET require_chzzk = %s WHERE id = 1", (bool(require_chzzk),))
     conn.commit()
     conn.close()
 
@@ -498,7 +510,8 @@ class SettingsUpdate(BaseModel):
     display_duration: int = None
     daily_limit: int = None
     notice_text: str = None # ✨ 추가
-    chzzk_restrict: bool = False   # ✨ 차단/해제 시 치지직 활동제한도 함께 적용할지
+    chzzk_restrict: bool = False   # ✨ 차단/해제 시 치지직 활동제한도 함께 적용할지 (레거시)
+    require_chzzk: bool = None     # ✨ 치지직 연동 필수 여부
 
 @app.post("/api/update-settings")
 async def update_settings(data: SettingsUpdate):
@@ -518,7 +531,8 @@ async def update_settings(data: SettingsUpdate):
         blocked_emails=blocked if changed else None,
         display_duration=data.display_duration,
         daily_limit=data.daily_limit,
-        notice_text=data.notice_text
+        notice_text=data.notice_text,
+        require_chzzk=data.require_chzzk
     )
 
     # ✨ 차단은 '입장 시점'에만 검사되므로, 이미 합작방에 들어와 있는 사람은 그대로 그리고 있게 된다.
@@ -563,6 +577,53 @@ async def _kick_user_from_rooms(user_id):
 async def get_recent_donations():
     return await asyncio.to_thread(_fetch_recent_donations)
 
+# ---------- 치지직 로그인 세션 ----------
+# 치지직 인증은 서버에서 코드를 교환하므로, 결과를 브라우저에 유지하려면 세션이 필요하다.
+# 별도 저장소 없이 서명된 쿠키 하나로 처리한다(재배포해도 로그인이 풀리지 않도록 비밀키는 환경변수 기반).
+import hmac as _hmac, hashlib as _hashlib, base64 as _b64
+
+SESSION_SECRET = (os.getenv("SESSION_SECRET") or CHZZK_CLIENT_SECRET or CREATOR_PASSWORD or "chzzk-fallback").encode()
+CHZZK_COOKIE = "chzzk_session"
+
+def _sign_session(payload: dict) -> str:
+    raw = _b64.urlsafe_b64encode(json.dumps(payload, ensure_ascii=False).encode()).decode()
+    sig = _hmac.new(SESSION_SECRET, raw.encode(), _hashlib.sha256).hexdigest()[:32]
+    return f"{raw}.{sig}"
+
+def _read_session(cookie: str):
+    if not cookie or "." not in cookie:
+        return None
+    raw, _, sig = cookie.rpartition(".")
+    expect = _hmac.new(SESSION_SECRET, raw.encode(), _hashlib.sha256).hexdigest()[:32]
+    if not _hmac.compare_digest(sig, expect):
+        return None      # 위조된 쿠키
+    try:
+        return json.loads(_b64.urlsafe_b64decode(raw.encode()).decode())
+    except Exception:
+        return None
+
+async def _chzzk_channel_info(channel_id):
+    """채널 이미지·팔로워 수 조회. Client 인증만 필요하므로 유저 토큰 없이 호출 가능."""
+    if not (CHZZK_CLIENT_ID and CHZZK_CLIENT_SECRET):
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(f"{CHZZK_API_BASE}/open/v1/channels",
+                                 params={"channelIds": channel_id},
+                                 headers={"Client-Id": CHZZK_CLIENT_ID,
+                                          "Client-Secret": CHZZK_CLIENT_SECRET,
+                                          "Content-Type": "application/json"})
+        if r.status_code != 200:
+            return {}
+        body = r.json()
+        data = body.get("content", body)
+        items = data.get("data") if isinstance(data, dict) else data
+        if isinstance(items, list) and items:
+            return items[0]
+    except Exception as e:
+        print(f"[CHZZK] 채널 정보 조회 실패: {e}")
+    return {}
+
 # ---------- 치지직 OAuth / API ----------
 # state는 서버 메모리에 잠깐 보관한다(재시작 시 사라지지만 사용자가 다시 누르면 되므로 무해).
 _chzzk_pending = {}
@@ -602,8 +663,6 @@ async def chzzk_login(request: Request, role: str = "viewer", userId: str = "", 
     """치지직 인증 시작. viewer=시청자 계정 연결, streamer=방송인 권한 위임(활동제한용)."""
     if role not in ("viewer", "streamer"):
         raise HTTPException(status_code=400, detail="role이 올바르지 않습니다.")
-    if role == "viewer" and not userId:
-        raise HTTPException(status_code=400, detail="네이버 로그인 후 이용할 수 있습니다.")
     if role == "streamer" and pw != CREATOR_PASSWORD:
         raise HTTPException(status_code=403, detail="방송인 비밀번호가 올바르지 않습니다.")
 
@@ -655,19 +714,51 @@ async def chzzk_callback(request: Request, code: str = "", state: str = ""):
             f"<h3>치지직 방송인 연동이 완료되었습니다.</h3><p>채널: {nickname}</p>"
             "<p>이 창을 닫고 관리자 페이지로 돌아가세요.</p>")
 
-    backfilled = await asyncio.to_thread(_chzzk_save_link, pending["naverId"], channel_id, nickname)
-    print(f"[CHZZK] 시청자 연동 naver={pending['naverId']} channel={channel_id} 소급={backfilled}건")
-    return HTMLResponse(
-        "<script>try{window.opener&&window.opener.postMessage({type:'chzzk_linked'},'*')}catch(e){}"
-        "setTimeout(function(){window.close()},1200)</script>"
-        f"<h3>치지직 계정 연결 완료</h3><p>닉네임: {nickname}</p>"
-        f"<p>이전 그림 {backfilled}건에도 닉네임이 반영되었습니다.</p><p>이 창은 곧 닫힙니다.</p>")
+    # 프로필 이미지·팔로워 수는 채널 조회로 보강 (users/me는 채널ID/이름만 준다)
+    info = await _chzzk_channel_info(channel_id)
+    profile_image = info.get("channelImageUrl") or ""
+
+    # 기존 네이버 계정에서 넘어온 경우(naverId가 있으면) 연결을 저장해 과거 기록에 닉네임을 소급한다.
+    backfilled = 0
+    if pending.get("naverId"):
+        backfilled = await asyncio.to_thread(_chzzk_save_link, pending["naverId"], channel_id, nickname)
+    # 치지직 자체를 신원으로 쓰는 경우에도 링크를 남겨둔다(자기 자신 매핑 — 조회 경로 통일용)
+    await asyncio.to_thread(_chzzk_save_link, channel_id, channel_id, nickname)
+
+    print(f"[CHZZK] 로그인 channel={channel_id} name={nickname} 소급={backfilled}건")
+
+    # ✨ 서명 쿠키로 로그인 상태를 유지하고 그리기 화면으로 돌려보낸다.
+    resp = RedirectResponse(str(request.base_url).rstrip("/") + "/draw")
+    resp.set_cookie(
+        CHZZK_COOKIE,
+        _sign_session({"channelId": channel_id, "channelName": nickname, "image": profile_image}),
+        max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax",
+        secure=str(request.base_url).startswith("https"))
+    return resp
+
+@app.get("/api/chzzk/me")
+async def chzzk_me(request: Request):
+    """현재 로그인한 치지직 사용자. 그리기 화면이 이걸로 로그인 여부를 판단한다."""
+    sess = _read_session(request.cookies.get(CHZZK_COOKIE, ""))
+    if not sess:
+        return {"loggedIn": False, "configured": bool(CHZZK_CLIENT_ID)}
+    return {"loggedIn": True, "configured": bool(CHZZK_CLIENT_ID),
+            "channelId": sess.get("channelId"), "channelName": sess.get("channelName"),
+            "image": sess.get("image", "")}
+
+@app.post("/api/chzzk/logout")
+async def chzzk_logout():
+    resp = JSONResponse({"message": "success"})
+    resp.delete_cookie(CHZZK_COOKIE)
+    return resp
 
 @app.get("/api/chzzk/status")
 async def chzzk_status(userId: str = ""):
     """시청자 본인의 연동 상태 조회(그리기 화면에서 버튼 표시용)."""
     link = await asyncio.to_thread(_chzzk_get_link, userId.strip()[:100]) if userId else None
+    settings = await asyncio.to_thread(get_db_settings)
     return {"configured": bool(CHZZK_CLIENT_ID), "linked": bool(link),
+            "required": bool(settings.get("require_chzzk")),
             "nickname": (link or {}).get("nickname", ""), "channelId": (link or {}).get("channelId", "")}
 
 class ChzzkRestrictRequest(BaseModel):
@@ -769,9 +860,25 @@ async def submit_drawing(request: Request):
 
     try:
         data = await request.json()
-        email = data.get("email")   # ⚠️ 이름은 email이지만 실제로는 네이버 앱별 고유 식별자(getId). 차단/식별의 기준이므로 절대 실제 메일로 바꾸지 말 것.
-        name = data.get("name")
-        profile_image = data.get("profileImage", "")
+        # ✨ 신원은 서버 세션(치지직 로그인)에서 읽는다 — 클라이언트가 보낸 값은 위조가 가능하다.
+        #    치지직 미설정 시에는 기존(네이버 식별자) 방식으로 폴백해 배포 전에도 동작이 끊기지 않는다.
+        _sess = _read_session(request.cookies.get(CHZZK_COOKIE, ""))
+        if _sess:
+            email = _sess["channelId"]          # 신원 = 치지직 채널ID (차단 기준)
+            name = _sess.get("channelName") or "치지직 시청자"
+        elif CHZZK_CLIENT_ID:
+            raise HTTPException(status_code=401, detail="치지직 로그인이 필요합니다.")
+        else:
+            email = data.get("email")   # ⚠️ 이름은 email이지만 실제로는 네이버 앱별 고유 식별자(getId).
+            name = data.get("name")
+        # ✨ 프로필 이미지도 세션(치지직 채널 이미지)을 우선한다.
+        #    클라이언트가 보낸 값을 그대로 쓰면 남의 프사로 바꿔 보낼 수 있다.
+        #    단, '프사 전송' 체크를 끄면 클라이언트가 빈 값을 보내므로 그 의사는 존중한다.
+        _client_img = data.get("profileImage", "")
+        if _sess:
+            profile_image = (_sess.get("image", "") if _client_img else "")
+        else:
+            profile_image = _client_img
         title = data.get("title", "제목없음")
         drawing_history = data.get("drawingData")
         naver_email = (data.get("naverEmail") or "").strip()[:200]   # ✨ 실제 메일 주소(참고용)
@@ -782,6 +889,10 @@ async def submit_drawing(request: Request):
 
         # ✨ 치지직을 연동한 사람이면 그 닉네임으로 표시한다(연동 안 했으면 기존 이름 그대로).
         chzzk_link = await asyncio.to_thread(_chzzk_get_link, email)
+        # ✨ '치지직 연동 필수'가 켜져 있으면 연동하지 않은 사람은 보낼 수 없다.
+        if settings.get("require_chzzk") and not chzzk_link:
+            raise HTTPException(status_code=403,
+                                detail="치지직 계정 연결이 필요합니다. 그리기 화면의 [치지직 연결] 버튼을 눌러주세요.")
         chzzk_channel_id = chzzk_nickname = None
         if chzzk_link:
             chzzk_channel_id = chzzk_link["channelId"]
@@ -1001,7 +1112,7 @@ async def list_rooms():
     ]
 
 @app.post("/api/rooms")
-async def create_room(data: RoomCreate):
+async def create_room(data: RoomCreate, request: Request):
     global _room_seq
     title = (data.title or "").strip()[:60]
     if not title:
@@ -1009,7 +1120,13 @@ async def create_room(data: RoomCreate):
 
     # ✨ 방 생성도 로그인 + 차단 검사. 입장만 막으면 차단된 사람이 빈 방을 계속 만들어
     #    방 목록을 오염시키고 MAX_ROOMS를 고갈시킬 수 있다.
-    user_id = (data.userId or "").strip()[:100]
+    _csess = _read_session(request.cookies.get(CHZZK_COOKIE, "")) if request else None
+    if _csess:
+        user_id = _csess["channelId"]
+    elif CHZZK_CLIENT_ID:
+        raise HTTPException(status_code=401, detail="치지직 로그인이 필요합니다.")
+    else:
+        user_id = (data.userId or "").strip()[:100]
     if not user_id:
         raise HTTPException(status_code=401, detail="합작방은 로그인 후 이용할 수 있습니다.")
     settings = await asyncio.to_thread(get_db_settings)
@@ -1106,11 +1223,34 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
             return
         # ✨ userId(네이버 앱별 고유 식별자)는 서버에만 보관하고 다른 참가자에게는 브로드캐스트하지 않는다.
         #    (누가 방에 있었는지 남겨 악용 대응에 쓰기 위함)
-        user_id = (first.get("userId") or "").strip()[:100]
+        # ✨ 신원은 서버 세션(치지직)에서 읽는다 — 클라이언트가 보낸 userId는 위조가 가능하다.
+        _rsess = _read_session(websocket.cookies.get(CHZZK_COOKIE, ""))
+        if _rsess:
+            user_id = _rsess["channelId"]
+        elif CHZZK_CLIENT_ID:
+            await websocket.send_text(json.dumps({"type": "error", "message": "치지직 로그인이 필요합니다."}))
+            await websocket.close()
+            return
+        else:
+            user_id = (first.get("userId") or "").strip()[:100]
         if not user_id:
             await websocket.send_text(json.dumps({"type": "error", "message": "합작방은 로그인 후 이용할 수 있습니다."}))
             await websocket.close()
             return
+
+        # ✨ '치지직 연동 필수'가 켜져 있으면 합작방도 연동해야 들어올 수 있다(제출 경로와 동일 기준).
+        try:
+            _rs = await asyncio.to_thread(get_db_settings)
+            if _rs.get("require_chzzk"):
+                _lk = await asyncio.to_thread(_chzzk_get_link, user_id)
+                if not _lk:
+                    await websocket.send_text(json.dumps({
+                        "type": "error",
+                        "message": "치지직 계정 연결이 필요합니다. 그리기 화면의 [치지직 연결] 버튼을 눌러주세요."}))
+                    await websocket.close()
+                    return
+        except Exception as e:
+            print(f"[ROOM] 치지직 필수 검사 실패(입장 허용): {e}")
 
         # ✨ 크리에이터 페이지에서 차단된 계정은 합작방에도 들어올 수 없다.
         #    (blocked_emails는 이름과 달리 '네이버 앱별 고유 식별자' 목록 — 후원 전송과 같은 기준)

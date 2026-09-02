@@ -4,8 +4,6 @@
 <head>
     <meta charset="UTF-8">
     <title>시청자용 그리기 (애니메이션 지원 프로페셔널 에디터)</title>
-    <script type="text/javascript" src="https://static.nid.naver.com/js/naveridlogin_js_sdk_2.0.2.js"
-        charset="utf-8"></script>
     <!-- ✨ GIF 생성 라이브러리.
          이전에 쓰던 cdnjs의 0.4.5 경로는 파일이 등록돼 있지 않아 404였고(=GIF 내보내기가 동작하지 않음),
          실제로 응답하는 jsdelivr 주소로 교체. 실패 시 cdnjs 0.3.2로 자동 폴백한다. -->
@@ -995,7 +993,12 @@
                 </div>
 
                 <div class="header-group" id="login-container">
-                    <div id="naverIdLogin"></div>
+                    <!-- ✨ 치지직 로그인 (네이버 로그인에서 전환) -->
+                    <button id="btn-chzzk-login" type="button"
+                        style="background:#00c73c; color:#fff; border:none; padding:9px 18px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:14px;">
+                        치지직으로 로그인
+                    </button>
+                    <div id="naverIdLogin" style="display:none;"></div>
                 </div>
 
                 <div class="header-group" id="donation-container" style="display: none;">
@@ -1009,10 +1012,10 @@
                         </label>
                     </div>
                     <input type="text" id="custom-nickname" placeholder="닉네임" style="width: 100px; font-weight: bold;">
-                    <!-- ✨ 치지직 계정 연결: 연결하면 이 닉네임 대신 치지직 닉네임으로 표시된다 -->
-                    <button id="btn-chzzk-link" type="button"
-                        style="display:none; background:#00c73c; color:#fff; border:none; padding:5px 9px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:11px; white-space:nowrap;"
-                        title="치지직 계정을 연결하면 치지직 닉네임으로 표시됩니다">치지직 연결</button>
+                    <!-- ✨ 치지직으로 로그인된 상태 — 닉네임은 채널명으로 고정된다 -->
+                    <button id="btn-chzzk-logout" type="button"
+                        style="background:#455a64; color:#fff; border:none; padding:5px 9px; border-radius:4px; cursor:pointer; font-size:11px; white-space:nowrap;"
+                        title="치지직 로그아웃">로그아웃</button>
                     <input type="text" id="drawing-title" placeholder="그림 제목" style="width: 180px;">
 
                     <div style="display: flex; align-items: center; gap: 5px;">
@@ -5034,8 +5037,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             const profilePreview = document.getElementById('profile-preview');
             const useProfileCheckbox = document.getElementById('use-profile');
 
-            const naverLogin = new naver.LoginWithNaverId({ clientId: "vvc6338uO8TYXNMje6Dj", callbackUrl: window.location.origin + "/draw", isPopup: false, loginButton: { color: "green", type: 3, height: 40 } });
-            naverLogin.init();
+            // ✨ 로그인은 치지직 OAuth로 전환됨. 네이버 SDK는 더 이상 초기화하지 않는다.
+            //    (네이버 식별자로는 치지직 닉네임/채널을 알아낼 방법이 없어 두 번 로그인해야 했고,
+            //     치지직 하나로 통일하면 닉네임·프로필·활동제한이 모두 한 신원으로 이어진다)
             // ✨ 서버에서 폰트 목록을 가져와 자동으로 스타일과 드롭다운을 세팅하는 함수
             async function loadCustomFonts() {
                 try {
@@ -5214,35 +5218,52 @@ document.getElementById('file-input').addEventListener('change', (e) => {
             loadBrushList();
             // 스크립트가 실행될 때 위 함수를 곧바로 작동시킵니다.
             loadCustomFonts();
-            window.addEventListener('load', function () {
-                naverLogin.getLoginStatus(function (status) {
-                    if (status) {
-                        const uniqueId = naverLogin.user.getId();
-                        if (!uniqueId) { document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; return; }
-                        // ⚠️ email 필드에는 '앱별 고유 식별자(getId)'가 들어간다. 원장(donor_email)과 블랙리스트가 이 값을 기준으로
-                        //    동작하므로 실제 메일 주소로 바꾸면 기존 차단이 전부 풀린다. 실제 메일은 naverEmail로 따로 담는다.
-                        //    (네이버는 로그인 아이디를 제공하지 않고, 식별자는 애플리케이션당 유니크한 값이다)
+            // ✨ 로그인 상태는 서버 세션(치지직)에서 확인한다.
+            //    신원이 서버 쿠키에 있으므로 클라이언트가 이름/식별자를 위조할 수 없다.
+            async function refreshLoginState() {
+                const loginBox = document.getElementById('login-container');
+                const donateBox = document.getElementById('donation-container');
+                try {
+                    const res = await fetch(`${API_BASE}/api/chzzk/me`);
+                    const me = await res.json();
+                    if (me.loggedIn) {
                         loggedInUser = {
-                            name: naverLogin.user.getNickName() || naverLogin.user.getName() || "치지직 시청자",
-                            email: uniqueId,
-                            naverEmail: (naverLogin.user.getEmail && naverLogin.user.getEmail()) || "",
-                            profileImage: naverLogin.user.getProfileImage() || ""
+                            name: me.channelName || "치지직 시청자",
+                            email: me.channelId,          // 신원 = 치지직 채널ID (차단·식별 기준)
+                            channelId: me.channelId,
+                            naverEmail: "",
+                            profileImage: me.image || ""
                         };
-
-                        document.getElementById('login-container').style.display = 'none'; document.getElementById('donation-container').style.display = 'flex';
-                        document.getElementById('custom-nickname').value = loggedInUser.name;
-
-                        if (loggedInUser.profileImage) { profilePreview.style.backgroundImage = `url('${loggedInUser.profileImage}')`; }
-                        else { profilePreview.style.backgroundImage = 'none'; }
-
-                        // ✨ 치지직 연동 상태 표시 (연동돼 있으면 그 닉네임으로 표시된다는 걸 알려줌)
-                        if (typeof refreshChzzkLink === 'function') refreshChzzkLink();
+                        loginBox.style.display = 'none';
+                        donateBox.style.display = 'flex';
+                        const nickEl = document.getElementById('custom-nickname');
+                        if (nickEl) nickEl.value = loggedInUser.name;
+                        if (loggedInUser.profileImage) profilePreview.style.backgroundImage = `url('${loggedInUser.profileImage}')`;
+                        else profilePreview.style.backgroundImage = 'none';
+                        // 치지직 닉네임으로 고정
+                        chzzkLockedNickname = loggedInUser.name;
+                        applyNicknameLock();
                     } else {
-                        document.getElementById('login-container').style.display = 'flex'; document.getElementById('donation-container').style.display = 'none'; loggedInUser = null;
-                        const cb = document.getElementById('btn-chzzk-link'); if (cb) cb.style.display = 'none';
+                        loggedInUser = null;
+                        loginBox.style.display = 'flex';
+                        donateBox.style.display = 'none';
+                        chzzkLockedNickname = '';
+                        applyNicknameLock();
+                        if (!me.configured) {
+                            const b = document.getElementById('btn-chzzk-login');
+                            if (b) { b.innerText = '치지직 설정 필요 (서버)'; b.disabled = true; b.style.background = '#666'; }
+                        }
                     }
-                });
-            });
+                } catch (e) {
+                    loggedInUser = null;
+                    loginBox.style.display = 'flex';
+                    donateBox.style.display = 'none';
+                }
+            }
+            window.addEventListener('load', refreshLoginState);
+            document.getElementById('btn-chzzk-login').onclick = () => {
+                window.location.href = `${API_BASE}/chzzk/login?role=viewer`;
+            };
 
             useProfileCheckbox.addEventListener('change', (e) => { profilePreview.style.opacity = e.target.checked ? "1" : "0.3"; });
 
@@ -6743,12 +6764,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
             // =====================================================================
 
-            // ✨ 치지직 계정 연결
-            //    연결하면 서버가 치지직 닉네임(channelName)을 저장해, 이후 그림은 그 이름으로 표시된다.
-            //    (연결 안 한 사람은 기존 닉네임 그대로 — 기존 동작 유지)
-            // ✨ 치지직 연동 시 닉네임 고정. 값이 있으면 잠그고, 비면 다시 편집 가능하게 되돌린다.
-            //    입력칸이 두 곳(일반 닉네임 / 합작방 닉네임)이라 둘 다 처리해야 한다.
-            //    (서버도 두 경로 모두 치지직 닉네임으로 덮어쓰므로, 화면만 열려 있으면 혼란만 준다)
+            // ✨ 닉네임은 치지직 채널명으로 고정한다(사칭 방지).
+            //    입력칸이 두 곳(일반 / 합작방)이라 둘 다 처리한다. 서버도 두 경로 모두 채널명으로 덮어쓴다.
             let chzzkLockedNickname = '';
             function applyNicknameLock() {
                 ['custom-nickname', 'room-nickname'].forEach(id => {
@@ -6759,7 +6776,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         el.readOnly = true;
                         el.style.opacity = '0.75';
                         el.style.cursor = 'not-allowed';
-                        el.title = '치지직 계정을 연결하면 닉네임은 치지직 닉네임으로 고정됩니다.';
+                        el.title = '닉네임은 치지직 채널명으로 고정됩니다.';
                     } else {
                         el.readOnly = false;
                         el.style.opacity = '';
@@ -6769,41 +6786,12 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                 });
             }
 
-            async function refreshChzzkLink() {
-                const btn = document.getElementById('btn-chzzk-link');
-                if (!btn) return;
-                if (typeof loggedInUser === 'undefined' || !loggedInUser) { btn.style.display = 'none'; return; }
-                try {
-                    const res = await fetch(`${API_BASE}/api/chzzk/status?userId=${encodeURIComponent(loggedInUser.email)}`);
-                    const d = await res.json();
-                    if (!d.configured) { btn.style.display = 'none'; return; }   // 서버에 설정 안 됐으면 숨김
-                    btn.style.display = '';
-                    if (d.linked) {
-                        btn.innerText = `치지직 ${d.nickname}`;
-                        btn.style.background = '#2e7d32';
-                        btn.title = '치지직 닉네임으로 표시됩니다. 다시 누르면 계정을 바꿀 수 있습니다.';
-                    } else {
-                        btn.innerText = '치지직 연결';
-                        btn.style.background = '#00c73c';
-                        btn.title = '치지직 계정을 연결하면 치지직 닉네임으로 표시됩니다';
-                    }
-                    chzzkLockedNickname = d.linked ? (d.nickname || '') : '';
-                    applyNicknameLock();
-                } catch (e) { btn.style.display = 'none'; }
-            }
-            (function initChzzk() {
-                const btn = document.getElementById('btn-chzzk-link');
-                if (!btn) return;
-                btn.onclick = () => {
-                    if (typeof loggedInUser === 'undefined' || !loggedInUser) return alert('네이버 로그인 후 이용할 수 있습니다.');
-                    window.open(`${API_BASE}/chzzk/login?role=viewer&userId=${encodeURIComponent(loggedInUser.email)}`,
-                        'chzzk_link', 'width=520,height=680');
-                };
-                // 연결 완료 창이 알려주면 즉시 갱신
-                window.addEventListener('message', (e) => {
-                    if (e.data && e.data.type === 'chzzk_linked') refreshChzzkLink();
-                });
-            })();
+            // ✨ 로그인이 곧 치지직 연동이므로 별도 '연결' 절차가 없다.
+            document.getElementById('btn-chzzk-logout').onclick = async () => {
+                if (!confirm('로그아웃 하시겠습니까?')) return;
+                try { await fetch(`${API_BASE}/api/chzzk/logout`, { method: 'POST' }); } catch (e) {}
+                location.reload();
+            };
 
             // ✨ 단축키 안내 모달
             (function initShortcuts() {
