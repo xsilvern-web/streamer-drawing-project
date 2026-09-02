@@ -628,9 +628,24 @@ async def _chzzk_channel_info(channel_id):
 # state는 서버 메모리에 잠깐 보관한다(재시작 시 사라지지만 사용자가 다시 누르면 되므로 무해).
 _chzzk_pending = {}
 
+def _public_base(request: Request):
+    """외부에서 보이는 실제 주소(https://...)를 만든다.
+
+    클라우드타입 같은 배포 환경은 프록시에서 TLS를 끊기 때문에 request.base_url이 http:// 로 잡힌다.
+    그 값을 그대로 redirectUri로 보내면 치지직에 등록한 https 주소와 달라져 인증 후 되돌아오지 못한다.
+    (동의 화면에서 눌러도 아무 일도 일어나지 않는 증상)
+    PUBLIC_BASE_URL 환경변수가 있으면 그것을 최우선으로 쓰고, 없으면 프록시 헤더로 복원한다.
+    """
+    env = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if env:
+        return env
+    proto = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip() or request.url.scheme
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip()
+    return f"{proto}://{host}"
+
 def _chzzk_redirect_uri(request: Request):
     # 등록된 '로그인 리디렉션 URL'과 정확히 일치해야 한다.
-    return str(request.base_url).rstrip("/") + "/chzzk/callback"
+    return _public_base(request) + "/chzzk/callback"
 
 async def _chzzk_token_request(role, payload):
     client_id, client_secret = _chzzk_creds(role)
@@ -728,12 +743,12 @@ async def chzzk_callback(request: Request, code: str = "", state: str = ""):
     print(f"[CHZZK] 로그인 channel={channel_id} name={nickname} 소급={backfilled}건")
 
     # ✨ 서명 쿠키로 로그인 상태를 유지하고 그리기 화면으로 돌려보낸다.
-    resp = RedirectResponse(str(request.base_url).rstrip("/") + "/draw")
+    resp = RedirectResponse(_public_base(request) + "/draw")
     resp.set_cookie(
         CHZZK_COOKIE,
         _sign_session({"channelId": channel_id, "channelName": nickname, "image": profile_image}),
         max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax",
-        secure=str(request.base_url).startswith("https"))
+        secure=_public_base(request).startswith("https"))
     return resp
 
 @app.get("/api/chzzk/me")
@@ -1458,4 +1473,5 @@ async def startup_event():
     asyncio.create_task(cleanup_empty_rooms())
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # ✨ 프록시 뒤에서도 원래 스킴(https)을 인식하도록 forwarded 헤더를 신뢰한다.
+    uvicorn.run(app, host="0.0.0.0", port=8000, proxy_headers=True, forwarded_allow_ips="*")
