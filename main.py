@@ -670,6 +670,33 @@ async def chzzk_status(userId: str = ""):
     return {"configured": bool(CHZZK_CLIENT_ID), "linked": bool(link),
             "nickname": (link or {}).get("nickname", ""), "channelId": (link or {}).get("channelId", "")}
 
+class ChzzkRestrictRequest(BaseModel):
+    userId: str = ""        # 네이버 식별자(원장의 고유ID). 연동 정보를 통해 채널을 찾는다.
+    channelId: str = ""     # 치지직 채널ID를 직접 아는 경우
+    remove: bool = False    # True면 활동제한 해제
+
+@app.post("/api/chzzk/restrict")
+async def chzzk_restrict_api(data: ChzzkRestrictRequest):
+    """✨ 그림툴 차단과 별개로, 치지직 활동제한만 단독으로 걸거나 푼다."""
+    channel_id = (data.channelId or "").strip()
+    nickname = ""
+    if not channel_id:
+        naver_id = (data.userId or "").strip()
+        if not naver_id:
+            raise HTTPException(status_code=400, detail="대상을 지정해주세요.")
+        link = await asyncio.to_thread(_chzzk_get_link, naver_id)
+        if not link:
+            raise HTTPException(status_code=404,
+                                detail="이 사용자는 치지직 계정을 연동하지 않아 활동제한을 걸 수 없습니다.")
+        channel_id = link["channelId"]
+        nickname = link.get("nickname") or ""
+
+    ok, msg = await _chzzk_restrict(channel_id, remove=data.remove)
+    print(f"[CHZZK] 단독 활동제한 {'해제' if data.remove else '등록'} channel={channel_id} ok={ok} msg={msg}")
+    if not ok:
+        raise HTTPException(status_code=502, detail=msg)
+    return {"message": "success", "channelId": channel_id, "nickname": nickname, "removed": data.remove}
+
 async def _chzzk_restrict(target_channel_id, remove=False):
     """방송인 채널에 활동제한 등록/해제. 성공 시 (True, 메시지)."""
     token = await _chzzk_access_token("streamer")

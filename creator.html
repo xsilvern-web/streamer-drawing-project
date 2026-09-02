@@ -237,21 +237,25 @@
                         <input type="text" id="ban-email" placeholder="차단할 고유ID (이메일)" style="flex: 1;">
                         <button class="btn-danger" onclick="banUser()">차단 추가</button>
                     </div>
-                    <!-- ✨ 치지직 활동제한 동시 적용 -->
-                    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
-                        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#ccc; cursor:pointer;">
-                            <input type="checkbox" id="chk-chzzk-restrict" style="margin:0;">
-                            치지직 활동제한도 함께 적용
-                        </label>
-                        <button class="btn-primary" style="font-size:11px; padding:4px 10px; background:#00c73c;"
-                            onclick="linkChzzkStreamer()" title="활동제한을 걸려면 방송인 계정 권한 위임이 1회 필요합니다">
-                            치지직 방송인 연동
-                        </button>
+                    <!-- ✨ 치지직 활동제한: 그림툴 차단과 완전히 별개로 동작한다 -->
+                    <div style="margin-top:16px; padding-top:14px; border-top:1px solid #444;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+                            <span style="font-size:13px; font-weight:bold; color:#00c73c;">치지직 활동제한 (별개)</span>
+                            <button class="btn-primary" style="font-size:11px; padding:4px 10px; background:#00c73c;"
+                                onclick="linkChzzkStreamer()" title="활동제한을 걸려면 방송인 계정 권한 위임이 1회 필요합니다">
+                                방송인 연동
+                            </button>
+                        </div>
+                        <div class="control-group" style="margin-bottom:6px;">
+                            <input type="text" id="chzzk-target" placeholder="고유ID 또는 치지직 채널ID" style="flex:1;">
+                            <button class="btn-danger" onclick="chzzkRestrict(false)">활동제한</button>
+                            <button class="btn-success" onclick="chzzkRestrict(true)">해제</button>
+                        </div>
+                        <p style="font-size:11px; color:#888; margin:0; line-height:1.6;">
+                            ※ 그림툴 차단과 <b style="color:#aaa;">서로 영향을 주지 않습니다.</b>
+                            고유ID로 걸려면 상대가 치지직을 연동했어야 하며, 채널ID를 직접 넣으면 연동 여부와 무관합니다.
+                        </p>
                     </div>
-                    <p style="font-size:11px; color:#888; margin:6px 0 0; line-height:1.6;">
-                        ※ 활동제한은 <b style="color:#aaa;">치지직 계정을 연동한 시청자</b>에게만 적용됩니다.
-                        (연동 안 한 사람은 그림툴 차단만 적용)
-                    </p>
                     <ul id="ban-list"
                         style="list-style: none; padding: 0; margin: 0; max-height: 150px; overflow-y: auto; background: #222; border: 1px solid #444; border-radius: 4px; padding: 5px;">
                         <!-- 차단 목록 렌더링 -->
@@ -606,12 +610,10 @@
                 const res = await fetch(`${API_BASE}/api/update-settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ add_blocked_email: email, chzzk_restrict: chzzkRestrictChecked() })
+                    body: JSON.stringify({ add_blocked_email: email })
                 });
                 if (res.ok) {
-                    const data = await res.json().catch(() => ({}));
                     document.getElementById('ban-email').value = '';
-                    reportChzzkResult(data, '활동제한');
                     loadSettings();
                 }
             } catch (e) {
@@ -625,11 +627,9 @@
                 const res = await fetch(`${API_BASE}/api/update-settings`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ remove_blocked_email: email, chzzk_restrict: chzzkRestrictChecked() })
+                    body: JSON.stringify({ remove_blocked_email: email })
                 });
                 if (res.ok) {
-                    const data = await res.json().catch(() => ({}));
-                    reportChzzkResult(data, '활동제한 해제');
                     loadSettings();
                 }
             } catch (e) {
@@ -637,17 +637,38 @@
             }
         }
 
-        // ✨ 치지직 활동제한 관련 헬퍼
-        function chzzkRestrictChecked() {
-            const el = document.getElementById('chk-chzzk-restrict');
-            return !!(el && el.checked);
-        }
-        function reportChzzkResult(data, action) {
-            const c = data && data.chzzk;
-            if (!c) return;                       // 체크 안 했으면 조용히 넘어감
-            if (c.ok) alert(`치지직 ${action} 완료${c.nickname ? ' (' + c.nickname + ')' : ''}`);
-            else alert(`치지직 ${action} 실패
-${c.message || ''}`);
+        // ✨ 치지직 활동제한 — 그림툴 차단과 완전히 별개로 호출한다.
+        //    target이 32자 hex처럼 보이면 채널ID로, 아니면 고유ID(네이버 식별자)로 넘긴다.
+        async function chzzkRestrict(remove, target) {
+            const input = document.getElementById('chzzk-target');
+            const value = (target !== undefined ? target : (input ? input.value : '')).trim();
+            if (!value) return alert('대상 고유ID 또는 치지직 채널ID를 입력하세요.');
+            const action = remove ? '활동제한 해제' : '활동제한';
+            if (!confirm(`${value}
+
+치지직 ${action}을(를) 적용할까요?
+(그림툴 차단과는 별개입니다)`)) return;
+
+            const looksChannelId = /^[0-9a-f]{20,}$/i.test(value);
+            const body = remove ? { remove: true } : { remove: false };
+            if (looksChannelId) body.channelId = value; else body.userId = value;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/chzzk/restrict`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    alert(`치지직 ${action} 완료${data.nickname ? ' (' + data.nickname + ')' : ''}`);
+                    if (input && target === undefined) input.value = '';
+                } else {
+                    alert(`치지직 ${action} 실패
+${data.detail || '서버 오류'}`);
+                }
+            } catch (e) {
+                alert('치지직 요청 실패');
+            }
         }
         // 방송인 권한 위임(활동제한 호출용). 비밀번호는 이미 로그인에 쓴 값을 그대로 사용한다.
         function linkChzzkStreamer() {
@@ -738,6 +759,9 @@ ${c.message || ''}`);
                             <button class="btn-warning" style="font-size: 11px; padding: 5px 10px; margin-left: 5px;" onclick="replayFromHere(${item.id})" title="이 그림부터 가장 최신 그림까지 순서대로 방송에 재생">⏭ 여기부터</button>
                             <!-- ✨ 다운로드 버튼 추가 -->
                             <button class="btn-primary" style="font-size: 11px; padding: 5px 10px; margin-left: 5px;" onclick="downloadSingleDrawing(${item.id}, '${item.name}', '${item.time}')">💾 다운</button>
+                            ${item.chzzkChannelId
+                                ? `<button class="btn-danger" style="font-size:11px; padding:5px 10px; margin-left:5px; background:#00733c;" onclick="chzzkRestrict(false, '${item.chzzkChannelId}')" title="치지직 활동제한 (그림툴 차단과 별개)">치지직 밴</button>`
+                                : ''}
                         </td>
                     `;
                     tbody.appendChild(tr);
