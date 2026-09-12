@@ -757,10 +757,17 @@ ${data.detail || '서버 오류'}`);
                     tr.innerHTML = `
                         <td>${item.id}</td>
                         <td>
-                            <div style="font-weight: bold;">${escapeHtml(item.name)}</div>
-                            ${item.chzzkNickname ? `<div style="font-size:11px; color:#00c73c;" title="치지직 닉네임">치지직 ${escapeHtml(item.chzzkNickname)}</div>` : ''}
+                            <!-- ✨ 관리자 화면에서는 '실제 신원(치지직 채널명)'을 가장 크게 보여준다.
+                                 표시 이름은 본인이 자유롭게 바꿀 수 있으므로 신원 확인에 쓰면 안 된다. -->
+                            ${item.chzzkNickname
+                                ? `<div style="font-weight:bold; color:#00c73c; font-size:14px;" title="치지직 채널명 (실제 신원)">${escapeHtml(item.chzzkNickname)}</div>
+                                   ${item.name && item.name !== item.chzzkNickname
+                                        ? `<div style="font-size:11px; color:#bbb;" title="본인이 지정한 표시 이름 (방송 화면에 나온 이름)">표시명 ${escapeHtml(item.name)}</div>`
+                                        : ''}`
+                                : `<div style="font-weight:bold;">${escapeHtml(item.name)}</div>
+                                   <div style="font-size:10px; color:#e57373;">(치지직 정보 없음)</div>`}
                             ${mailLine}
-                            <div style="font-size: 10px; color: #777; word-break: break-all;" title="차단에 사용하는 고유 식별자">${escapeHtml(item.email)}</div>
+                            <div style="font-size: 10px; color: #777; word-break: break-all;" title="차단·활동제한에 사용하는 고유 식별자">${escapeHtml(item.email)}</div>
                         </td>
                         <td>${item.title}</td>
                         <td style="font-size: 12px; color: #bbb;">${item.time.split('.')[0]}</td>

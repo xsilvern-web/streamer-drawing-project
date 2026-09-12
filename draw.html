@@ -5237,7 +5237,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         loginBox.style.display = 'none';
                         donateBox.style.display = 'flex';
                         const nickEl = document.getElementById('custom-nickname');
-                        if (nickEl) nickEl.value = loggedInUser.name;
+                        if (nickEl && !nickEl.value) nickEl.value = loggedInUser.name;   // 기본값만 제공
                         if (loggedInUser.profileImage) profilePreview.style.backgroundImage = `url('${loggedInUser.profileImage}')`;
                         else profilePreview.style.backgroundImage = 'none';
                         // 치지직 닉네임으로 고정
@@ -6764,25 +6764,20 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
             // =====================================================================
 
-            // ✨ 닉네임은 치지직 채널명으로 고정한다(사칭 방지).
-            //    입력칸이 두 곳(일반 / 합작방)이라 둘 다 처리한다. 서버도 두 경로 모두 채널명으로 덮어쓴다.
+            // ✨ 표시 이름은 자유롭게 바꿀 수 있다(방송 화면에 뜨는 이름).
+            //    실제 신원(치지직 채널명·채널ID)은 서버 세션에서 오며 관리자 화면에서만 확인한다.
+            //    → 이름을 바꿔도 사칭이 되지 않고, 차단·활동제한은 계속 채널ID 기준으로 동작한다.
+            //    여기서는 채널명을 '기본값'으로만 채워준다(이미 입력한 값이 있으면 건드리지 않음).
             let chzzkLockedNickname = '';
             function applyNicknameLock() {
                 ['custom-nickname', 'room-nickname'].forEach(id => {
                     const el = document.getElementById(id);
                     if (!el) return;
-                    if (chzzkLockedNickname) {
-                        el.value = chzzkLockedNickname;
-                        el.readOnly = true;
-                        el.style.opacity = '0.75';
-                        el.style.cursor = 'not-allowed';
-                        el.title = '닉네임은 치지직 채널명으로 고정됩니다.';
-                    } else {
-                        el.readOnly = false;
-                        el.style.opacity = '';
-                        el.style.cursor = '';
-                        el.title = '';
-                    }
+                    el.readOnly = false;
+                    el.style.opacity = '';
+                    el.style.cursor = '';
+                    el.title = '방송 화면에 표시될 이름입니다. 자유롭게 바꿀 수 있어요.';
+                    if (chzzkLockedNickname && !el.value) el.value = chzzkLockedNickname;
                 });
             }
 

@@ -902,19 +902,22 @@ async def submit_drawing(request: Request):
         # 차단 판정은 계속 식별자 기준 (기존 블랙리스트가 그대로 유효)
         if email in settings["blocked_emails"]: raise HTTPException(status_code=403, detail="차단된 계정입니다.")
 
-        # ✨ 치지직을 연동한 사람이면 그 닉네임으로 표시한다(연동 안 했으면 기존 이름 그대로).
+        # ✨ 이름은 두 가지로 나눠 다룬다.
+        #    - name(donor_name): 방송 화면에 띄우는 '표시 이름' — 본인이 자유롭게 바꿀 수 있다.
+        #    - chzzk_nickname/channel_id: 실제 신원 — 관리자(creator)만 보며, 표시에는 쓰지 않는다.
+        #    표시 이름을 바꿔도 신원은 세션에서 오므로 사칭이 되지 않는다(차단·활동제한은 채널ID 기준).
         chzzk_link = await asyncio.to_thread(_chzzk_get_link, email)
-        # ✨ '치지직 연동 필수'가 켜져 있으면 연동하지 않은 사람은 보낼 수 없다.
-        if settings.get("require_chzzk") and not chzzk_link:
-            raise HTTPException(status_code=403,
-                                detail="치지직 계정 연결이 필요합니다. 그리기 화면의 [치지직 연결] 버튼을 눌러주세요.")
         chzzk_channel_id = chzzk_nickname = None
         if chzzk_link:
             chzzk_channel_id = chzzk_link["channelId"]
             chzzk_nickname = chzzk_link["nickname"]
-            if chzzk_nickname:
-                name = chzzk_nickname
-                data["name"] = chzzk_nickname   # 방송 화면 알림도 치지직 닉네임으로
+
+        display_name = (data.get("name") or "").strip()[:20]
+        if display_name:
+            name = display_name
+            data["name"] = display_name
+        else:
+            data["name"] = name          # 비워두면 채널명이 그대로 표시된다
 
         await asyncio.to_thread(_insert_ledger, email, name, profile_image, title, drawing_history,
                                 naver_email, chzzk_channel_id, chzzk_nickname)
@@ -1305,14 +1308,15 @@ async def websocket_room_endpoint(websocket: WebSocket, room_id: str):
         _client_seq += 1
         client_id = f"c{_client_seq}"
         name = (first.get("name") or "").strip()[:20] or "익명"
-        # ✨ 치지직을 연동했다면 합작방 이름도 치지직 닉네임으로 고정한다.
-        #    (합작 송출은 참가자 이름이 그대로 방송에 나가므로, 여기서 막지 않으면 이름을 바꿔 보낼 수 있다)
-        try:
-            _link = await asyncio.to_thread(_chzzk_get_link, user_id)
-            if _link and _link.get("nickname"):
-                name = _link["nickname"][:20]
-        except Exception as e:
-            print(f"[ROOM] 치지직 닉네임 조회 실패(입력값 사용): {e}")
+        # ✨ 합작방 표시 이름도 본인이 정할 수 있다(신원은 세션의 채널ID라 사칭은 불가).
+        #    비워 두면 치지직 채널명을 기본값으로 쓴다.
+        if not first.get("name"):
+            try:
+                _link = await asyncio.to_thread(_chzzk_get_link, user_id)
+                if _link and _link.get("nickname"):
+                    name = _link["nickname"][:20]
+            except Exception as e:
+                print(f"[ROOM] 치지직 닉네임 조회 실패(입력값 사용): {e}")
         layer_id = f"rlayer_{client_id}"
         room["participants"][client_id] = {"name": name, "layerId": layer_id, "ws": websocket, "userId": user_id}
         print(f"[ROOM] join room={room['id']} client={client_id} name={name} userId={user_id}")
