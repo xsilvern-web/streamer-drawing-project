@@ -21,6 +21,9 @@ from pydantic import BaseModel
 import uvicorn
 import httpx
 import secrets as _secrets
+import re as _re
+import urllib.parse as _urlparse
+import websockets as _websockets
 
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -132,6 +135,33 @@ def init_db():
             access_token TEXT,
             refresh_token TEXT,
             expires_at TIMESTAMP
+        )
+    ''')
+
+    # ✨ 치즈 포인트: 후원 메시지에 '!충전'이 있으면 후원 금액만큼 적립한다(1원 = 1포인트).
+    #    신원 기준은 치지직 채널ID(닉네임은 바뀔 수 있어 표시용으로만 갱신).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chzzk_points (
+            channel_id TEXT PRIMARY KEY,
+            nickname TEXT,
+            balance BIGINT NOT NULL DEFAULT 0,
+            total_charged BIGINT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # ✨ 포인트 이력. 치지직 후원 이벤트엔 고유 ID가 없어 중복/누락을 서버가 판별할 수 없으므로,
+    #    받은 후원을 전부(적립·익명·키워드없음) 남겨 관리자가 치지직 후원 내역과 대조할 수 있게 한다.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chzzk_point_log (
+            id SERIAL PRIMARY KEY,
+            channel_id TEXT,
+            nickname TEXT,
+            kind TEXT NOT NULL,
+            amount BIGINT NOT NULL DEFAULT 0,
+            delta BIGINT NOT NULL DEFAULT 0,
+            balance_after BIGINT,
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -355,8 +385,102 @@ def _delete_old_data():
         "DELETE FROM ledger WHERE timestamp <= NOW() - (%s * INTERVAL '1 day')",
         (DRAWING_RETENTION_DAYS,)
     )
+    # ✨ 포인트 '이력'은 90일 보관(잔액은 지우지 않는다)
+    cursor.execute("DELETE FROM chzzk_point_log WHERE created_at <= NOW() - INTERVAL '90 days'")
     conn.commit()
     conn.close()
+
+# ---------- 치즈 포인트 DB ----------
+def _points_apply(channel_id, nickname, delta, kind, amount, message):
+    """잔액 변경과 이력 기록을 한 트랜잭션으로 처리한다. 결과가 음수면 거부하고 (None, 현재잔액)을 돌려준다."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO chzzk_points (channel_id, nickname) VALUES (%s, %s) ON CONFLICT (channel_id) DO NOTHING",
+            (channel_id, nickname or None))
+        cursor.execute("SELECT balance FROM chzzk_points WHERE channel_id = %s FOR UPDATE", (channel_id,))
+        before = int(cursor.fetchone()[0])
+        after = before + int(delta)
+        if after < 0:
+            conn.rollback()
+            return None, before
+        cursor.execute("""
+            UPDATE chzzk_points
+            SET balance = %s,
+                total_charged = total_charged + %s,
+                nickname = COALESCE(NULLIF(%s, ''), nickname),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE channel_id = %s
+        """, (after, int(delta) if kind == "charge" else 0, nickname or "", channel_id))
+        cursor.execute("""
+            INSERT INTO chzzk_point_log (channel_id, nickname, kind, amount, delta, balance_after, message)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (channel_id, nickname, kind, int(amount), int(delta), after, message))
+        conn.commit()
+        return after, before
+    finally:
+        conn.close()
+
+def _points_log_only(channel_id, nickname, kind, amount, message):
+    """잔액 변화 없이 이력만 남긴다(익명 후원, 키워드 없는 후원 등)."""
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO chzzk_point_log (channel_id, nickname, kind, amount, delta, balance_after, message)
+            VALUES (%s, %s, %s, %s, 0, NULL, %s)
+        """, (channel_id, nickname, kind, int(amount), message))
+        conn.commit()
+    finally:
+        conn.close()
+
+def _points_list(q="", limit=200):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(cursor_factory=DictCursor)
+        if q:
+            like = f"%{q}%"
+            cursor.execute("""
+                SELECT channel_id, nickname, balance, total_charged, updated_at FROM chzzk_points
+                WHERE nickname ILIKE %s OR channel_id ILIKE %s
+                ORDER BY updated_at DESC LIMIT %s
+            """, (like, like, limit))
+        else:
+            cursor.execute("""
+                SELECT channel_id, nickname, balance, total_charged, updated_at FROM chzzk_points
+                ORDER BY updated_at DESC LIMIT %s
+            """, (limit,))
+        return [{"channelId": r["channel_id"], "nickname": r["nickname"] or "",
+                 "balance": int(r["balance"]), "totalCharged": int(r["total_charged"]),
+                 "updatedAt": _kst_str(r["updated_at"])} for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+def _points_log_list(limit=100, kind=""):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor(cursor_factory=DictCursor)
+        if kind:
+            cursor.execute("SELECT * FROM chzzk_point_log WHERE kind = %s ORDER BY id DESC LIMIT %s", (kind, limit))
+        else:
+            cursor.execute("SELECT * FROM chzzk_point_log ORDER BY id DESC LIMIT %s", (limit,))
+        return [{"id": r["id"], "channelId": r["channel_id"] or "", "nickname": r["nickname"] or "",
+                 "kind": r["kind"], "amount": int(r["amount"] or 0), "delta": int(r["delta"] or 0),
+                 "balanceAfter": (int(r["balance_after"]) if r["balance_after"] is not None else None),
+                 "message": r["message"] or "", "time": _kst_str(r["created_at"])} for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+def _points_get(channel_id):
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT balance, total_charged FROM chzzk_points WHERE channel_id = %s", (channel_id,))
+        row = cursor.fetchone()
+        return {"balance": int(row[0]), "totalCharged": int(row[1])} if row else {"balance": 0, "totalCharged": 0}
+    finally:
+        conn.close()
 
 def _insert_inquiry(name, email, message):
     conn = get_db_connection()
@@ -660,18 +784,25 @@ async def _chzzk_token_request(role, payload):
     data = r.json()
     return data.get("content", data)   # 응답이 content로 감싸져 오는 경우 대비
 
+_chzzk_token_lock = asyncio.Lock()
+
 async def _chzzk_access_token(role):
-    """저장된 토큰을 돌려주되, 만료됐으면 refresh로 갱신한다."""
-    tok = await asyncio.to_thread(_chzzk_get_token, role)
-    if not tok:
-        return None
-    if not tok["expired"]:
-        return tok["accessToken"]
-    content = await _chzzk_token_request(role, {
-        "grantType": "refresh_token", "refreshToken": tok["refreshToken"]})
-    await asyncio.to_thread(_chzzk_save_token, role, content.get("accessToken"),
-                            content.get("refreshToken"), content.get("expiresIn"))
-    return content.get("accessToken")
+    """저장된 토큰을 돌려주되, 만료됐으면 refresh로 갱신한다.
+
+    ✨ 치지직 Refresh Token은 '1회용'이다. 후원 리스너와 활동제한 호출이 동시에 갱신하면
+       뒤따른 쪽이 이미 쓰인 토큰으로 요청해 실패하므로, 갱신 구간을 잠그고 잠금 안에서 다시 읽는다.
+    """
+    async with _chzzk_token_lock:
+        tok = await asyncio.to_thread(_chzzk_get_token, role)
+        if not tok:
+            return None
+        if not tok["expired"]:
+            return tok["accessToken"]
+        content = await _chzzk_token_request(role, {
+            "grantType": "refresh_token", "refreshToken": tok["refreshToken"]})
+        await asyncio.to_thread(_chzzk_save_token, role, content.get("accessToken"),
+                                content.get("refreshToken"), content.get("expiresIn"))
+        return content.get("accessToken")
 
 @app.get("/chzzk/login")
 async def chzzk_login(request: Request, role: str = "viewer", userId: str = "", pw: str = ""):
@@ -725,6 +856,8 @@ async def chzzk_callback(request: Request, code: str = "", state: str = ""):
 
     if role == "streamer":
         print(f"[CHZZK] 방송인 연동 완료 channel={channel_id} name={nickname}")
+        chzzk_listener["streamerChannel"] = nickname or channel_id
+        _chzzk_listener_kick.set()      # ✨ 새 토큰으로 후원 소켓을 바로 다시 연결
         return HTMLResponse(
             f"<h3>치지직 방송인 연동이 완료되었습니다.</h3><p>채널: {nickname}</p>"
             "<p>이 창을 닫고 관리자 페이지로 돌아가세요.</p>")
@@ -1470,11 +1603,347 @@ async def cleanup_empty_rooms():
         except Exception as e:
             print(f"Room cleanup error: {e}")
 
+# =====================================================================
+# 치지직 후원 → 치즈 포인트 적립
+# =====================================================================
+# 흐름: 방송인 토큰 → GET /open/v1/sessions/auth 로 소켓 URL 발급 → 소켓 접속 →
+#       SYSTEM(connected)로 sessionKey 수신 → 후원 이벤트 구독 → DONATION 수신 시 적립.
+#
+# 치지직 세션 소켓은 Socket.IO 클라이언트 2.0.3까지만 지원한다(Engine.IO v3 프로토콜).
+# 구버전 socketio 패키지를 고정 설치하면 배포 빌드가 깨질 위험이 있어,
+# 이미 의존성에 있는 websockets로 필요한 만큼의 프로토콜을 직접 구현했다.
+#   서버→클라:  0{open}  40(연결)  42["이벤트",데이터]  3(pong)  41/1(종료)
+#   클라→서버:  2(ping, pingInterval마다)
+#
+# ⚠️ 치지직 후원 이벤트에는 고유 ID가 없고 과거 후원 조회 API도 없다.
+#    소켓이 끊겨 있던 동안의 후원은 복구할 수 없으므로 모든 수신 이벤트를 이력에 남기고,
+#    관리자가 치지직 후원 내역과 대조해 수동 조정할 수 있게 했다.
+
+CHARGE_PATTERN = _re.compile(r"[!！]\s*충전")   # "!충전", "! 충전", 전각 "！충전" 모두 인정
+
+chzzk_listener = {
+    "status": "starting",        # starting/disabled/need_streamer/no_permission/connecting/connected/listening/error
+    "message": "",
+    "since": None,
+    "lastEventAt": None,
+    "lastDonation": None,
+    "connectCount": 0,
+    "streamerChannel": "",
+}
+_chzzk_listener_kick = asyncio.Event()
+_chzzk_listener_ws = None
+
+
+def _now_kst():
+    return _kst_str(datetime.now(timezone.utc))
+
+
+def _listener_set(status, message=""):
+    if chzzk_listener["status"] != status or chzzk_listener["message"] != message:
+        print(f"[POINTS] {status}: {message}")
+    chzzk_listener["status"] = status
+    chzzk_listener["message"] = message
+    chzzk_listener["since"] = _now_kst()
+
+
+def _eio_ws_url(session_url):
+    """치지직이 준 소켓 URL(https://host:443?auth=...)을 Engine.IO v3 웹소켓 주소로 바꾼다."""
+    u = _urlparse.urlparse(session_url)
+    scheme = "wss" if u.scheme in ("https", "wss") else "ws"
+    q = (u.query + "&" if u.query else "") + "EIO=3&transport=websocket"
+    return f"{scheme}://{u.netloc}/socket.io/?{q}"
+
+
+def _sio_parse_event(pkt):
+    """'42["SYSTEM", ...]' 형태의 Socket.IO 이벤트 패킷을 (이름, 데이터)로 푼다."""
+    body = pkt[2:]
+    if body.startswith("/"):              # 네임스페이스 접두어 '/ns,'
+        comma = body.find(",")
+        if comma < 0:
+            return None, None
+        body = body[comma + 1:]
+    i = 0
+    while i < len(body) and body[i].isdigit():   # ack id
+        i += 1
+    try:
+        arr = json.loads(body[i:])
+    except Exception:
+        return None, None
+    if not isinstance(arr, list) or not arr:
+        return None, None
+    name, data = arr[0], (arr[1] if len(arr) > 1 else None)
+    for _ in range(2):                    # 치지직은 데이터를 JSON 문자열로 한 번 더 감싸 보낸다
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                break
+    return name, data
+
+
+def _parse_amount(v):
+    try:
+        return int(float(str(v if v is not None else 0).replace(",", "").strip() or 0))
+    except Exception:
+        return 0
+
+
+async def _handle_donation(d):
+    d = d if isinstance(d, dict) else {}
+    channel_id = str(d.get("donatorChannelId") or "").strip()
+    nickname = str(d.get("donatorNickname") or "").strip()
+    text = str(d.get("donationText") or "")
+    amount = _parse_amount(d.get("payAmount"))
+    chzzk_listener["lastEventAt"] = _now_kst()
+
+    anonymous = (not channel_id) or channel_id.lower() == "anonymous"
+    if not CHARGE_PATTERN.search(text):
+        kind, balance = "ignore", None          # 키워드 없는 일반 후원 — 기록만
+        await asyncio.to_thread(_points_log_only, None if anonymous else channel_id, nickname, kind, amount, text[:300])
+    elif anonymous:
+        kind, balance = "skip_anon", None       # 누구 포인트인지 알 수 없어 적립 불가
+        await asyncio.to_thread(_points_log_only, None, nickname, kind, amount, text[:300])
+    elif amount <= 0:
+        kind, balance = "ignore", None
+        await asyncio.to_thread(_points_log_only, channel_id, nickname, kind, amount, text[:300])
+    else:
+        balance, _ = await asyncio.to_thread(_points_apply, channel_id, nickname, amount, "charge", amount, text[:300])
+        kind = "charge"
+
+    chzzk_listener["lastDonation"] = {
+        "nickname": nickname or "(익명)", "channelId": "" if anonymous else channel_id,
+        "amount": amount, "text": text[:100], "result": kind, "balance": balance, "at": _now_kst(),
+    }
+    print(f"[POINTS] 후원 {nickname or '(익명)'} {amount}원 -> {kind}" + (f" (잔액 {balance})" if balance is not None else ""))
+
+
+async def _eio_pinger(ws, every):
+    try:
+        while True:
+            await asyncio.sleep(every)
+            await ws.send("2")
+    except Exception:
+        pass
+
+
+async def _chzzk_session_once():
+    """세션 하나를 열어 끊길 때까지 수신한다. 다음 시도까지 기다릴 초를 돌려준다."""
+    global _chzzk_listener_ws
+    token = await _chzzk_access_token("streamer")
+    if not token:
+        _listener_set("need_streamer", "방송인 치지직 연동이 필요합니다. [방송인 연동]을 눌러주세요.")
+        return 60
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.get(f"{CHZZK_API_BASE}/open/v1/sessions/auth",
+                             headers={"Authorization": f"Bearer {token}"})
+    if r.status_code in (401, 403):
+        _listener_set("no_permission",
+                      f"세션 생성 권한이 없습니다({r.status_code}). 앱 Scope에 '후원 조회'를 추가한 뒤 방송인 연동을 다시 해주세요.")
+        return 120
+    if r.status_code != 200:
+        _listener_set("error", f"세션 생성 실패({r.status_code}): {r.text[:120]}")
+        return 30
+    body = r.json()
+    content = body.get("content", body) if isinstance(body, dict) else {}
+    session_url = (content or {}).get("url")
+    if not session_url:
+        _listener_set("error", "세션 URL을 받지 못했습니다.")
+        return 30
+
+    _listener_set("connecting", "치지직 후원 소켓에 연결 중...")
+    # URL은 발급 후 짧은 시간 안에 접속하지 않으면 만료되므로 곧바로 연결한다.
+    async with _websockets.connect(_eio_ws_url(session_url), open_timeout=10,
+                                   ping_interval=None, close_timeout=3, max_size=2 ** 22) as ws:
+        _chzzk_listener_ws = ws
+        ping_every, ping_timeout = 25.0, 60.0
+        pinger = None
+        try:
+            while True:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=ping_every + ping_timeout)
+                except asyncio.TimeoutError:
+                    _listener_set("error", "치지직 소켓 응답이 없어 다시 연결합니다.")
+                    return 3
+                if isinstance(raw, bytes):
+                    continue
+                if raw.startswith("0"):                          # Engine.IO open
+                    try:
+                        info = json.loads(raw[1:] or "{}")
+                        ping_every = (info.get("pingInterval") or 25000) / 1000
+                        ping_timeout = (info.get("pingTimeout") or 60000) / 1000
+                    except Exception:
+                        pass
+                    if pinger is None:
+                        # 표준(Engine.IO v3)은 pingInterval마다 ping이면 되지만, 서버 구현에 따라
+                        # 'pingTimeout 안에 아무 패킷도 없으면 끊는' 곳도 있다. 치지직이 어느 쪽인지
+                        # 알 수 없으므로 둘 다 만족하도록 min(간격, 타임아웃)의 80%마다 보낸다.
+                        # (ping은 1바이트라 조금 잦아도 부담이 없다)
+                        send_every = max(1.0, min(ping_every, ping_timeout) * 0.8)
+                        pinger = asyncio.create_task(_eio_pinger(ws, send_every))
+                elif raw.startswith("2"):                        # 서버 ping(대비용)
+                    await ws.send("3" + raw[1:])
+                elif raw.startswith("41") or raw == "1":         # 서버가 종료
+                    _listener_set("error", "치지직 서버가 연결을 종료했습니다. 다시 연결합니다.")
+                    return 3
+                elif raw.startswith("42"):
+                    name, data = _sio_parse_event(raw)
+                    if name == "SYSTEM":
+                        data = data if isinstance(data, dict) else {}
+                        stype = data.get("type")
+                        sdata = data.get("data") if isinstance(data.get("data"), dict) else {}
+                        if stype == "connected":
+                            session_key = sdata.get("sessionKey")
+                            chzzk_listener["connectCount"] += 1
+                            tok = await _chzzk_access_token("streamer")
+                            async with httpx.AsyncClient(timeout=10) as client:
+                                rr = await client.post(
+                                    f"{CHZZK_API_BASE}/open/v1/sessions/events/subscribe/donation",
+                                    params={"sessionKey": session_key},
+                                    headers={"Authorization": f"Bearer {tok}"})
+                            if rr.status_code in (401, 403):
+                                _listener_set("no_permission",
+                                              "후원 이벤트 구독 권한이 없습니다. 앱 Scope에 '후원 조회'를 추가하고 방송인 연동을 다시 해주세요.")
+                                return 120
+                            if rr.status_code != 200:
+                                _listener_set("error", f"후원 이벤트 구독 실패({rr.status_code}): {rr.text[:120]}")
+                                return 30
+                            _listener_set("connected", "연결됨 — 후원 구독 확인 대기 중")
+                        elif stype == "subscribed" and sdata.get("eventType") == "DONATION":
+                            chzzk_listener["streamerChannel"] = chzzk_listener["streamerChannel"] or sdata.get("channelId", "")
+                            _listener_set("listening", "후원 수신 중")
+                        elif stype == "revoked":
+                            _listener_set("no_permission", "권한이 철회되어 후원 구독이 해제되었습니다. 방송인 연동을 다시 해주세요.")
+                            return 120
+                        elif stype == "unsubscribed":
+                            _listener_set("error", "후원 구독이 해제되었습니다. 다시 연결합니다.")
+                            return 5
+                    elif name == "DONATION":
+                        try:
+                            await _handle_donation(data)
+                        except Exception as e:
+                            print(f"[POINTS] 후원 처리 실패: {e} data={str(data)[:200]}")
+        finally:
+            _chzzk_listener_ws = None
+            if pinger:
+                pinger.cancel()
+
+
+async def chzzk_donation_listener():
+    await asyncio.sleep(3)
+    fails = 0
+    while True:
+        wait = 30
+        try:
+            if not (CHZZK_STREAMER_CLIENT_ID and CHZZK_STREAMER_CLIENT_SECRET):
+                _listener_set("disabled", "서버에 치지직 CLIENT_ID/SECRET 환경변수가 설정되지 않았습니다.")
+                wait = 300
+            else:
+                wait = await _chzzk_session_once()
+        except HTTPException as e:                 # 토큰 갱신 실패 등
+            _listener_set("need_streamer", f"치지직 토큰을 갱신하지 못했습니다. 방송인 연동을 다시 해주세요. ({e.detail})")
+            wait = 120
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            _listener_set("error", f"연결 오류: {type(e).__name__} {str(e)[:150]}")
+            wait = 5
+
+        if chzzk_listener["status"] == "listening":
+            fails = 0
+        elif chzzk_listener["status"] == "error":
+            fails += 1
+            wait = min(wait * (2 ** min(fails - 1, 4)), 120)   # 연속 실패 시 점점 길게 대기
+        try:                                        # 재연결 요청(방송인 연동/수동 재연결)이 오면 즉시 깨어난다
+            await asyncio.wait_for(_chzzk_listener_kick.wait(), timeout=wait)
+        except asyncio.TimeoutError:
+            pass
+        _chzzk_listener_kick.clear()
+
+
+# ---------- 포인트 API ----------
+def _require_admin(request: Request):
+    pw = request.headers.get("x-admin-password", "")
+    if not _hmac.compare_digest(pw.encode(), CREATOR_PASSWORD.encode()):
+        raise HTTPException(status_code=403, detail="관리자 비밀번호가 올바르지 않습니다.")
+
+
+@app.get("/points")
+async def serve_points_page():
+    return FileResponse("points.html")
+
+
+@app.get("/api/points/status")
+async def points_status(request: Request):
+    _require_admin(request)
+    return dict(chzzk_listener, keyword="!충전")
+
+
+@app.get("/api/points/list")
+async def points_list(request: Request, q: str = "", limit: int = 200):
+    _require_admin(request)
+    return await asyncio.to_thread(_points_list, q.strip()[:50], max(1, min(limit, 1000)))
+
+
+@app.get("/api/points/log")
+async def points_log(request: Request, limit: int = 100, kind: str = ""):
+    _require_admin(request)
+    return await asyncio.to_thread(_points_log_list, max(1, min(limit, 500)), kind.strip()[:20])
+
+
+class PointAdjust(BaseModel):
+    channelId: str
+    nickname: str = ""
+    delta: int
+    reason: str = ""
+
+
+@app.post("/api/points/adjust")
+async def points_adjust(data: PointAdjust, request: Request):
+    """관리자 수동 조정 — 익명 후원·소켓 끊김 동안의 후원 보정용."""
+    _require_admin(request)
+    cid = data.channelId.strip()[:100]
+    if not cid:
+        raise HTTPException(status_code=400, detail="채널ID를 입력해주세요.")
+    if data.delta == 0:
+        raise HTTPException(status_code=400, detail="0 포인트는 조정할 수 없습니다.")
+    reason = ("[수동] " + data.reason.strip())[:300]
+    after, before = await asyncio.to_thread(_points_apply, cid, data.nickname.strip()[:40],
+                                            data.delta, "adjust", abs(data.delta), reason)
+    if after is None:
+        raise HTTPException(status_code=400, detail=f"잔액({before})보다 많이 차감할 수 없습니다.")
+    return {"message": "success", "before": before, "balance": after}
+
+
+@app.post("/api/points/reconnect")
+async def points_reconnect(request: Request):
+    _require_admin(request)
+    _chzzk_listener_kick.set()
+    ws = _chzzk_listener_ws
+    if ws is not None:
+        try:
+            await ws.close()
+        except Exception:
+            pass
+    return {"message": "success"}
+
+
+@app.get("/api/points/me")
+async def points_me(request: Request):
+    """시청자 본인의 포인트(치지직 로그인 세션 기준)."""
+    sess = _read_session(request.cookies.get(CHZZK_COOKIE, ""))
+    if not sess:
+        return {"loggedIn": False}
+    p = await asyncio.to_thread(_points_get, sess["channelId"])
+    return {"loggedIn": True, "channelName": sess.get("channelName"), **p}
+
+
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(process_drawing_queue())
     asyncio.create_task(auto_delete_old_data())
     asyncio.create_task(cleanup_empty_rooms())
+    asyncio.create_task(chzzk_donation_listener())   # ✨ 치즈 후원 -> 포인트 적립
 
 if __name__ == "__main__":
     # ✨ 프록시 뒤에서도 원래 스킴(https)을 인식하도록 forwarded 헤더를 신뢰한다.

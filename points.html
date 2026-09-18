@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>치즈 포인트 관리</title>
+    <style>
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #login-screen {
+            background: #2d2d2d;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            text-align: center;
+            margin-top: 100px;
+        }
+
+        #login-screen input {
+            padding: 10px;
+            font-size: 16px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        #dashboard {
+            display: none;
+            width: 100%;
+            max-width: 1100px;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .panel-title {
+            margin: 0 0 15px;
+            color: #4fc3f7;
+            border-bottom: 1px solid #444;
+            padding-bottom: 10px;
+            font-size: 18px;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-weight: bold;
+            color: #fff;
+            background: #007acc;
+        }
+
+        button:hover { filter: brightness(1.1); }
+        .btn-green { background: #00a63e; }
+        .btn-gray { background: #455a64; }
+        .btn-red { background: #d32f2f; }
+
+        input[type="text"], input[type="number"], select {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 7px 10px;
+            border-radius: 4px;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #444; padding: 8px 10px; text-align: left; font-size: 13px; vertical-align: top; }
+        th { background: #333; color: #ccc; position: sticky; top: 0; }
+        tr:nth-child(even) { background: #2a2a2b; }
+
+        .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .muted { color: #888; font-size: 12px; }
+        .mono { font-family: Consolas, monospace; font-size: 11px; color: #888; word-break: break-all; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .st-listening { background: #1b5e20; color: #a5d6a7; }
+        .st-connected, .st-connecting, .st-starting { background: #4a3a00; color: #ffe082; }
+        .st-need_streamer, .st-no_permission, .st-disabled { background: #5d1f1f; color: #ef9a9a; }
+        .st-error { background: #5d1f1f; color: #ef9a9a; }
+
+        .k-charge { background: #1b5e20; color: #a5d6a7; }
+        .k-adjust { background: #0d47a1; color: #90caf9; }
+        .k-skip_anon { background: #5d1f1f; color: #ef9a9a; }
+        .k-ignore { background: #3a3a3a; color: #aaa; }
+
+        .scroll { max-height: 420px; overflow-y: auto; }
+
+        .guide {
+            background: #1e1e1e;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 12px 14px;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+
+        code {
+            background: #111;
+            padding: 1px 6px;
+            border-radius: 3px;
+            color: #ffcc80;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="login-screen">
+        <h2>💰 치즈 포인트 관리</h2>
+        <input type="password" id="admin-pw" placeholder="관리자 비밀번호"
+            onkeypress="if(event.key === 'Enter') login()">
+        <br>
+        <button onclick="login()">접속하기</button>
+    </div>
+
+    <div id="dashboard">
+        <div class="row" style="justify-content: space-between;">
+            <h1 style="margin: 0;">💰 치즈 포인트 관리</h1>
+            <a href="/creator" style="color:#4fc3f7; font-size:13px;">← 관리자 대시보드</a>
+        </div>
+
+        <!-- 연결 상태 -->
+        <div class="panel">
+            <h2 class="panel-title">치지직 후원 연결</h2>
+            <div class="row" style="justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1; min-width: 280px;">
+                    <div class="row" style="margin-bottom: 8px;">
+                        <span id="st-badge" class="badge st-starting">확인 중</span>
+                        <span id="st-message" style="font-size: 13px;"></span>
+                    </div>
+                    <div class="muted" id="st-meta"></div>
+                    <div class="muted" id="st-last" style="margin-top: 6px;"></div>
+                </div>
+                <div class="row">
+                    <button class="btn-green" onclick="linkStreamer()"
+                        title="후원을 받으려면 방송인 계정 권한 위임이 필요합니다">방송인 연동</button>
+                    <button class="btn-gray" onclick="reconnect()">재연결</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 안내 -->
+        <div class="panel">
+            <h2 class="panel-title">적립 규칙</h2>
+            <div class="guide">
+                · 치즈 후원 메시지에 <code>!충전</code>이 들어 있으면 <b>후원 금액만큼</b> 포인트가 적립됩니다 (1원 = 1포인트).<br>
+                · 포인트는 <b>치지직 채널ID</b> 기준으로 쌓입니다. 닉네임을 바꿔도 그대로 유지됩니다.<br>
+                · <b style="color:#ef9a9a;">익명 후원은 적립되지 않습니다</b> — 누구의 포인트인지 알 수 없기 때문입니다.
+                아래 이력에 빨간색으로 남으니, 필요하면 수동으로 적립해 주세요.<br>
+                · <b style="color:#ef9a9a;">연결이 끊긴 동안의 후원은 복구되지 않습니다</b> (치지직이 과거 후원 조회를 제공하지 않음).
+                치지직 후원 내역과 대조해 수동 조정해 주세요.
+            </div>
+        </div>
+
+        <!-- 수동 조정 -->
+        <div class="panel">
+            <h2 class="panel-title">수동 조정</h2>
+            <div class="row">
+                <input type="text" id="adj-channel" placeholder="치지직 채널ID" style="flex: 2; min-width: 220px;">
+                <input type="text" id="adj-nick" placeholder="닉네임(선택)" style="flex: 1; min-width: 110px;">
+                <input type="number" id="adj-delta" placeholder="+적립 / -차감" style="width: 130px;">
+                <input type="text" id="adj-reason" placeholder="사유 (예: 익명 후원 보정)" style="flex: 2; min-width: 160px;">
+                <button onclick="adjust()">적용</button>
+            </div>
+            <div class="muted" style="margin-top: 8px;">잔액보다 많이 차감할 수는 없습니다. 모든 조정은 이력에 남습니다.</div>
+        </div>
+
+        <!-- 포인트 현황 -->
+        <div class="panel">
+            <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+                <h2 class="panel-title" style="margin: 0; border: none; padding: 0;">포인트 현황 <span id="pt-count" class="muted"></span></h2>
+                <div class="row">
+                    <input type="text" id="pt-search" placeholder="닉네임 또는 채널ID 검색"
+                        onkeyup="if(event.key==='Enter') loadPoints()">
+                    <button class="btn-gray" onclick="loadPoints()">검색</button>
+                </div>
+            </div>
+            <div class="scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>시청자</th>
+                            <th class="num">잔액</th>
+                            <th class="num">누적 충전</th>
+                            <th>최근 변동</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="pt-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 이력 -->
+        <div class="panel">
+            <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+                <h2 class="panel-title" style="margin: 0; border: none; padding: 0;">후원·포인트 이력</h2>
+                <div class="row">
+                    <select id="log-kind" onchange="loadLog()">
+                        <option value="">전체</option>
+                        <option value="charge">적립</option>
+                        <option value="skip_anon">익명(적립 불가)</option>
+                        <option value="ignore">!충전 없음</option>
+                        <option value="adjust">수동 조정</option>
+                    </select>
+                    <button class="btn-gray" onclick="loadLog()">새로고침</button>
+                </div>
+            </div>
+            <div class="scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 140px;">시간</th>
+                            <th>후원자</th>
+                            <th class="num">금액</th>
+                            <th>메시지</th>
+                            <th>결과</th>
+                            <th class="num">적립 후 잔액</th>
+                        </tr>
+                    </thead>
+                    <tbody id="log-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let adminPw = '';
+
+        const STATUS_LABEL = {
+            starting: '시작 중', disabled: '설정 필요', need_streamer: '방송인 연동 필요',
+            no_permission: '권한 없음', connecting: '연결 중', connected: '연결됨',
+            listening: '후원 수신 중', error: '오류'
+        };
+        const KIND_LABEL = { charge: '적립', adjust: '수동 조정', skip_anon: '익명 · 적립 불가', ignore: '!충전 없음' };
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        const fmt = n => (n == null ? '-' : Number(n).toLocaleString('ko-KR'));
+
+        async function api(path, opts = {}) {
+            const res = await fetch(API_BASE + path, {
+                ...opts,
+                headers: { 'Content-Type': 'application/json', 'X-Admin-Password': adminPw, ...(opts.headers || {}) }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || `요청 실패 (${res.status})`);
+            return data;
+        }
+
+        async function login() {
+            const pw = document.getElementById('admin-pw').value;
+            try {
+                const res = await fetch(`${API_BASE}/api/verify-password`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                if (!res.ok) return alert('비밀번호가 틀렸습니다.');
+                adminPw = pw;
+                try { sessionStorage.setItem('points_pw', pw); } catch (e) { }
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'flex';
+                refreshAll();
+                setInterval(loadStatus, 5000);
+                setInterval(() => { loadLog(); loadPoints(); }, 15000);
+            } catch (e) {
+                alert('서버에 연결할 수 없습니다.');
+            }
+        }
+
+        function refreshAll() { loadStatus(); loadPoints(); loadLog(); }
+
+        async function loadStatus() {
+            try {
+                const s = await api('/api/points/status');
+                const badge = document.getElementById('st-badge');
+                badge.className = 'badge st-' + s.status;
+                badge.innerText = STATUS_LABEL[s.status] || s.status;
+                document.getElementById('st-message').innerText = s.message || '';
+                const meta = [];
+                if (s.streamerChannel) meta.push('채널 ' + s.streamerChannel);
+                if (s.since) meta.push('상태 변경 ' + s.since);
+                if (s.connectCount) meta.push('연결 ' + s.connectCount + '회');
+                document.getElementById('st-meta').innerText = meta.join(' · ');
+                const d = s.lastDonation;
+                document.getElementById('st-last').innerHTML = d
+                    ? `마지막 후원: <b>${escapeHtml(d.nickname)}</b> ${fmt(d.amount)}원 → ${escapeHtml(KIND_LABEL[d.result] || d.result)} <span class="muted">(${escapeHtml(d.at)})</span>`
+                    : '아직 받은 후원이 없습니다.';
+            } catch (e) {
+                document.getElementById('st-message').innerText = e.message;
+            }
+        }
+
+        async function loadPoints() {
+            const q = document.getElementById('pt-search').value.trim();
+            try {
+                const rows = await api('/api/points/list?q=' + encodeURIComponent(q));
+                document.getElementById('pt-count').innerText = `(${rows.length}명)`;
+                const body = document.getElementById('pt-body');
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="5" class="muted" style="text-align:center; padding:18px;">아직 적립된 포인트가 없습니다.</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(r => `
+                    <tr>
+                        <td><b>${escapeHtml(r.nickname || '(닉네임 없음)')}</b><div class="mono">${escapeHtml(r.channelId)}</div></td>
+                        <td class="num" style="font-weight:bold; color:#ffcc80;">${fmt(r.balance)}</td>
+                        <td class="num">${fmt(r.totalCharged)}</td>
+                        <td class="muted">${escapeHtml(r.updatedAt)}</td>
+                        <td><button class="btn-gray" style="font-size:11px; padding:4px 10px;"
+                            data-cid="${escapeHtml(r.channelId)}" data-nick="${escapeHtml(r.nickname)}"
+                            onclick="fillAdjust(this.dataset.cid, this.dataset.nick)">조정</button></td>
+                    </tr>`).join('');
+            } catch (e) {
+                document.getElementById('pt-body').innerHTML = `<tr><td colspan="5" style="color:#ef9a9a;">${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+
+        async function loadLog() {
+            const kind = document.getElementById('log-kind').value;
+            try {
+                const rows = await api('/api/points/log?limit=200&kind=' + encodeURIComponent(kind));
+                const body = document.getElementById('log-body');
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="6" class="muted" style="text-align:center; padding:18px;">이력이 없습니다.</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(r => {
+                    const who = r.channelId
+                        ? `<b>${escapeHtml(r.nickname || '(닉네임 없음)')}</b><div class="mono">${escapeHtml(r.channelId)}</div>`
+                        : `<b>${escapeHtml(r.nickname || '익명')}</b><div class="mono">익명 후원</div>`;
+                    const amount = r.kind === 'adjust'
+                        ? `<span style="color:${r.delta >= 0 ? '#a5d6a7' : '#ef9a9a'}">${r.delta >= 0 ? '+' : ''}${fmt(r.delta)}</span>`
+                        : fmt(r.amount);
+                    return `
+                    <tr>
+                        <td class="muted">${escapeHtml(r.time)}</td>
+                        <td>${who}</td>
+                        <td class="num">${amount}</td>
+                        <td style="max-width:320px; word-break:break-all;">${escapeHtml(r.message)}</td>
+                        <td><span class="badge k-${escapeHtml(r.kind)}">${escapeHtml(KIND_LABEL[r.kind] || r.kind)}</span></td>
+                        <td class="num">${fmt(r.balanceAfter)}</td>
+                    </tr>`;
+                }).join('');
+            } catch (e) {
+                document.getElementById('log-body').innerHTML = `<tr><td colspan="6" style="color:#ef9a9a;">${escapeHtml(e.message)}</td></tr>`;
+            }
+        }
+
+        function fillAdjust(cid, nick) {
+            document.getElementById('adj-channel').value = cid || '';
+            document.getElementById('adj-nick').value = nick || '';
+            document.getElementById('adj-delta').focus();
+            window.scrollTo({ top: document.getElementById('adj-channel').getBoundingClientRect().top + window.scrollY - 120, behavior: 'smooth' });
+        }
+
+        async function adjust() {
+            const channelId = document.getElementById('adj-channel').value.trim();
+            const nickname = document.getElementById('adj-nick').value.trim();
+            const delta = parseInt(document.getElementById('adj-delta').value, 10);
+            const reason = document.getElementById('adj-reason').value.trim();
+            if (!channelId) return alert('채널ID를 입력해주세요.');
+            if (!delta) return alert('조정할 포인트를 입력해주세요 (예: 1000 또는 -500).');
+            if (!confirm(`${nickname || channelId}\n${delta > 0 ? '+' : ''}${delta.toLocaleString('ko-KR')} 포인트를 조정할까요?`)) return;
+            try {
+                const r = await api('/api/points/adjust', { method: 'POST', body: JSON.stringify({ channelId, nickname, delta, reason }) });
+                alert(`완료: ${fmt(r.before)} → ${fmt(r.balance)}`);
+                document.getElementById('adj-delta').value = '';
+                document.getElementById('adj-reason').value = '';
+                loadPoints(); loadLog();
+            } catch (e) {
+                alert('조정 실패: ' + e.message);
+            }
+        }
+
+        async function reconnect() {
+            try { await api('/api/points/reconnect', { method: 'POST' }); setTimeout(loadStatus, 800); }
+            catch (e) { alert('재연결 실패: ' + e.message); }
+        }
+
+        function linkStreamer() {
+            window.open(`${API_BASE}/chzzk/login?role=streamer&pw=${encodeURIComponent(adminPw)}`, '_blank');
+        }
+
+        // 같은 탭에서 새로고침하면 다시 로그인하지 않아도 되게
+        (function autoLogin() {
+            let saved = '';
+            try { saved = sessionStorage.getItem('points_pw') || ''; } catch (e) { }
+            if (saved) { document.getElementById('admin-pw').value = saved; login(); }
+        })();
+    </script>
+</body>
+
+</html>
