@@ -2937,6 +2937,7 @@
                         return;
                     }
 
+                    let decoder;
                     try {
                         // 사용자의 편의를 위해 '다중 프레임 전송' 모드를 자동으로 켭니다.
                         const chkAnim = document.getElementById('chk-animation-mode');
@@ -2946,9 +2947,12 @@
                         }
 
                         // 브라우저 내장 디코더로 GIF 해독
-                        const decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
-                        await decoder.tracks.ready;
+                        decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
+                        // tracks.ready는 트랙 정보만 준비됐다는 뜻입니다. 스트림 전체를 읽기 전에는
+                        // frameCount가 1~2개일 수 있으므로 completed까지 기다린 뒤 개수를 확정합니다.
+                        await Promise.all([decoder.tracks.ready, decoder.completed]);
                         const track = decoder.tracks.selectedTrack;
+                        if (!track || track.frameCount === 0) throw new Error('GIF 프레임이 없습니다.');
                         const frameCount = track.frameCount;
 
                         for (let i = 0; i < frameCount; i++) {
@@ -2960,8 +2964,11 @@
                             const tempCanvas = document.createElement('canvas');
                             tempCanvas.width = imageFrame.displayWidth;
                             tempCanvas.height = imageFrame.displayHeight;
-                            tempCanvas.getContext('2d').drawImage(imageFrame, 0, 0);
-                            imageFrame.close();
+                            try {
+                                tempCanvas.getContext('2d').drawImage(imageFrame, 0, 0);
+                            } finally {
+                                imageFrame.close();
+                            }
 
                             if (i > 0) {
                                 // ✨ 핵심 수정: ID 중복 생성을 막기 위해 프레임 생성 전 2ms(0.002초) 대기합니다.
@@ -2995,9 +3002,11 @@
                     } catch (err) {
                         console.error("GIF Parsing Error:", err);
                         alert("GIF 파일을 불러오는 중 오류가 발생했습니다.");
+                    } finally {
+                        if (decoder) decoder.close();
+                        e.target.value = '';
                     }
 
-                    e.target.value = '';
                     return; // GIF 처리가 끝났으므로 여기서 함수 종료
                 }
 
