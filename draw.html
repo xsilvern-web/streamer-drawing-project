@@ -628,6 +628,8 @@
             background: #f44336;
         }
 
+        #gif-edit-panel[hidden] { display: none; }
+
         .transform-box {
             position: absolute;
             display: flex;
@@ -1566,6 +1568,17 @@
                 </div>
             </div>
 
+            <div class="panel-section" id="gif-edit-panel" hidden>
+                <div class="panel-title">GIF 전체 편집 <span id="gif-edit-count"></span></div>
+                <label style="display:flex; align-items:center; gap:5px; font-size:12px; margin-bottom:7px;">
+                    <input type="checkbox" id="gif-transform-linked" checked>위치·크기 함께 조정
+                </label>
+                <div style="font-size:11px; color:#bbb; line-height:1.5; margin-bottom:8px;">
+                    그림을 드래그해 이동하고, 모서리로 크기를 조절하세요.<br>Shift를 누르면 비율을 유지합니다.
+                </div>
+                <button id="btn-apply-gif-all" class="sys-btn" style="width:100%; background:#2e7d32; border-color:#388e3c;">GIF 전체 확정</button>
+            </div>
+
             <div class="panel-section" style="flex: 1; overflow-y: hidden; display: flex; flex-direction: column;">
                 <div class="panel-title">해당 프레임의 레이어</div>
 
@@ -1867,6 +1880,7 @@
             let frames = [];
             let currentFrameId = null;
             let selectedFrameIds = new Set();
+            let isApplyingGifGroup = false;
             // ✨ Date.now()만으로는 같은 밀리초에 만든 id가 충돌할 수 있어, 카운터를 더해 고유 id 보장
             let _uidCounter = 0;
             function uid(prefix) { return `${prefix}_${Date.now()}_${_uidCounter++}`; }
@@ -2287,11 +2301,13 @@
                 }
             });
 
-            function autoRasterizeAllTransforms() {
+            async function autoRasterizeAllTransforms() {
+                if (isApplyingGifGroup) return;
                 const transformLayers = layers.filter(l => l.type === 'transform_box');
-                transformLayers.forEach(l => {
-                    applyTransform(l.id);
-                });
+                for (const layer of transformLayers) {
+                    if (layer.gifGroupId) await applyGifGroup(layer.gifGroupId);
+                    else await applyTransform(layer.id);
+                }
             }
 
             allToolBtns.forEach(btn => {
@@ -2924,6 +2940,98 @@
                 return wrapper;
             }
 
+            // GIF별로 프레임을 묶되, 같은 번호의 다른 레이어나 다른 GIF는 함께 바꾸지 않습니다.
+            function getGifGroupMembers(groupId) {
+                if (!groupId) return [];
+                return frames.flatMap(frame => (frame.id === currentFrameId ? layers : frame.layers)
+                    .filter(layer => layer.type === 'transform_box' && layer.gifGroupId === groupId)
+                    .map(layer => ({ frame, layer })));
+            }
+
+            function getActiveGifLayer() {
+                return layers.find(layer => layer.id === activeLayerId && layer.type === 'transform_box' && layer.gifGroupId);
+            }
+
+            function updateGifGroupControls() {
+                const panel = document.getElementById('gif-edit-panel');
+                const layer = getActiveGifLayer();
+                panel.hidden = !layer;
+                if (!layer) return;
+                const count = getGifGroupMembers(layer.gifGroupId).length;
+                document.getElementById('gif-edit-count').textContent = `(${count}프레임)`;
+                document.getElementById('gif-transform-linked').checked = layer.gifGroupLinked !== false;
+                const button = document.getElementById('btn-apply-gif-all');
+                button.disabled = isApplyingGifGroup;
+                button.textContent = isApplyingGifGroup ? '전체 확정 중...' : `GIF 전체 확정 (${count}프레임)`;
+            }
+
+            function syncGifGroupTransform(sourceBox) {
+                const source = layers.find(layer => layer.element === sourceBox);
+                if (!source || !source.gifGroupId || source.gifGroupLinked === false) return;
+                for (const { layer } of getGifGroupMembers(source.gifGroupId)) {
+                    if (layer === source) continue;
+                    for (const key of ['left', 'top', 'width', 'height', 'transform']) {
+                        layer.element.style[key] = sourceBox.style[key];
+                    }
+                }
+            }
+
+            function finishGifImport(groupId) {
+                syncToFrame();
+                const first = getGifGroupMembers(groupId)[0];
+                if (!first) return;
+                document.querySelector('.tool-btn[data-tool="cursor"]').click();
+                selectFrame(first.frame.id);
+                selectLayer(first.layer.id);
+                updateGifGroupControls();
+            }
+
+            async function applyGifGroup(groupId) {
+                if (isApplyingGifGroup || isRasterizing || isRedrawing || isPlaying) return;
+                syncToFrame();
+                const members = getGifGroupMembers(groupId);
+                if (!members.length) return;
+                const previousFrameId = currentFrameId;
+                const previousLayerId = activeLayerId;
+                isApplyingGifGroup = true;
+                isRasterizing = true;
+                updateGifGroupControls();
+                try {
+                    for (const { frame, layer } of members) {
+                        // 숨긴 프레임의 offsetWidth/Height는 0이므로 해당 프레임을 표시한 뒤 확정합니다.
+                        selectFrame(frame.id);
+                        layer.element.style.display = 'flex';
+                        await applyTransform(layer.id);
+                        layer.canvas.style.display = layer.visible ? 'block' : 'none';
+                        syncToFrame();
+                    }
+                } catch (err) {
+                    console.error('GIF 전체 확정 오류:', err);
+                    alert('GIF 전체 확정 중 오류가 발생했습니다. 남은 프레임을 확인해 주세요.');
+                } finally {
+                    isRasterizing = false;
+                    isApplyingGifGroup = false;
+                    if (frames.some(frame => frame.id === previousFrameId)) {
+                        selectFrame(previousFrameId);
+                        selectLayer(previousLayerId);
+                    }
+                    updateGifGroupControls();
+                    updateOnionSkin();
+                }
+            }
+
+            document.getElementById('gif-transform-linked').addEventListener('change', (e) => {
+                const source = getActiveGifLayer();
+                if (!source) return;
+                for (const { layer } of getGifGroupMembers(source.gifGroupId)) layer.gifGroupLinked = e.target.checked;
+                if (e.target.checked) syncGifGroupTransform(source.element);
+                updateOnionSkin();
+            });
+            document.getElementById('btn-apply-gif-all').addEventListener('click', () => {
+                const layer = getActiveGifLayer();
+                if (layer) applyGifGroup(layer.gifGroupId);
+            });
+
             // ✨ 이미지 및 GIF 파일 불러오기 로직
             document.getElementById('image-load-file').addEventListener('change', async (e) => {
                 const file = e.target.files[0];
@@ -2946,14 +3054,15 @@
                             chkAnim.dispatchEvent(new Event('change')); // 연관된 UI(반복 횟수 등) 표시 이벤트 발생
                         }
 
-                        // 브라우저 내장 디코더로 GIF 해독
-                        decoder = new ImageDecoder({ data: file.stream(), type: 'image/gif' });
-                        // tracks.ready는 트랙 정보만 준비됐다는 뜻입니다. 스트림 전체를 읽기 전에는
-                        // frameCount가 1~2개일 수 있으므로 completed까지 기다린 뒤 개수를 확정합니다.
-                        await Promise.all([decoder.tracks.ready, decoder.completed]);
+                        // 전체 파일을 먼저 읽어, 스트림의 임시 프레임 수나 완료 신호의 순서에
+                        // 의존하지 않고 처음부터 전체 GIF의 메타데이터를 분석합니다.
+                        const data = await file.arrayBuffer();
+                        decoder = new ImageDecoder({ data, type: 'image/gif' });
+                        await decoder.tracks.ready;
                         const track = decoder.tracks.selectedTrack;
                         if (!track || track.frameCount === 0) throw new Error('GIF 프레임이 없습니다.');
                         const frameCount = track.frameCount;
+                        const gifGroupId = uid('gif');
 
                         for (let i = 0; i < frameCount; i++) {
                             const result = await decoder.decode({ frameIndex: i });
@@ -2993,11 +3102,14 @@
                             const newLayer = layers.find(l => l.element === wrapper);
                             if (newLayer) {
                                 newLayer.name = `GIF 프레임 ${i + 1}`;
+                                newLayer.gifGroupId = gifGroupId;
+                                newLayer.gifGroupLinked = true;
                                 renderLayerUI();
                             }
                         }
 
                         renderFrameUI(); // 하단 프레임 목록 UI 새로고침
+                        finishGifImport(gifGroupId);
                         alert(`GIF 애니메이션 (${frameCount}프레임) 불러오기 완료!`);
                     } catch (err) {
                         console.error("GIF Parsing Error:", err);
@@ -3153,6 +3265,8 @@
 
                     layer.element.replaceWith(cvs); layer.type = 'canvas'; layer.canvas = cvs; layer.ctx = ctx; delete layer.element;
                     layer.name = layer.name.replace('변형 이미지', '래스터');
+                    delete layer.gifGroupId;
+                    delete layer.gifGroupLinked;
 
                     // ✨ 한 번의 확정으로 생기는 clear+raster 2개를 같은 그룹으로 묶어 undo/redo가 항상 함께 처리하게 함
                     //    (묶지 않으면 undo 한 번에 raster만 취소되고 'clear'가 남아 레이어가 통째로 비어 보임)
@@ -3423,6 +3537,7 @@
             function renderLayerUI() {
                 layerListDiv.innerHTML = '';
                 layers.forEach(l => {
+                    if (l.element) l.element.classList.toggle('active', l.id === activeLayerId);
                     const div = document.createElement('div');
                     div.className = `layer-item ${l.id === activeLayerId ? 'active' : ''}`;
                     div.draggable = true;
@@ -3546,6 +3661,7 @@
                     const nameSpan = document.createElement('span'); nameSpan.className = 'layer-name'; nameSpan.innerText = l.name;
                     div.appendChild(btnGroup); div.appendChild(nameSpan); layerListDiv.appendChild(div);
                 });
+                updateGifGroupControls();
             }
             document.getElementById('btn-add-layer').onclick = createLayer;
 
@@ -3894,6 +4010,8 @@
                     const box = e.target.closest('.transform-box');
                     if (box) {
                         document.querySelectorAll('.transform-box').forEach(b => b.classList.remove('active')); box.classList.add('active');
+                        const clickedLayer = layers.find(layer => layer.element === box);
+                        if (clickedLayer) selectLayer(clickedLayer.id);
 
                         if (e.target === box || e.target.classList.contains('handle') || e.target.classList.contains('rotate-area') || e.target.tagName === 'CANVAS' && box.classList.contains('type-transform_box')) {
                             const wrapperCx = parseFloat(box.style.left) + box.offsetWidth / 2; const wrapperCy = parseFloat(box.style.top) + box.offsetHeight / 2;
@@ -4033,13 +4151,14 @@
                         transformState.target.style.transform = `rotate(${angle + 45}deg)`;
                     }
                     else if (transformState.action.includes('handle-')) {
+                        const corner = transformState.action.split('-').pop();
                         const rad = -transformState.startAngle * Math.PI / 180;
                         const dx = pos.x - transformState.startX; const dy = pos.y - transformState.startY;
                         const ldx = dx * Math.cos(rad) - dy * Math.sin(rad); const ldy = dx * Math.sin(rad) + dy * Math.cos(rad);
 
                         let dw = 0; let dh = 0;
-                        if (transformState.action.includes('e')) dw = ldx; if (transformState.action.includes('w')) dw = -ldx;
-                        if (transformState.action.includes('s')) dh = ldy; if (transformState.action.includes('n')) dh = -ldy;
+                        if (corner.includes('e')) dw = ldx; if (corner.includes('w')) dw = -ldx;
+                        if (corner.includes('s')) dh = ldy; if (corner.includes('n')) dh = -ldy;
 
                         // ✨ [수정됨] aspect 오류를 막기 위해 블록 밖으로 변수 선언을 꺼냄
                         const aspect = transformState.startW / transformState.startH;
@@ -4054,8 +4173,8 @@
                         newW = transformState.startW + dw; newH = transformState.startH + dh;
 
                         let localCxShift = 0; let localCyShift = 0;
-                        if (transformState.action.includes('e')) localCxShift = dw / 2; if (transformState.action.includes('w')) localCxShift = -dw / 2;
-                        if (transformState.action.includes('s')) localCyShift = dh / 2; if (transformState.action.includes('n')) localCyShift = -dh / 2;
+                        if (corner.includes('e')) localCxShift = dw / 2; if (corner.includes('w')) localCxShift = -dw / 2;
+                        if (corner.includes('s')) localCyShift = dh / 2; if (corner.includes('n')) localCyShift = -dh / 2;
 
                         const gRad = transformState.startAngle * Math.PI / 180;
                         const globalCx = transformState.startCx + (localCxShift * Math.cos(gRad) - localCyShift * Math.sin(gRad));
@@ -4064,6 +4183,7 @@
                         transformState.target.style.width = `${newW}px`; transformState.target.style.height = `${newH}px`;
                         transformState.target.style.left = `${globalCx - newW / 2}px`; transformState.target.style.top = `${globalCy - newH / 2}px`;
                     }
+                    syncGifGroupTransform(transformState.target);
                     return;
                 }
 
@@ -4234,6 +4354,7 @@
                     const movedLayer = layers.find(l => l.element === transformState.target);
                     transformState = null;
                     if (movedLayer && movedLayer.type === 'transform_box') recordTransformStep(movedLayer);
+                    if (movedLayer && movedLayer.gifGroupId) updateOnionSkin();
                     return;
                 }
                 if (!isDrawing) return;
@@ -4669,7 +4790,7 @@ async function redrawCanvas() {
             if (l.type === 'text' || l.type === 'transform_box') {
                 const box = l.element; let angle = 0; const transform = window.getComputedStyle(box).transform;
                 if (transform !== 'none') { const vals = transform.split('(')[1].split(')')[0].split(','); angle = Math.atan2(vals[1], vals[0]); }
-                const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + box.offsetWidth / 2, y: parseFloat(box.style.top) + box.offsetHeight / 2, width: box.offsetWidth, height: box.offsetHeight, angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal' };
+                const obj = { id: l.id, name: l.name, type: l.type, x: parseFloat(box.style.left) + parseFloat(box.style.width) / 2, y: parseFloat(box.style.top) + parseFloat(box.style.height) / 2, width: parseFloat(box.style.width), height: parseFloat(box.style.height), angle: angle, zIndex: box.style.zIndex, visible: l.visible, opacity: l.opacity !== undefined ? l.opacity : 1, blendMode: l.blendMode || 'normal', gifGroupId: l.gifGroupId, gifGroupLinked: l.gifGroupLinked };
                 if (l.type === 'text') { obj.html = box.querySelector('.content').innerHTML; }
                 else if (l.type === 'transform_box') { obj.src = box.querySelector('canvas.content').toDataURL(); }
                 savedTransformObjects.push(obj);
@@ -4880,11 +5001,18 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
                 // --- 변형 및 텍스트 오브젝트 복구 ---
                 if (fData.transformObjects) {
-                    fData.transformObjects.forEach(obj => {
+                    for (const obj of fData.transformObjects) {
                         let customContent = null;
                         if (obj.type === 'transform_box') {
-                            customContent = document.createElement('canvas'); customContent.width = obj.width; customContent.height = obj.height;
-                            const ctx = customContent.getContext('2d'); const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, obj.width, obj.height); img.src = obj.src;
+                            customContent = document.createElement('canvas');
+                            const img = new Image();
+                            await new Promise((resolve, reject) => {
+                                img.onload = () => {
+                                    customContent.width = img.naturalWidth; customContent.height = img.naturalHeight;
+                                    customContent.getContext('2d').drawImage(img, 0, 0); resolve();
+                                };
+                                img.onerror = reject; img.src = obj.src;
+                            });
                             customContent.className = 'content';
                         }
                         const wrapper = document.createElement('div'); wrapper.className = `transform-box type-${obj.type}`;
@@ -4895,8 +5023,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
                         else if (obj.type === 'text') { content = document.createElement('div'); content.className = 'content'; content.contentEditable = 'true'; content.innerHTML = obj.html; }
                         ['nw', 'ne', 'sw', 'se'].forEach(dir => { const h = document.createElement('div'); h.className = `handle handle-${dir}`; wrapper.appendChild(h); const r = document.createElement('div'); r.className = `rotate-area rot-${dir}`; wrapper.appendChild(r); });
                         wrapper.appendChild(content); layerWrapper.appendChild(wrapper);
-                        newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal' });
-                    });
+                        newF.layers.push({ id: obj.id, name: obj.name, type: obj.type, element: wrapper, visible: obj.visible !== false, opacity: obj.opacity !== undefined ? obj.opacity : 1, blendMode: obj.blendMode || 'normal', gifGroupId: obj.gifGroupId, gifGroupLinked: obj.gifGroupLinked !== false });
+                    }
                 }
 
                 // ✨ [핵심 해결] 구버전 history의 layerId 누락 및 불일치 보정

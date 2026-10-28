@@ -18,32 +18,49 @@ const reportedDurations = [
 
 function createImportHarness({ supported = true, failDecodeAt, failDrawAt } = {}) {
     let importHandler;
-    let resolveCompleted;
-    let rejectCompleted;
+    let resolveRead;
+    let rejectRead;
+    let resolveMetadata;
+    let rejectMetadata;
+    let readCalls = 0;
+    let streamCalls = 0;
+    let decoderCount = 0;
     let decoderCloseCount = 0;
-    const completed = new Promise((resolve, reject) => {
-        resolveCompleted = resolve;
-        rejectCompleted = reject;
+    let uidCounter = 0;
+    const buffer = new ArrayBuffer(16);
+    const reading = new Promise((resolve, reject) => {
+        resolveRead = resolve;
+        rejectRead = reject;
+    });
+    const metadataReady = new Promise((resolve, reject) => {
+        resolveMetadata = resolve;
+        rejectMetadata = reject;
     });
     const track = { frameCount: 2 };
     const decodeCalls = [];
     const decodedImages = [];
     const alerts = [];
     const errors = [];
+    const finishedGifGroups = [];
     const animationCheckbox = { checked: false, dispatchEvent() {} };
-    const stream = {};
     const input = {
         value: String.raw`C:\fakepath\animation.gif`,
-        files: [{ type: 'image/gif', stream: () => stream }]
+        files: [{
+            type: 'image/gif',
+            arrayBuffer() { readCalls++; return reading; },
+            stream() { streamCalls++; throw new Error('GIF import must use the complete file buffer'); }
+        }]
     };
     const frames = [{ id: 'initial', duration: 500, layers: [] }];
 
     class FakeImageDecoder {
         constructor(options) {
-            assert.equal(options.data, stream);
+            decoderCount++;
+            assert.equal(options.data, buffer, 'Pass the exact complete file buffer to the decoder');
             assert.equal(options.type, 'image/gif');
-            this.tracks = { ready: Promise.resolve(), selectedTrack: track };
-            this.completed = completed;
+            this.tracks = { ready: metadataReady, selectedTrack: track };
+            // BufferSource input is already complete, but its track metadata is asynchronous.
+            this.completed = Promise.resolve();
         }
 
         async decode({ frameIndex }) {
@@ -79,6 +96,8 @@ function createImportHarness({ supported = true, failDecodeAt, failDrawAt } = {}
         setTimeout: callback => { callback(); },
         renderFrameUI() {},
         renderLayerUI() {},
+        uid: prefix => `${prefix}_${uidCounter++}`,
+        finishGifImport: groupId => finishedGifGroups.push(groupId),
         createNewFrame() {
             const frame = { id: `frame_${frames.length}`, duration: 500, layers: [] };
             frames.push(frame);
@@ -114,37 +133,59 @@ function createImportHarness({ supported = true, failDecodeAt, failDrawAt } = {}
     vm.runInNewContext(handlerSource, context, { filename: 'draw.html:image-import' });
 
     return {
-        input, frames, decodeCalls, decodedImages, alerts, errors, animationCheckbox,
+        input, frames, decodeCalls, decodedImages, alerts, errors, animationCheckbox, finishedGifGroups,
         import: () => importHandler({ target: input }),
-        finishBuffering() {
+        finishReading() { resolveRead(buffer); },
+        failReading: rejectRead,
+        finishMetadata() {
             track.frameCount = reportedDurations.length;
-            resolveCompleted();
+            resolveMetadata();
         },
-        failBuffering: rejectCompleted,
+        failMetadata: rejectMetadata,
+        get readCalls() { return readCalls; },
+        get streamCalls() { return streamCalls; },
+        get decoderCount() { return decoderCount; },
         get decoderCloseCount() { return decoderCloseCount; }
     };
 }
 
-test('waits for the complete GIF before reading its frame count and imports all 30 frames', async () => {
+test('reads the entire GIF before creating the decoder and waits for metadata before importing all 30 frames', async () => {
     const harness = createImportHarness();
     const importing = harness.import();
     await Promise.resolve();
     await Promise.resolve();
-    const beforeComplete = {
+    const beforeRead = {
+        decoders: harness.decoderCount,
         decoded: harness.decodeCalls.length,
         frames: harness.frames.length,
         layers: harness.frames.reduce((count, frame) => count + frame.layers.length, 0)
     };
 
-    harness.finishBuffering();
+    harness.finishReading();
+    await Promise.resolve();
+    await Promise.resolve();
+    const beforeMetadata = {
+        decoders: harness.decoderCount,
+        decoded: harness.decodeCalls.length,
+        frames: harness.frames.length
+    };
+    harness.finishMetadata();
     await importing;
 
-    assert.deepEqual(beforeComplete, { decoded: 0, frames: 1, layers: 0 });
+    assert.deepEqual(beforeRead, { decoders: 0, decoded: 0, frames: 1, layers: 0 });
+    assert.deepEqual(beforeMetadata, { decoders: 1, decoded: 0, frames: 1 });
+    assert.equal(harness.readCalls, 1);
+    assert.equal(harness.streamCalls, 0);
     assert.equal(harness.frames.length, 30);
     assert.deepEqual(harness.decodeCalls, Array.from({ length: 30 }, (_, index) => index));
     assert.deepEqual(harness.frames.map(frame => frame.duration), reportedDurations);
     assert.deepEqual(harness.frames.map(frame => frame.layers[0].name),
         Array.from({ length: 30 }, (_, index) => `GIF 프레임 ${index + 1}`));
+    assert.equal(harness.finishedGifGroups.length, 1);
+    const groupId = harness.finishedGifGroups[0];
+    assert.ok(groupId, 'Finish the imported GIF group once');
+    assert.ok(harness.frames.every(frame => frame.layers[0].gifGroupId === groupId));
+    assert.ok(harness.frames.every(frame => frame.layers[0].gifGroupLinked === true));
     assert.ok(harness.decodedImages.every(image => image.closeCount === 1));
     assert.equal(harness.decoderCloseCount, 1);
     assert.equal(harness.input.value, '');
@@ -153,14 +194,32 @@ test('waits for the complete GIF before reading its frame count and imports all 
     assert.ok(harness.alerts.some(message => message.includes('(30프레임)')));
 });
 
-test('releases the decoder and resets the input when buffering fails', async () => {
+test('resets the input without creating a decoder when reading the file fails', async () => {
     const harness = createImportHarness();
     const importing = harness.import();
-    harness.failBuffering(new Error('stream failed'));
+    harness.failReading(new Error('file read failed'));
     await importing;
 
     assert.equal(harness.decodeCalls.length, 0);
     assert.equal(harness.frames.length, 1);
+    assert.equal(harness.decoderCount, 0);
+    assert.equal(harness.decoderCloseCount, 0);
+    assert.equal(harness.input.value, '');
+    assert.equal(harness.errors.length, 1);
+    assert.ok(harness.alerts.some(message => message.includes('오류')));
+});
+
+test('releases the decoder and resets the input when track metadata fails', async () => {
+    const harness = createImportHarness();
+    const importing = harness.import();
+    harness.finishReading();
+    await Promise.resolve();
+    harness.failMetadata(new Error('metadata failed'));
+    await importing;
+
+    assert.equal(harness.decodeCalls.length, 0);
+    assert.equal(harness.frames.length, 1);
+    assert.equal(harness.decoderCount, 1);
     assert.equal(harness.decoderCloseCount, 1);
     assert.equal(harness.input.value, '');
     assert.equal(harness.errors.length, 1);
@@ -170,7 +229,8 @@ test('releases the decoder and resets the input when buffering fails', async () 
 test('releases the decoder and resets the input when frame decoding fails', async () => {
     const harness = createImportHarness({ failDecodeAt: 0 });
     const importing = harness.import();
-    harness.finishBuffering();
+    harness.finishReading();
+    harness.finishMetadata();
     await importing;
 
     assert.equal(harness.decodedImages.length, 0);
@@ -183,7 +243,8 @@ test('releases the decoder and resets the input when frame decoding fails', asyn
 test('releases an image frame even when copying it to canvas fails', async () => {
     const harness = createImportHarness({ failDrawAt: 0 });
     const importing = harness.import();
-    harness.finishBuffering();
+    harness.finishReading();
+    harness.finishMetadata();
     await importing;
 
     assert.equal(harness.decodedImages.length, 1);
@@ -197,6 +258,9 @@ test('explains unsupported browsers and resets the input without decoding', asyn
     const harness = createImportHarness({ supported: false });
     await harness.import();
 
+    assert.equal(harness.readCalls, 0);
+    assert.equal(harness.streamCalls, 0);
+    assert.equal(harness.decoderCount, 0);
     assert.equal(harness.decodeCalls.length, 0);
     assert.equal(harness.decoderCloseCount, 0);
     assert.equal(harness.input.value, '');

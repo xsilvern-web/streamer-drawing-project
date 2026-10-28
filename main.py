@@ -572,7 +572,9 @@ async def skip_drawing():
     return {"status": "success", "message": "현재 그림이 스킵되었습니다."}
 
 @app.get("/draw")
-async def serve_draw_page(): return FileResponse("draw.html")
+async def serve_draw_page():
+    # 편집기는 HTML 안에 코드가 들어 있으므로 배포 후 예전 불러오기 로직을 캐시에서 재사용하지 않습니다.
+    return FileResponse("draw.html", headers={"Cache-Control": "no-store"})
 
 @app.get("/")
 @app.get("/index")
